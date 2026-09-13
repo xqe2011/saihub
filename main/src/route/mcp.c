@@ -22,12 +22,12 @@ static const char* tag = "SAIHUB-Mcp";
 
 #define MCP_PROTOCOL_VERSION "2025-06-18"
 #define TRACE_DEFAULT_DURATION_US 1000000ULL
-#define MCP_MAX_PINS 16
+
+static const int mcpLogicalToHw[] = CONFIG_GPIO_LOGICAL_TO_HW;
 
 typedef struct {
-  int pins[MCP_MAX_PINS];
+  int pins[TOOL_GET_ARRAY_LENGTH(mcpLogicalToHw)];
   size_t count;
-  bool batch;
 } Mcp_PinSelection;
 
 static bool Route_McpOriginOk(httpd_req_t* req)
@@ -182,33 +182,11 @@ static bool Route_McpParsePinSelection(cJSON* args, Mcp_PinSelection* out, char*
     snprintf(reason, reasonLen, "arguments are required.");
     return false;
   }
-  cJSON* pinItem = cJSON_GetObjectItem(args, "pin");
-  cJSON* pinsItem = cJSON_GetObjectItem(args, "pins");
-  bool hasPin = cJSON_IsNumber(pinItem);
-  bool hasPins = cJSON_IsArray(pinsItem);
-  if (hasPin == hasPins) {
-    snprintf(reason, reasonLen, "Provide exactly one of pin or pins.");
-    return false;
-  }
-  if (hasPin) {
-    int pin = pinItem->valueint;
-    if (!GpioCtrl_IsValidLogicalPin(pin)) {
-      char range[32];
-      HttpServer_FormatPinRange(range, sizeof(range));
-      snprintf(reason, reasonLen, "pin is invalid. Use a pin from %s.", range);
-      return false;
-    }
-    out->pins[0] = pin;
-    out->count = 1;
-    out->batch = false;
-    return true;
-  }
   size_t maxPins = (size_t)GpioCtrl_GetLogicalCount();
-  if (maxPins > MCP_MAX_PINS) maxPins = MCP_MAX_PINS;
+  if (maxPins > TOOL_GET_ARRAY_LENGTH(out->pins)) maxPins = TOOL_GET_ARRAY_LENGTH(out->pins);
   if (HttpServer_ParsePinsArray(args, out->pins, maxPins, &out->count, reason, reasonLen) != ESP_OK) {
     return false;
   }
-  out->batch = true;
   return true;
 }
 
@@ -323,6 +301,7 @@ static cJSON* Route_McpToolsListResult(void)
   static const char* edges[] = {"raising", "falling", "both"};
   static const char* rails[] = {"3v3", "5v"};
   static const char* methods[] = {"read", "write"};
+  static const char* lockTypes[] = {"pin", "power"};
 
   cJSON* tools = cJSON_CreateArray();
 
@@ -331,81 +310,79 @@ static cJSON* Route_McpToolsListResult(void)
 
   {
     cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pin", Route_McpIntSchema(0, 7));
     Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
     Route_McpAddProp(props, "mode", Route_McpEnumStringSchema(modes, TOOL_GET_ARRAY_LENGTH(modes)));
     Route_McpAddProp(props, "pullUp", Route_McpBoolSchema());
     Route_McpAddProp(props, "pullDown", Route_McpBoolSchema());
     Route_McpAddProp(props, "openDrain", Route_McpBoolSchema());
     Route_McpAddLockIdProp(props);
-    static const char* req[] = {"mode", "pullUp", "pullDown"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("configure_pin",
-                                                 "Configure one pin or batch pins (exactly one of pin or pins).",
+    static const char* req[] = {"pins", "mode", "pullUp", "pullDown"};
+    cJSON_AddItemToArray(tools, Route_McpToolDef("configure_pins",
+                                                 "Configure one or more pins. Always pass pins (e.g. pins:[1]).",
                                                  Route_McpObjectSchema(props, req, TOOL_GET_ARRAY_LENGTH(req))));
   }
 
   {
     cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pin", Route_McpIntSchema(0, 7));
     Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
     Route_McpAddLockIdProp(props);
-    cJSON_AddItemToArray(tools, Route_McpToolDef("get_pin_level", "Read digital level for one pin or batch pins.",
-                                                 Route_McpObjectSchema(props, NULL, 0)));
+    static const char* req[] = {"pins"};
+    cJSON_AddItemToArray(tools,
+                         Route_McpToolDef("get_pin_levels",
+                                          "Read digital levels for pins. Returns levels array in pins order.",
+                                          Route_McpObjectSchema(props, req, 1)));
   }
 
   {
     cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pin", Route_McpIntSchema(0, 7));
     Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
-    cJSON* level = Route_McpIntSchema(0, 1);
-    Route_McpAddProp(props, "level", level);
-    Route_McpAddLockIdProp(props);
-    static const char* req[] = {"level"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("set_pin_level", "Write digital level for one pin or batch pins.",
-                                                 Route_McpObjectSchema(props, req, 1)));
-  }
-
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pin", Route_McpIntSchema(0, 7));
-    Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
-    Route_McpAddProp(props, "width", Route_McpIntSchema(1, 1000000));
     Route_McpAddProp(props, "level", Route_McpIntSchema(0, 1));
     Route_McpAddLockIdProp(props);
-    static const char* req[] = {"width", "level"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("pulse_pin", "Pulse one pin or batch pins for width microseconds.",
+    static const char* req[] = {"pins", "level"};
+    cJSON_AddItemToArray(tools, Route_McpToolDef("set_pin_levels", "Write digital level for one or more pins.",
                                                  Route_McpObjectSchema(props, req, 2)));
   }
 
   {
     cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pin", Route_McpIntSchema(0, 7));
+    Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
+    Route_McpAddProp(props, "width", Route_McpIntSchema(1, 1000000));
+    Route_McpAddProp(props, "level", Route_McpIntSchema(0, 1));
     Route_McpAddLockIdProp(props);
-    static const char* req[] = {"pin"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("get_pin_pwm", "Read PWM frequency and duty (pwmOutput only).",
-                                                 Route_McpObjectSchema(props, req, 1)));
-  }
-
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pin", Route_McpIntSchema(0, 7));
-    Route_McpAddProp(props, "frequency", Route_McpNumberSchema(1, 50000));
-    Route_McpAddProp(props, "duty", Route_McpNumberSchema(0, 100));
-    Route_McpAddLockIdProp(props);
-    static const char* req[] = {"pin", "frequency", "duty"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("set_pin_pwm", "Set PWM frequency and duty (pwmOutput only).",
+    static const char* req[] = {"pins", "width", "level"};
+    cJSON_AddItemToArray(tools, Route_McpToolDef("pulse_pins", "Pulse one or more pins for width microseconds.",
                                                  Route_McpObjectSchema(props, req, 3)));
   }
 
   {
     cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pin", Route_McpIntSchema(0, 7));
+    Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
+    Route_McpAddLockIdProp(props);
+    static const char* req[] = {"pins"};
+    cJSON_AddItemToArray(tools, Route_McpToolDef("get_pin_pwms", "Read PWM frequency and duty for pins (pwmOutput only).",
+                                                 Route_McpObjectSchema(props, req, 1)));
+  }
+
+  {
+    cJSON* props = cJSON_CreateObject();
+    Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
+    Route_McpAddProp(props, "frequency", Route_McpNumberSchema(1, 50000));
+    Route_McpAddProp(props, "duty", Route_McpNumberSchema(0, 100));
+    Route_McpAddLockIdProp(props);
+    static const char* req[] = {"pins", "frequency", "duty"};
+    cJSON_AddItemToArray(tools, Route_McpToolDef("set_pin_pwms", "Set PWM frequency and duty for pins (pwmOutput only).",
+                                                 Route_McpObjectSchema(props, req, 3)));
+  }
+
+  {
+    cJSON* props = cJSON_CreateObject();
     Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
     Route_McpAddProp(props, "edge", Route_McpEnumStringSchema(edges, TOOL_GET_ARRAY_LENGTH(edges)));
     Route_McpAddProp(props, "duration", Route_McpIntSchema(1, 60000000));
     Route_McpAddLockIdProp(props);
-    cJSON_AddItemToArray(tools, Route_McpToolDef("trace_pin", "Capture edge events on one pin or batch pins.",
-                                                 Route_McpObjectSchema(props, NULL, 0)));
+    static const char* req[] = {"pins"};
+    cJSON_AddItemToArray(tools, Route_McpToolDef("trace_pins", "Capture edge events on one or more pins.",
+                                                 Route_McpObjectSchema(props, req, 1)));
   }
 
   {
@@ -433,41 +410,36 @@ static cJSON* Route_McpToolsListResult(void)
     cJSON_AddNumberToObject(methodSchema, "minItems", 1);
     cJSON_AddItemToObject(methodSchema, "items", Route_McpEnumStringSchema(methods, TOOL_GET_ARRAY_LENGTH(methods)));
 
-    cJSON* pinRes = cJSON_CreateObject();
-    cJSON_AddStringToObject(pinRes, "type", "object");
-    cJSON* pinProps = cJSON_CreateObject();
-    Route_McpAddProp(pinProps, "pin", Route_McpIntSchema(0, 7));
-    Route_McpAddProp(pinProps, "method", cJSON_Duplicate(methodSchema, 1));
-    cJSON_AddItemToObject(pinRes, "properties", pinProps);
-    cJSON* pinReq = cJSON_CreateArray();
-    cJSON_AddItemToArray(pinReq, cJSON_CreateString("pin"));
-    cJSON_AddItemToArray(pinReq, cJSON_CreateString("method"));
-    cJSON_AddItemToObject(pinRes, "required", pinReq);
+    cJSON* railsSchema = cJSON_CreateObject();
+    cJSON_AddStringToObject(railsSchema, "type", "array");
+    cJSON_AddNumberToObject(railsSchema, "minItems", 1);
+    cJSON_AddItemToObject(railsSchema, "items", Route_McpEnumStringSchema(rails, TOOL_GET_ARRAY_LENGTH(rails)));
 
-    cJSON* powerRes = cJSON_CreateObject();
-    cJSON_AddStringToObject(powerRes, "type", "object");
-    cJSON* powerProps = cJSON_CreateObject();
-    Route_McpAddProp(powerProps, "power", Route_McpEnumStringSchema(rails, TOOL_GET_ARRAY_LENGTH(rails)));
-    Route_McpAddProp(powerProps, "method", methodSchema);
-    cJSON_AddItemToObject(powerRes, "properties", powerProps);
-    cJSON* powerReq = cJSON_CreateArray();
-    cJSON_AddItemToArray(powerReq, cJSON_CreateString("power"));
-    cJSON_AddItemToArray(powerReq, cJSON_CreateString("method"));
-    cJSON_AddItemToObject(powerRes, "required", powerReq);
-
-    cJSON* oneOf = cJSON_CreateArray();
-    cJSON_AddItemToArray(oneOf, pinRes);
-    cJSON_AddItemToArray(oneOf, powerRes);
+    cJSON* itemSchema = cJSON_CreateObject();
+    cJSON_AddStringToObject(itemSchema, "type", "object");
+    cJSON_AddStringToObject(itemSchema, "description",
+                            "Typed lock group: type pin requires pins; type power requires rails.");
+    cJSON* itemProps = cJSON_CreateObject();
+    Route_McpAddProp(itemProps, "type", Route_McpEnumStringSchema(lockTypes, TOOL_GET_ARRAY_LENGTH(lockTypes)));
+    Route_McpAddProp(itemProps, "pins", Route_McpPinsArraySchema());
+    Route_McpAddProp(itemProps, "rails", railsSchema);
+    Route_McpAddProp(itemProps, "method", methodSchema);
+    cJSON_AddItemToObject(itemSchema, "properties", itemProps);
+    cJSON* itemReq = cJSON_CreateArray();
+    cJSON_AddItemToArray(itemReq, cJSON_CreateString("type"));
+    cJSON_AddItemToArray(itemReq, cJSON_CreateString("method"));
+    cJSON_AddItemToObject(itemSchema, "required", itemReq);
 
     cJSON* resources = cJSON_CreateObject();
     cJSON_AddStringToObject(resources, "type", "array");
     cJSON_AddNumberToObject(resources, "minItems", 1);
-    cJSON_AddItemToObject(resources, "items", oneOf);
+    cJSON_AddItemToObject(resources, "items", itemSchema);
 
     cJSON* props = cJSON_CreateObject();
     Route_McpAddProp(props, "resources", resources);
     static const char* req[] = {"resources"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("create_lock", "Create a resource lock for pins and/or power rails.",
+    cJSON_AddItemToArray(tools, Route_McpToolDef("create_lock",
+                                                 "Create a lock. resources use type pin+pins or type power+rails.",
                                                  Route_McpObjectSchema(props, req, 1)));
   }
 
@@ -536,7 +508,10 @@ static cJSON* Route_McpCallConfigurePin(cJSON* args)
     esp_err_t cfg = GpioCtrl_SetConfig(sel.pins[i], mode, openDrain, pullUp, pullDown);
     if (cfg == ESP_ERR_NO_MEM) {
       return Route_McpToolResultErr(
-          "No free LEDC channel or timer for pwmOutput. Free another pwmOutput pin or reuse an existing frequency.");
+          "PWM resources exhausted. Free another pwmOutput pin or reuse an existing frequency.");
+    }
+    if (cfg == ESP_ERR_NOT_SUPPORTED) {
+      return Route_McpToolResultErr("PWM frequency cannot be generated by this hardware. Try a higher frequency.");
     }
     if (cfg != ESP_OK) return Route_McpToolResultErr("internal");
   }
@@ -556,22 +531,16 @@ static cJSON* Route_McpCallGetPinLevel(cJSON* args)
     return Route_McpToolResultErr(reason);
   }
   cJSON* root = cJSON_CreateObject();
-  if (!sel.batch) {
+  cJSON* levels = cJSON_CreateArray();
+  for (size_t i = 0; i < sel.count; i++) {
     int level = 0;
-    if (GpioCtrl_GetLevel(sel.pins[0], &level) != ESP_OK) {
+    if (GpioCtrl_GetLevel(sel.pins[i], &level) != ESP_OK) {
       cJSON_Delete(root);
       return Route_McpToolResultErr("internal");
     }
-    cJSON_AddNumberToObject(root, "level", level);
-  } else {
-    cJSON* levels = cJSON_CreateArray();
-    for (size_t i = 0; i < sel.count; i++) {
-      int level = 0;
-      GpioCtrl_GetLevel(sel.pins[i], &level);
-      cJSON_AddItemToArray(levels, cJSON_CreateNumber(level));
-    }
-    cJSON_AddItemToObject(root, "levels", levels);
+    cJSON_AddItemToArray(levels, cJSON_CreateNumber(level));
   }
+  cJSON_AddItemToObject(root, "levels", levels);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
   Lock_Touch(lockId);
   return Route_McpToolResultOk(root);
@@ -650,28 +619,37 @@ static cJSON* Route_McpCallPulsePin(cJSON* args)
 static cJSON* Route_McpCallGetPinPwm(cJSON* args)
 {
   char reason[256];
-  cJSON* pinItem = cJSON_GetObjectItem(args, "pin");
-  if (!cJSON_IsNumber(pinItem) || !GpioCtrl_IsValidLogicalPin(pinItem->valueint)) {
-    char range[32];
-    HttpServer_FormatPinRange(range, sizeof(range));
-    snprintf(reason, sizeof(reason), "pin is invalid. Use a pin from %s.", range);
+  Mcp_PinSelection sel;
+  if (!Route_McpParsePinSelection(args, &sel, reason, sizeof(reason))) {
     return Route_McpToolResultErr(reason);
   }
-  int pin = pinItem->valueint;
   const char* lockId = Route_McpGetLockId(args);
-  if (HttpServer_LockStatusId(lockId, LOCK_KIND_GPIO, pin, LOCK_METHOD_READ, reason, sizeof(reason))) {
+  if (Route_McpCheckPinsLock(&sel, LOCK_METHOD_READ, lockId, reason, sizeof(reason))) {
     return Route_McpToolResultErr(reason);
   }
-  if (!GpioCtrl_IsPwmMode(pin)) {
-    snprintf(reason, sizeof(reason), "Pin %d is not in pwmOutput mode. PUT /pin/%d with mode pwmOutput first.", pin, pin);
-    return Route_McpToolResultErr(reason);
-  }
-  double frequency = 0;
-  double duty = 0;
-  if (GpioCtrl_GetPwm(pin, &frequency, &duty) != ESP_OK) return Route_McpToolResultErr("internal");
   cJSON* root = cJSON_CreateObject();
-  cJSON_AddNumberToObject(root, "frequency", frequency);
-  cJSON_AddNumberToObject(root, "duty", duty);
+  cJSON* pwms = cJSON_CreateArray();
+  for (size_t i = 0; i < sel.count; i++) {
+    int pin = sel.pins[i];
+    if (!GpioCtrl_IsPwmMode(pin)) {
+      cJSON_Delete(root);
+      snprintf(reason, sizeof(reason), "Pin %d is not in pwmOutput mode. PUT /pin/%d with mode pwmOutput first.", pin,
+               pin);
+      return Route_McpToolResultErr(reason);
+    }
+    double frequency = 0;
+    double duty = 0;
+    if (GpioCtrl_GetPwm(pin, &frequency, &duty) != ESP_OK) {
+      cJSON_Delete(root);
+      return Route_McpToolResultErr("internal");
+    }
+    cJSON* item = cJSON_CreateObject();
+    cJSON_AddNumberToObject(item, "pin", pin);
+    cJSON_AddNumberToObject(item, "frequency", frequency);
+    cJSON_AddNumberToObject(item, "duty", duty);
+    cJSON_AddItemToArray(pwms, item);
+  }
+  cJSON_AddItemToObject(root, "pwms", pwms);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
   Lock_Touch(lockId);
   return Route_McpToolResultOk(root);
@@ -680,14 +658,10 @@ static cJSON* Route_McpCallGetPinPwm(cJSON* args)
 static cJSON* Route_McpCallSetPinPwm(cJSON* args)
 {
   char reason[256];
-  cJSON* pinItem = cJSON_GetObjectItem(args, "pin");
-  if (!cJSON_IsNumber(pinItem) || !GpioCtrl_IsValidLogicalPin(pinItem->valueint)) {
-    char range[32];
-    HttpServer_FormatPinRange(range, sizeof(range));
-    snprintf(reason, sizeof(reason), "pin is invalid. Use a pin from %s.", range);
+  Mcp_PinSelection sel;
+  if (!Route_McpParsePinSelection(args, &sel, reason, sizeof(reason))) {
     return Route_McpToolResultErr(reason);
   }
-  int pin = pinItem->valueint;
   cJSON* freqItem = cJSON_GetObjectItem(args, "frequency");
   cJSON* dutyItem = cJSON_GetObjectItem(args, "duty");
   if (!cJSON_IsNumber(freqItem) || freqItem->valuedouble < 1 || freqItem->valuedouble > CONFIG_GPIO_PWM_MAX_FREQ_HZ) {
@@ -697,19 +671,29 @@ static cJSON* Route_McpCallSetPinPwm(cJSON* args)
     return Route_McpToolResultErr("duty must be a number from 0 to 100.");
   }
   const char* lockId = Route_McpGetLockId(args);
-  if (HttpServer_LockStatusId(lockId, LOCK_KIND_GPIO, pin, LOCK_METHOD_WRITE, reason, sizeof(reason))) {
+  if (Route_McpCheckPinsLock(&sel, LOCK_METHOD_WRITE, lockId, reason, sizeof(reason))) {
     return Route_McpToolResultErr(reason);
   }
-  if (!GpioCtrl_IsPwmMode(pin)) {
-    snprintf(reason, sizeof(reason), "Pin %d is not in pwmOutput mode. PUT /pin/%d with mode pwmOutput first.", pin, pin);
-    return Route_McpToolResultErr(reason);
+  for (size_t i = 0; i < sel.count; i++) {
+    int pin = sel.pins[i];
+    if (!GpioCtrl_IsPwmMode(pin)) {
+      snprintf(reason, sizeof(reason), "Pin %d is not in pwmOutput mode. PUT /pin/%d with mode pwmOutput first.", pin,
+               pin);
+      return Route_McpToolResultErr(reason);
+    }
   }
-  esp_err_t pwm = GpioCtrl_SetPwm(pin, freqItem->valuedouble, dutyItem->valuedouble);
-  if (pwm == ESP_ERR_NO_MEM) {
-    return Route_McpToolResultErr(
-        "No free LEDC channel or timer for pwmOutput. Free another pwmOutput pin or reuse an existing frequency.");
+  for (size_t i = 0; i < sel.count; i++) {
+    int pin = sel.pins[i];
+    esp_err_t pwm = GpioCtrl_SetPwm(pin, freqItem->valuedouble, dutyItem->valuedouble);
+    if (pwm == ESP_ERR_NO_MEM) {
+      return Route_McpToolResultErr(
+          "PWM resources exhausted. Free another pwmOutput pin or reuse an existing frequency.");
+    }
+    if (pwm == ESP_ERR_NOT_SUPPORTED) {
+      return Route_McpToolResultErr("PWM frequency cannot be generated by this hardware. Try a higher frequency.");
+    }
+    if (pwm != ESP_OK) return Route_McpToolResultErr("internal");
   }
-  if (pwm != ESP_OK) return Route_McpToolResultErr("internal");
   Lock_Touch(lockId);
   return Route_McpToolResultOkEmpty();
 }
@@ -743,9 +727,8 @@ static cJSON* Route_McpCallTracePin(cJSON* args)
   GpioCtrl_TraceEvent* events = calloc(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(GpioCtrl_TraceEvent));
   if (events == NULL) return Route_McpToolResultErr("internal");
   size_t eventCount = 0;
-  bool includePin = sel.batch;
-  if (GpioCtrl_Trace(sel.pins, sel.count, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &eventCount,
-                     includePin) != ESP_OK) {
+  if (GpioCtrl_Trace(sel.pins, sel.count, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &eventCount, true) !=
+      ESP_OK) {
     free(events);
     return Route_McpToolResultErr("internal");
   }
@@ -753,7 +736,7 @@ static cJSON* Route_McpCallTracePin(cJSON* args)
   cJSON* arr = cJSON_CreateArray();
   for (size_t i = 0; i < eventCount; i++) {
     cJSON* ev = cJSON_CreateObject();
-    if (includePin) cJSON_AddNumberToObject(ev, "pin", events[i].pin);
+    cJSON_AddNumberToObject(ev, "pin", events[i].pin);
     cJSON_AddStringToObject(ev, "edge", events[i].edge);
     cJSON_AddNumberToObject(ev, "level", events[i].level);
     cJSON_AddNumberToObject(ev, "time", (double)events[i].time);
@@ -817,61 +800,11 @@ static cJSON* Route_McpCallSetOutputPowerState(cJSON* args)
 static cJSON* Route_McpCallCreateLock(cJSON* args)
 {
   cJSON* resources = cJSON_GetObjectItem(args, "resources");
-  if (!cJSON_IsArray(resources) || cJSON_GetArraySize(resources) == 0) {
-    return Route_McpToolResultErr("resources must be a non-empty array.");
-  }
   Lock_Resource res[LOCK_MAX_RESOURCES];
-  size_t count = (size_t)cJSON_GetArraySize(resources);
-  if (count > LOCK_MAX_RESOURCES) {
-    return Route_McpToolResultErr("resources array is too long.");
-  }
-  char range[32];
-  HttpServer_FormatPinRange(range, sizeof(range));
+  size_t count = 0;
   char reason[192];
-  for (size_t i = 0; i < count; i++) {
-    cJSON* item = cJSON_GetArrayItem(resources, (int)i);
-    cJSON* pinItem = cJSON_GetObjectItem(item, "pin");
-    cJSON* powerItem = cJSON_GetObjectItem(item, "power");
-    cJSON* methods = cJSON_GetObjectItem(item, "method");
-    bool hasPin = cJSON_IsNumber(pinItem);
-    bool hasPower = cJSON_IsString(powerItem);
-    if (hasPin == hasPower) {
-      return Route_McpToolResultErr("Each resource must have exactly one of pin or power.");
-    }
-    Lock_Kind kind;
-    int pin = 0;
-    if (hasPin) {
-      if (!GpioCtrl_IsValidLogicalPin(pinItem->valueint)) {
-        snprintf(reason, sizeof(reason), "resources[%u].pin is invalid. Use a pin from %s.", (unsigned)i, range);
-        return Route_McpToolResultErr(reason);
-      }
-      kind = LOCK_KIND_GPIO;
-      pin = pinItem->valueint;
-    } else {
-      if (!Lock_PowerFromString(powerItem->valuestring, &kind)) {
-        return Route_McpToolResultErr("power is invalid. Use one of: 3v3, 5v.");
-      }
-    }
-    if (!cJSON_IsArray(methods) || cJSON_GetArraySize(methods) == 0) {
-      return Route_McpToolResultErr("Each resource.method entry must be read or write.");
-    }
-    uint8_t bits = 0;
-    for (int m = 0; m < cJSON_GetArraySize(methods); m++) {
-      cJSON* mv = cJSON_GetArrayItem(methods, m);
-      if (!cJSON_IsString(mv)) {
-        return Route_McpToolResultErr("Each resource.method entry must be read or write.");
-      }
-      if (strcmp(mv->valuestring, "read") == 0)
-        bits |= LOCK_METHOD_READ;
-      else if (strcmp(mv->valuestring, "write") == 0)
-        bits |= LOCK_METHOD_WRITE;
-      else {
-        return Route_McpToolResultErr("method is invalid. Each resource.method entry must be read or write.");
-      }
-    }
-    res[i].kind = kind;
-    res[i].pin = pin;
-    res[i].methods = bits;
+  if (HttpServer_ParseLockResources(resources, res, LOCK_MAX_RESOURCES, &count, reason, sizeof(reason)) != ESP_OK) {
+    return Route_McpToolResultErr(reason);
   }
 
   Lock_Entry created;
@@ -905,25 +838,7 @@ static cJSON* Route_McpCallCreateLock(cJSON* args)
   int64_t now = Lock_NowUs();
   cJSON_AddNumberToObject(root, "ttl", (double)(created.expiresAtUs - now));
   cJSON_AddNumberToObject(root, "expiresAt", (double)created.expiresAtUs);
-  cJSON* resArr = cJSON_CreateArray();
-  for (size_t i = 0; i < created.resourceCount; i++) {
-    cJSON* r = cJSON_CreateObject();
-    if (created.resources[i].kind == LOCK_KIND_GPIO) {
-      cJSON_AddNumberToObject(r, "pin", created.resources[i].pin);
-    } else {
-      cJSON_AddStringToObject(r, "power", Lock_KindToString(created.resources[i].kind));
-    }
-    cJSON* methodsArr = cJSON_CreateArray();
-    if (created.resources[i].methods & LOCK_METHOD_READ) {
-      cJSON_AddItemToArray(methodsArr, cJSON_CreateString("read"));
-    }
-    if (created.resources[i].methods & LOCK_METHOD_WRITE) {
-      cJSON_AddItemToArray(methodsArr, cJSON_CreateString("write"));
-    }
-    cJSON_AddItemToObject(r, "method", methodsArr);
-    cJSON_AddItemToArray(resArr, r);
-  }
-  cJSON_AddItemToObject(root, "resources", resArr);
+  cJSON_AddItemToObject(root, "resources", HttpServer_SerializeLockResources(created.resources, created.resourceCount));
   return Route_McpToolResultOk(root);
 }
 
@@ -982,7 +897,8 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
   cJSON_AddStringToObject(
       result, "instructions",
       "Saihub GPIO hub: logical pins 0-7, times in microseconds, optional lockId for contested resources. "
-      "Use tools/list then tools/call. Power rails are rail=3v3|5v.");
+      "Use plural pin tools (configure_pins, get_pin_levels, …) and always pass pins even for one pin (pins:[1]). "
+      "Power tools use rail=3v3|5v. create_lock resources use type pin with pins, or type power with rails.");
   return result;
 }
 
@@ -1005,19 +921,19 @@ static cJSON* Route_McpHandleToolsCall(cJSON* params)
   cJSON* out = NULL;
   if (strcmp(name, "list_pins") == 0)
     out = Route_McpCallListPins();
-  else if (strcmp(name, "configure_pin") == 0)
+  else if (strcmp(name, "configure_pins") == 0)
     out = Route_McpCallConfigurePin(args);
-  else if (strcmp(name, "get_pin_level") == 0)
+  else if (strcmp(name, "get_pin_levels") == 0)
     out = Route_McpCallGetPinLevel(args);
-  else if (strcmp(name, "set_pin_level") == 0)
+  else if (strcmp(name, "set_pin_levels") == 0)
     out = Route_McpCallSetPinLevel(args);
-  else if (strcmp(name, "pulse_pin") == 0)
+  else if (strcmp(name, "pulse_pins") == 0)
     out = Route_McpCallPulsePin(args);
-  else if (strcmp(name, "get_pin_pwm") == 0)
+  else if (strcmp(name, "get_pin_pwms") == 0)
     out = Route_McpCallGetPinPwm(args);
-  else if (strcmp(name, "set_pin_pwm") == 0)
+  else if (strcmp(name, "set_pin_pwms") == 0)
     out = Route_McpCallSetPinPwm(args);
-  else if (strcmp(name, "trace_pin") == 0)
+  else if (strcmp(name, "trace_pins") == 0)
     out = Route_McpCallTracePin(args);
   else if (strcmp(name, "get_output_power_state") == 0)
     out = Route_McpCallGetOutputPowerState(args);
