@@ -11,7 +11,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-static const char* tag = "Main";
+static const char* tag = "SAIHUB-Main";
 
 static void Main_OnWifiDisconnected(void)
 {
@@ -38,7 +38,7 @@ void app_main(void)
   MAIN_LOAD_MODULE(GpioCtrl_Init(), "Gpio");
   MAIN_LOAD_MODULE(Lock_Init(), "Lock");
   MAIN_LOAD_MODULE(Ntp_Init(), "Ntp");
-  MAIN_LOAD_MODULE(HttpServer_Init(), "Http");
+  MAIN_LOAD_MODULE(HttpServer_Init(), "HttpServer");
   MAIN_LOAD_MODULE(Wifi_RegisterConnectedCallback(Main_OnWifiConnected), "WifiConnectedCb");
   MAIN_LOAD_MODULE(Wifi_RegisterDisconnectedCallback(Main_OnWifiDisconnected), "WifiDisconnectedCb");
   MAIN_LOAD_MODULE(Wifi_Init(), "Wifi");

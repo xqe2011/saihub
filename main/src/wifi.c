@@ -1,3 +1,8 @@
+/**
+ * @name WIFI module
+ * @file wifi.c
+ * @author xqe2011
+ */
 #include "wifi.h"
 
 #include "config.h"
@@ -12,41 +17,29 @@
 #include <freertos/timers.h>
 #include <string.h>
 
-static const char* tag = "Wifi";
+static const char* tag = "SAIHUB-Wifi";
 
-static bool s_allowReconnect = true;
-static bool s_isConnected = false;
-static char s_lastSsid[33] = {0};
-static char s_lastPassword[65] = {0};
-static Wifi_ConnectedCallback s_connectedCallbacks[4];
-static Wifi_DisconnectedCallback s_disconnectedCallbacks[4];
-static TimerHandle_t s_reconnectTimer;
+static bool allowReconnect = true;
+static bool isConnected = false;
+static char lastRequestConnectSSID[33] = {0};
+static char lastRequestConnectPassword[65] = {0};
+static Wifi_ConnectedCallback connectedCallbacks[4];
+static Wifi_DisconnectedCallback disconnectedCallbacks[4];
+static TimerHandle_t reconnectTimer;
 
 bool Wifi_IsConnected(void)
 {
-  return s_isConnected;
+  return isConnected;
 }
 
 esp_err_t Wifi_RegisterConnectedCallback(Wifi_ConnectedCallback callback)
 {
-  for (size_t i = 0; i < TOOL_GET_ARRAY_LENGTH(s_connectedCallbacks); i++) {
-    if (s_connectedCallbacks[i] == NULL) {
-      s_connectedCallbacks[i] = callback;
-      return ESP_OK;
-    }
-  }
-  return ESP_FAIL;
+  TOOL_REGISTER_CALLBACK(connectedCallbacks, callback, "connected");
 }
 
 esp_err_t Wifi_RegisterDisconnectedCallback(Wifi_DisconnectedCallback callback)
 {
-  for (size_t i = 0; i < TOOL_GET_ARRAY_LENGTH(s_disconnectedCallbacks); i++) {
-    if (s_disconnectedCallbacks[i] == NULL) {
-      s_disconnectedCallbacks[i] = callback;
-      return ESP_OK;
-    }
-  }
-  return ESP_FAIL;
+  TOOL_REGISTER_CALLBACK(disconnectedCallbacks, callback, "disconnected");
 }
 
 esp_err_t Wifi_ConnectWifi(const char* ssid, const char* password)
@@ -61,9 +54,9 @@ esp_err_t Wifi_ConnectWifi(const char* ssid, const char* password)
   memcpy(config.sta.password, password, strlen(password));
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_set_config(WIFI_IF_STA, &config), "set wifi config failed");
 
-  strncpy(s_lastSsid, ssid, sizeof(s_lastSsid) - 1);
-  strncpy(s_lastPassword, password, sizeof(s_lastPassword) - 1);
-  s_allowReconnect = true;
+  strncpy(lastRequestConnectSSID, ssid, sizeof(lastRequestConnectSSID) - 1);
+  strncpy(lastRequestConnectPassword, password, sizeof(lastRequestConnectPassword) - 1);
+  allowReconnect = true;
 
   esp_wifi_disconnect();
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_connect(), "wifi connect request failed");
@@ -74,7 +67,7 @@ esp_err_t Wifi_ConnectWifi(const char* ssid, const char* password)
 static void Wifi_ReconnectCallback(TimerHandle_t timer)
 {
   (void)timer;
-  if (s_allowReconnect) {
+  if (allowReconnect) {
     esp_wifi_connect();
   }
 }
@@ -97,40 +90,32 @@ static void Wifi_EventHandler(void* arg, esp_event_base_t eventBase, int32_t eve
         ESP_LOGW(tag, "No WiFi credentials in NVS or config.h");
       }
     } else if (eventId == WIFI_EVENT_STA_DISCONNECTED) {
-      bool wasConnected = s_isConnected;
-      s_isConnected = false;
+      bool wasConnected = isConnected;
+      isConnected = false;
       if (wasConnected) {
-        for (size_t i = 0; i < TOOL_GET_ARRAY_LENGTH(s_disconnectedCallbacks); i++) {
-          if (s_disconnectedCallbacks[i] != NULL) {
-            s_disconnectedCallbacks[i]();
-          }
-        }
+        TOOL_EXECUTE_CALLBACKS(disconnectedCallbacks);
       }
-      if (s_allowReconnect) {
-        xTimerStop(s_reconnectTimer, portMAX_DELAY);
-        xTimerStart(s_reconnectTimer, portMAX_DELAY);
+      if (allowReconnect) {
+        xTimerStop(reconnectTimer, portMAX_DELAY);
+        xTimerStart(reconnectTimer, portMAX_DELAY);
       }
     }
   }
 
   if (eventBase == IP_EVENT && eventId == IP_EVENT_STA_GOT_IP) {
-    Nvs_SetString("wifi.ssid", s_lastSsid);
-    Nvs_SetString("wifi.password", s_lastPassword);
-    s_isConnected = true;
+    Nvs_SetString("wifi.ssid", lastRequestConnectSSID);
+    Nvs_SetString("wifi.password", lastRequestConnectPassword);
+    isConnected = true;
     ESP_LOGI(tag, "WiFi connected");
-    for (size_t i = 0; i < TOOL_GET_ARRAY_LENGTH(s_connectedCallbacks); i++) {
-      if (s_connectedCallbacks[i] != NULL) {
-        s_connectedCallbacks[i]();
-      }
-    }
+    TOOL_EXECUTE_CALLBACKS(connectedCallbacks);
   }
 }
 
 esp_err_t Wifi_Init(void)
 {
-  s_reconnectTimer = xTimerCreate("wifi-reconn", pdMS_TO_TICKS(CONFIG_WIFI_RECONNECT_INTERVAL_MS), pdFALSE, NULL,
+  reconnectTimer = xTimerCreate("wifi-reconn", pdMS_TO_TICKS(CONFIG_WIFI_RECONNECT_INTERVAL_MS), pdFALSE, NULL,
                                   Wifi_ReconnectCallback);
-  TOOL_CHECK_OR_LOG_RETURN(s_reconnectTimer == NULL, "create reconnect timer failed");
+  TOOL_CHECK_OR_LOG_RETURN(reconnectTimer == NULL, "create reconnect timer failed");
 
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_netif_init());
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_event_loop_create_default());

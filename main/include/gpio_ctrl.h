@@ -1,3 +1,8 @@
+/**
+ * @name GPIO control module
+ * @file gpio_ctrl.h
+ * @author xqe2011
+ */
 #ifndef GPIO_CTRL_H__
 #define GPIO_CTRL_H__
 
@@ -21,6 +26,11 @@ typedef enum {
   GPIO_CTRL_EDGE_BOTH,
 } GpioCtrl_Edge;
 
+typedef enum {
+  GPIO_CTRL_POWER_3V3 = 0,
+  GPIO_CTRL_POWER_5V,
+} GpioCtrl_PowerRail;
+
 typedef struct {
   GpioCtrl_Mode mode;
   bool pullUp;
@@ -36,6 +46,7 @@ typedef struct {
 } GpioCtrl_TraceEvent;
 
 bool GpioCtrl_IsValidLogicalPin(int pin);
+int GpioCtrl_GetLogicalCount(void);
 esp_err_t GpioCtrl_Init(void);
 esp_err_t GpioCtrl_GetState(int logicalPin, GpioCtrl_State* out);
 esp_err_t GpioCtrl_SetConfig(int logicalPin, GpioCtrl_Mode mode, bool pullUp, bool pullDown);
@@ -47,6 +58,11 @@ const char* GpioCtrl_ModeToString(GpioCtrl_Mode mode);
 bool GpioCtrl_ModeFromString(const char* s, GpioCtrl_Mode* out);
 bool GpioCtrl_EdgeFromString(const char* s, GpioCtrl_Edge* out);
 const char* GpioCtrl_EdgeToString(GpioCtrl_Edge edge);
+
+esp_err_t GpioCtrl_GetPowerEnable(GpioCtrl_PowerRail rail, bool* enable);
+esp_err_t GpioCtrl_SetPowerEnable(GpioCtrl_PowerRail rail, bool enable);
+bool GpioCtrl_PowerRailFromString(const char* s, GpioCtrl_PowerRail* out);
+const char* GpioCtrl_PowerRailToString(GpioCtrl_PowerRail rail);
 
 /**
  * Blocking capture. eventsOut capacity is maxEvents.

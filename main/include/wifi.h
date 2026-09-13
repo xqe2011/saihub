@@ -1,3 +1,8 @@
+/**
+ * @name WIFI module
+ * @file wifi.h
+ * @author xqe2011
+ */
 #ifndef WIFI_H__
 #define WIFI_H__
 

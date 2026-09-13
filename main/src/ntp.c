@@ -10,18 +10,18 @@
 #include <sys/time.h>
 #include <time.h>
 
-static const char* tag = "Ntp";
-static bool s_synced = false;
+static const char* tag = "SAIHUB-Ntp";
+static bool isSynced = false;
 
 bool Ntp_IsSynced(void)
 {
-  return s_synced;
+  return isSynced;
 }
 
 static void Ntp_TimeSyncNotification(struct timeval* tv)
 {
   (void)tv;
-  s_synced = true;
+  isSynced = true;
   ESP_LOGI(tag, "Time synchronized");
 }
 
@@ -35,7 +35,7 @@ esp_err_t Ntp_Init(void)
 
 esp_err_t Ntp_SyncAndWait(void)
 {
-  s_synced = false;
+  isSynced = false;
   if (esp_sntp_enabled()) {
     esp_sntp_restart();
   } else {
@@ -43,7 +43,7 @@ esp_err_t Ntp_SyncAndWait(void)
   }
 
   int64_t startMs = (int64_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
-  while (!s_synced) {
+  while (!isSynced) {
     int64_t nowMs = (int64_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
     if (nowMs - startMs > CONFIG_NTP_WAIT_TIMEOUT_MS) {
       ESP_LOGE(tag, "NTP sync timeout");
@@ -55,7 +55,7 @@ esp_err_t Ntp_SyncAndWait(void)
     struct tm tmNow = {0};
     gmtime_r(&now, &tmNow);
     if (tmNow.tm_year + 1900 >= 2024) {
-      s_synced = true;
+      isSynced = true;
       break;
     }
     vTaskDelay(pdMS_TO_TICKS(200));
