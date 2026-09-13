@@ -21,42 +21,6 @@
 static const char* tag = "SAIHUB-Http";
 
 #define TRACE_DEFAULT_DURATION_US 1000000ULL
-#define MODE_HINT "disable, digitalInput, digitalOutput, digitalInputOutput, pwmOutput"
-
-static esp_err_t Route_PinParseConfigBody(cJSON* body, GpioCtrl_Mode* modeOut, bool* openDrainOut, bool* pullUpOut,
-                                          bool* pullDownOut, char* reason, size_t reasonLen)
-{
-  cJSON* modeItem = cJSON_GetObjectItem(body, "mode");
-  cJSON* pullUpItem = cJSON_GetObjectItem(body, "pullUp");
-  cJSON* pullDownItem = cJSON_GetObjectItem(body, "pullDown");
-  cJSON* openDrainItem = cJSON_GetObjectItem(body, "openDrain");
-  GpioCtrl_Mode mode;
-  if (!cJSON_IsString(modeItem) || !GpioCtrl_ModeFromString(modeItem->valuestring, &mode)) {
-    snprintf(reason, reasonLen, "mode is invalid. Use one of: %s.", MODE_HINT);
-    return ESP_ERR_INVALID_ARG;
-  }
-  if (!cJSON_IsBool(pullUpItem) || !cJSON_IsBool(pullDownItem)) {
-    snprintf(reason, reasonLen, "pullUp and pullDown must be boolean.");
-    return ESP_ERR_INVALID_ARG;
-  }
-  bool openDrain = false;
-  if (openDrainItem != NULL) {
-    if (!cJSON_IsBool(openDrainItem)) {
-      snprintf(reason, reasonLen, "openDrain must be boolean.");
-      return ESP_ERR_INVALID_ARG;
-    }
-    openDrain = cJSON_IsTrue(openDrainItem);
-  }
-  if (openDrain && (mode == GPIO_CTRL_MODE_DISABLE || mode == GPIO_CTRL_MODE_DIGITAL_INPUT)) {
-    snprintf(reason, reasonLen, "openDrain cannot be true when mode is disable or digitalInput.");
-    return ESP_ERR_INVALID_ARG;
-  }
-  *modeOut = mode;
-  *openDrainOut = openDrain;
-  *pullUpOut = cJSON_IsTrue(pullUpItem);
-  *pullDownOut = cJSON_IsTrue(pullDownItem);
-  return ESP_OK;
-}
 
 static void Route_PinLevelWriteDenied(int pin, char* reason, size_t reasonLen)
 {
@@ -133,7 +97,7 @@ static esp_err_t Route_PinPutModeHandler(httpd_req_t* req)
   bool openDrain = false;
   bool pullUp = false;
   bool pullDown = false;
-  if (Route_PinParseConfigBody(body, &mode, &openDrain, &pullUp, &pullDown, reason, sizeof(reason)) != ESP_OK) {
+  if (HttpServer_ParsePinConfigBody(body, &mode, &openDrain, &pullUp, &pullDown, reason, sizeof(reason)) != ESP_OK) {
     cJSON_Delete(body);
     return HttpServer_SendError(req, 400, reason);
   }
@@ -590,7 +554,7 @@ static esp_err_t Route_PinBatchPutConfigHandler(httpd_req_t* req)
   bool openDrain = false;
   bool pullUp = false;
   bool pullDown = false;
-  if (Route_PinParseConfigBody(body, &mode, &openDrain, &pullUp, &pullDown, reason, sizeof(reason)) != ESP_OK) {
+  if (HttpServer_ParsePinConfigBody(body, &mode, &openDrain, &pullUp, &pullDown, reason, sizeof(reason)) != ESP_OK) {
     cJSON_Delete(body);
     return HttpServer_SendError(req, 400, reason);
   }

@@ -20,6 +20,7 @@ static esp_err_t Route_OpenApiGetHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   size_t len = (size_t)(openapi_json_end - openapi_json_start);
+  HttpServer_SetCors(req);
   httpd_resp_set_type(req, "application/json");
   return httpd_resp_send(req, (const char*)openapi_json_start, len);
 }

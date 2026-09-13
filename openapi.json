@@ -50,6 +50,141 @@
         }
       }
     },
+    "/mcp": {
+      "post": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "MCP Streamable HTTP endpoint (JSON-RPC 2.0)",
+        "description": "Stateless MCP Streamable HTTP transport. POST a single JSON-RPC request or notification. Responses are application/json (no SSE). Notifications and client responses return 202. Tools cover pin, power, and lock operations; see tools/list.",
+        "parameters": [
+          {
+            "name": "Accept",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Must include application/json and/or text/event-stream"
+          },
+          {
+            "name": "MCP-Protocol-Version",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2025-06-18",
+                "2025-03-26",
+                "2024-11-05"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "method"
+                ],
+                "properties": {
+                  "jsonrpc": {
+                    "type": "string",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "id": {
+                    "description": "Present for requests; omit for notifications",
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "initialize, notifications/initialized, ping, tools/list, tools/call"
+                  },
+                  "params": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "JSON-RPC response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted notification or client response (empty body)"
+          },
+          "400": {
+            "description": "Invalid JSON-RPC or unsupported MCP-Protocol-Version"
+          },
+          "406": {
+            "description": "Accept header missing required types"
+          },
+          "415": {
+            "description": "Content-Type must be application/json"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "MCP SSE listen (not supported)",
+        "description": "This server does not offer an SSE stream. Returns 405.",
+        "responses": {
+          "405": {
+            "description": "Method Not Allowed"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "MCP session terminate (not supported)",
+        "description": "Stateless server; sessions are not used. Returns 405.",
+        "responses": {
+          "405": {
+            "description": "Method Not Allowed"
+          }
+        }
+      },
+      "options": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "CORS preflight for /mcp",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
     "/pin/": {
       "get": {
         "tags": [

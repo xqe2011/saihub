@@ -39,6 +39,8 @@ const char* HttpServer_MethodName(int method)
       return "DELETE";
     case HTTP_PATCH:
       return "PATCH";
+    case HTTP_OPTIONS:
+      return "OPTIONS";
     default:
       return "?";
   }
@@ -56,9 +58,28 @@ void HttpServer_LogCall(httpd_req_t* req)
   }
 }
 
+void HttpServer_SetCors(httpd_req_t* req)
+{
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Headers",
+                     "Content-Type, Accept, X-Lock-Id, MCP-Protocol-Version, Mcp-Session-Id");
+  httpd_resp_set_hdr(req, "Access-Control-Expose-Headers", "X-Lock-Id, Mcp-Session-Id, MCP-Protocol-Version");
+  httpd_resp_set_hdr(req, "Access-Control-Max-Age", "86400");
+}
+
+esp_err_t HttpServer_SendOptions(httpd_req_t* req)
+{
+  HttpServer_LogCall(req);
+  HttpServer_SetCors(req);
+  httpd_resp_set_status(req, "204 No Content");
+  return httpd_resp_send(req, NULL, 0);
+}
+
 esp_err_t HttpServer_SendError(httpd_req_t* req, int status, const char* reason)
 {
   ESP_LOGW(tag, "Resp %s %s -> %d %s", HttpServer_MethodName(req->method), req->uri, status, reason ? reason : "");
+  HttpServer_SetCors(req);
   cJSON* root = cJSON_CreateObject();
   cJSON* err = cJSON_CreateObject();
   cJSON_AddStringToObject(err, "reason", reason ? reason : "internal");
@@ -113,6 +134,7 @@ esp_err_t HttpServer_SendError(httpd_req_t* req, int status, const char* reason)
 esp_err_t HttpServer_SendJson(httpd_req_t* req, int status, cJSON* root)
 {
   ESP_LOGI(tag, "Resp %s %s -> %d", HttpServer_MethodName(req->method), req->uri, status);
+  HttpServer_SetCors(req);
   char* printed = cJSON_PrintUnformatted(root);
   cJSON_Delete(root);
   if (printed == NULL) {
@@ -138,6 +160,7 @@ esp_err_t HttpServer_SendJson(httpd_req_t* req, int status, cJSON* root)
 esp_err_t HttpServer_SendEmpty(httpd_req_t* req, int status)
 {
   ESP_LOGI(tag, "Resp %s %s -> %d", HttpServer_MethodName(req->method), req->uri, status);
+  HttpServer_SetCors(req);
   if (status == 204) {
     httpd_resp_set_status(req, "204 No Content");
   } else {
@@ -169,11 +192,10 @@ void HttpServer_FormatPinRange(char* out, size_t outLen)
   snprintf(out, outLen, "0 to %d", maxPin);
 }
 
-int HttpServer_LockStatus(httpd_req_t* req, Lock_Kind kind, int pin, uint8_t methods, char* lockIdBuf, size_t lockIdLen,
-                    char* reasonOut, size_t reasonLen)
+int HttpServer_LockStatusId(const char* lockId, Lock_Kind kind, int pin, uint8_t methods, char* reasonOut,
+                            size_t reasonLen)
 {
-  HttpServer_GetLockHeader(req, lockIdBuf, lockIdLen);
-  const char* hdr = lockIdBuf[0] ? lockIdBuf : NULL;
+  const char* hdr = (lockId && lockId[0]) ? lockId : NULL;
   esp_err_t ret = Lock_CheckAccess(kind, pin, methods, hdr);
   if (ret == ESP_ERR_NOT_FOUND) {
     snprintf(reasonOut, reasonLen,
@@ -197,6 +219,49 @@ int HttpServer_LockStatus(httpd_req_t* req, Lock_Kind kind, int pin, uint8_t met
     return 423;
   }
   return 0;
+}
+
+int HttpServer_LockStatus(httpd_req_t* req, Lock_Kind kind, int pin, uint8_t methods, char* lockIdBuf, size_t lockIdLen,
+                    char* reasonOut, size_t reasonLen)
+{
+  HttpServer_GetLockHeader(req, lockIdBuf, lockIdLen);
+  return HttpServer_LockStatusId(lockIdBuf, kind, pin, methods, reasonOut, reasonLen);
+}
+
+esp_err_t HttpServer_ParsePinConfigBody(cJSON* body, GpioCtrl_Mode* modeOut, bool* openDrainOut, bool* pullUpOut,
+                                        bool* pullDownOut, char* reason, size_t reasonLen)
+{
+  static const char* modeHint = "disable, digitalInput, digitalOutput, digitalInputOutput, pwmOutput";
+  cJSON* modeItem = cJSON_GetObjectItem(body, "mode");
+  cJSON* pullUpItem = cJSON_GetObjectItem(body, "pullUp");
+  cJSON* pullDownItem = cJSON_GetObjectItem(body, "pullDown");
+  cJSON* openDrainItem = cJSON_GetObjectItem(body, "openDrain");
+  GpioCtrl_Mode mode;
+  if (!cJSON_IsString(modeItem) || !GpioCtrl_ModeFromString(modeItem->valuestring, &mode)) {
+    snprintf(reason, reasonLen, "mode is invalid. Use one of: %s.", modeHint);
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!cJSON_IsBool(pullUpItem) || !cJSON_IsBool(pullDownItem)) {
+    snprintf(reason, reasonLen, "pullUp and pullDown must be boolean.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  bool openDrain = false;
+  if (openDrainItem != NULL) {
+    if (!cJSON_IsBool(openDrainItem)) {
+      snprintf(reason, reasonLen, "openDrain must be boolean.");
+      return ESP_ERR_INVALID_ARG;
+    }
+    openDrain = cJSON_IsTrue(openDrainItem);
+  }
+  if (openDrain && (mode == GPIO_CTRL_MODE_DISABLE || mode == GPIO_CTRL_MODE_DIGITAL_INPUT)) {
+    snprintf(reason, reasonLen, "openDrain cannot be true when mode is disable or digitalInput.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  *modeOut = mode;
+  *openDrainOut = openDrain;
+  *pullUpOut = cJSON_IsTrue(pullUpItem);
+  *pullDownOut = cJSON_IsTrue(pullDownItem);
+  return ESP_OK;
 }
 
 int HttpServer_ParsePathPin(const char* uri, const char* prefix, const char* suffix, int* pinOut)
@@ -328,7 +393,7 @@ esp_err_t HttpServer_Start(void)
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
   config.uri_match_fn = httpd_uri_match_wildcard;
-  config.max_uri_handlers = 32;
+  config.max_uri_handlers = 40;
   config.lru_purge_enable = true;
   config.recv_wait_timeout = 65;
   config.send_wait_timeout = 65;
@@ -338,6 +403,9 @@ esp_err_t HttpServer_Start(void)
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(server), "pin routes failed");
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(server), "lock routes failed");
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PowerRegister(server), "power routes failed");
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_McpRegister(server), "mcp routes failed");
+  static const httpd_uri_t optionsUri = {.uri = "/*", .method = HTTP_OPTIONS, .handler = HttpServer_SendOptions};
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_register_uri_handler(server, &optionsUri), "options cors route failed");
   httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, HttpServer_NotFoundHandler);
   ESP_LOGI(tag, "HTTP server started on port 80");
   return ESP_OK;
