@@ -8,5 +8,5 @@ idf_component_register(
     SRCS "${SRC_FILES}"
     INCLUDE_DIRS "include"
     EMBED_FILES "../openapi.json"
-    REQUIRES nvs_flash esp_wifi esp_netif esp_event esp_http_server json driver esp_timer lwip
+    REQUIRES nvs_flash esp_wifi esp_netif esp_event esp_http_server json driver esp_timer lwip esp_driver_ledc esp_driver_gpio
 )

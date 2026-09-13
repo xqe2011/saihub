@@ -10,7 +10,7 @@
 #include <esp_http_server.h>
 
 esp_err_t Route_OpenApiRegister(httpd_handle_t server);
-esp_err_t Route_GpioRegister(httpd_handle_t server);
+esp_err_t Route_PinRegister(httpd_handle_t server);
 esp_err_t Route_LockRegister(httpd_handle_t server);
 esp_err_t Route_PowerRegister(httpd_handle_t server);
 

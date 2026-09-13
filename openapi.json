@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Saihub GPIO REST API",
+    "title": "Saihub Pin REST API",
     "version": "1.0.0",
-    "description": "No-TLS JSON REST API for logical GPIO pins 0-7, power rails (3v3/5v), edge tracing, and resource locks. All time fields are microseconds. JSON keys are camelCase."
+    "description": "No-TLS JSON REST API for logical pins 0-7, PWM, power rails (3v3/5v), edge tracing, and resource locks. All time fields are microseconds. JSON keys are camelCase."
   },
   "servers": [
     {
@@ -16,92 +16,148 @@
     }
   ],
   "tags": [
-    { "name": "gpios" },
-    { "name": "power" },
-    { "name": "locks" },
-    { "name": "meta" }
+    {
+      "name": "pin"
+    },
+    {
+      "name": "power"
+    },
+    {
+      "name": "lock"
+    },
+    {
+      "name": "meta"
+    }
   ],
   "paths": {
     "/openapi.json": {
       "get": {
-        "tags": ["meta"],
+        "tags": [
+          "meta"
+        ],
         "summary": "OpenAPI document",
         "responses": {
           "200": {
             "description": "OpenAPI JSON",
             "content": {
               "application/json": {
-                "schema": { "type": "object" }
+                "schema": {
+                  "type": "object"
+                }
               }
             }
           }
         }
       }
     },
-    "/gpios/": {
+    "/pin/": {
       "get": {
-        "tags": ["gpios"],
+        "tags": [
+          "pin"
+        ],
         "summary": "List all logical pins 0-7",
         "parameters": [
-          { "$ref": "#/components/parameters/XLockId" }
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
         ],
         "responses": {
           "200": {
-            "description": "GPIO inventory",
+            "description": "Pin inventory",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["gpios", "time"],
+                  "required": [
+                    "pins",
+                    "time"
+                  ],
                   "properties": {
-                    "gpios": {
+                    "pins": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/GpioState" }
+                      "items": {
+                        "$ref": "#/components/schemas/PinState"
+                      }
                     },
-                    "time": { "$ref": "#/components/schemas/TimeUs" }
+                    "time": {
+                      "$ref": "#/components/schemas/TimeUs"
+                    }
                   }
                 }
               }
             }
           },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       }
     },
-    "/gpios/{pin}/config": {
+    "/pin/{pin}": {
       "put": {
-        "tags": ["gpios"],
-        "summary": "Configure a pin (no interrupt)",
+        "tags": [
+          "pin"
+        ],
+        "summary": "Configure pin mode and params",
         "parameters": [
-          { "$ref": "#/components/parameters/PinPath" },
-          { "$ref": "#/components/parameters/XLockId" }
+          {
+            "$ref": "#/components/parameters/PinPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/GpioConfig" }
+              "schema": {
+                "$ref": "#/components/schemas/PinConfig"
+              }
             }
           }
         },
         "responses": {
-          "204": { "description": "Configured" },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "204": {
+            "description": "Configured"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       }
     },
-    "/gpios/{pin}/level": {
+    "/pin/{pin}/level": {
       "get": {
-        "tags": ["gpios"],
+        "tags": [
+          "pin"
+        ],
         "summary": "Read pin level",
         "parameters": [
-          { "$ref": "#/components/parameters/PinPath" },
-          { "$ref": "#/components/parameters/XLockId" }
+          {
+            "$ref": "#/components/parameters/PinPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
         ],
         "responses": {
           "200": {
@@ -110,26 +166,49 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["level", "time"],
+                  "required": [
+                    "level",
+                    "time"
+                  ],
                   "properties": {
-                    "level": { "type": "integer", "enum": [0, 1] },
-                    "time": { "$ref": "#/components/schemas/TimeUs" }
+                    "level": {
+                      "type": "integer",
+                      "enum": [
+                        0,
+                        1
+                      ]
+                    },
+                    "time": {
+                      "$ref": "#/components/schemas/TimeUs"
+                    }
                   }
                 }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       },
       "post": {
-        "tags": ["gpios"],
-        "summary": "Write pin level",
+        "tags": [
+          "pin"
+        ],
+        "summary": "Write pin level (digitalOutput or digitalInputOutput)",
         "parameters": [
-          { "$ref": "#/components/parameters/PinPath" },
-          { "$ref": "#/components/parameters/XLockId" }
+          {
+            "$ref": "#/components/parameters/PinPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -137,69 +216,212 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["level"],
+                "required": [
+                  "level"
+                ],
                 "properties": {
-                  "level": { "type": "integer", "enum": [0, 1] }
+                  "level": {
+                    "type": "integer",
+                    "enum": [
+                      0,
+                      1
+                    ]
+                  }
                 }
               }
             }
           }
         },
         "responses": {
-          "204": { "description": "Written" },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "422": { "$ref": "#/components/responses/Unprocessable" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "204": {
+            "description": "Written"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       }
     },
-    "/gpios/{pin}/pulse": {
+    "/pin/{pin}/pulse": {
       "post": {
-        "tags": ["gpios"],
+        "tags": [
+          "pin"
+        ],
         "summary": "Pulse pin for width microseconds then invert",
         "parameters": [
-          { "$ref": "#/components/parameters/PinPath" },
-          { "$ref": "#/components/parameters/XLockId" }
+          {
+            "$ref": "#/components/parameters/PinPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/PulseBody" }
+              "schema": {
+                "$ref": "#/components/schemas/PulseBody"
+              }
             }
           }
         },
         "responses": {
-          "204": { "description": "Pulsed" },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "422": { "$ref": "#/components/responses/Unprocessable" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "204": {
+            "description": "Pulsed"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       }
     },
-    "/gpios/{pin}/trace": {
+    "/pin/{pin}/pwm": {
       "get": {
-        "tags": ["gpios"],
+        "tags": [
+          "pin"
+        ],
+        "summary": "Read PWM frequency and duty (pwmOutput only)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PinPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PWM state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PwmState"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "pin"
+        ],
+        "summary": "Set PWM frequency and duty (pwmOutput only)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PinPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PwmBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Updated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/pin/{pin}/trace": {
+      "get": {
+        "tags": [
+          "pin"
+        ],
         "summary": "Capture edge events on one pin",
         "parameters": [
-          { "$ref": "#/components/parameters/PinPath" },
-          { "$ref": "#/components/parameters/XLockId" },
+          {
+            "$ref": "#/components/parameters/PinPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          },
           {
             "name": "edge",
             "in": "query",
-            "schema": { "$ref": "#/components/schemas/Edge" }
+            "schema": {
+              "$ref": "#/components/schemas/Edge"
+            }
           },
           {
             "name": "duration",
             "in": "query",
             "description": "Capture window in microseconds (max 60000000)",
-            "schema": { "type": "integer", "minimum": 1, "maximum": 60000000 }
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60000000
+            }
           }
         ],
         "responses": {
@@ -209,38 +431,60 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["events"],
+                  "required": [
+                    "events"
+                  ],
                   "properties": {
                     "events": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/TraceEvent" }
+                      "items": {
+                        "$ref": "#/components/schemas/TraceEvent"
+                      }
                     }
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       }
     },
-    "/gpios/level": {
+    "/pin/level": {
       "get": {
-        "tags": ["gpios"],
+        "tags": [
+          "pin"
+        ],
         "summary": "Batch read levels",
-        "parameters": [{ "$ref": "#/components/parameters/XLockId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["pins"],
+                "required": [
+                  "pins"
+                ],
                 "properties": {
-                  "pins": { "$ref": "#/components/schemas/Pins" }
+                  "pins": {
+                    "$ref": "#/components/schemas/Pins"
+                  }
                 }
               }
             }
@@ -253,70 +497,130 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["levels", "time"],
+                  "required": [
+                    "levels",
+                    "time"
+                  ],
                   "properties": {
                     "levels": {
                       "type": "array",
-                      "items": { "type": "integer", "enum": [0, 1] }
+                      "items": {
+                        "type": "integer",
+                        "enum": [
+                          0,
+                          1
+                        ]
+                      }
                     },
-                    "time": { "$ref": "#/components/schemas/TimeUs" }
+                    "time": {
+                      "$ref": "#/components/schemas/TimeUs"
+                    }
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       },
       "post": {
-        "tags": ["gpios"],
+        "tags": [
+          "pin"
+        ],
         "summary": "Batch write level",
-        "parameters": [{ "$ref": "#/components/parameters/XLockId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["pins", "level"],
+                "required": [
+                  "pins",
+                  "level"
+                ],
                 "properties": {
-                  "pins": { "$ref": "#/components/schemas/Pins" },
-                  "level": { "type": "integer", "enum": [0, 1] }
+                  "pins": {
+                    "$ref": "#/components/schemas/Pins"
+                  },
+                  "level": {
+                    "type": "integer",
+                    "enum": [
+                      0,
+                      1
+                    ]
+                  }
                 }
               }
             }
           }
         },
         "responses": {
-          "204": { "description": "Written" },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "422": { "$ref": "#/components/responses/Unprocessable" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "204": {
+            "description": "Written"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       }
     },
-    "/gpios/config": {
+    "/pin/config": {
       "put": {
-        "tags": ["gpios"],
+        "tags": [
+          "pin"
+        ],
         "summary": "Batch configure pins",
-        "parameters": [{ "$ref": "#/components/parameters/XLockId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "allOf": [
-                  { "$ref": "#/components/schemas/GpioConfig" },
+                  {
+                    "$ref": "#/components/schemas/PinConfig"
+                  },
                   {
                     "type": "object",
-                    "required": ["pins"],
+                    "required": [
+                      "pins"
+                    ],
                     "properties": {
-                      "pins": { "$ref": "#/components/schemas/Pins" }
+                      "pins": {
+                        "$ref": "#/components/schemas/Pins"
+                      }
                     }
                   }
                 ]
@@ -325,31 +629,56 @@
           }
         },
         "responses": {
-          "204": { "description": "Configured" },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "204": {
+            "description": "Configured"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       }
     },
-    "/gpios/pulse": {
+    "/pin/pulse": {
       "post": {
-        "tags": ["gpios"],
+        "tags": [
+          "pin"
+        ],
         "summary": "Batch pulse",
-        "parameters": [{ "$ref": "#/components/parameters/XLockId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "allOf": [
-                  { "$ref": "#/components/schemas/PulseBody" },
+                  {
+                    "$ref": "#/components/schemas/PulseBody"
+                  },
                   {
                     "type": "object",
-                    "required": ["pins"],
+                    "required": [
+                      "pins"
+                    ],
                     "properties": {
-                      "pins": { "$ref": "#/components/schemas/Pins" }
+                      "pins": {
+                        "$ref": "#/components/schemas/Pins"
+                      }
                     }
                   }
                 ]
@@ -358,30 +687,54 @@
           }
         },
         "responses": {
-          "204": { "description": "Pulsed" },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "422": { "$ref": "#/components/responses/Unprocessable" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "204": {
+            "description": "Pulsed"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       }
     },
-    "/gpios/trace": {
+    "/pin/trace": {
       "get": {
-        "tags": ["gpios"],
+        "tags": [
+          "pin"
+        ],
         "summary": "Batch edge capture",
-        "parameters": [{ "$ref": "#/components/parameters/XLockId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["pins"],
+                "required": [
+                  "pins"
+                ],
                 "properties": {
-                  "pins": { "$ref": "#/components/schemas/Pins" },
-                  "edge": { "$ref": "#/components/schemas/Edge" },
+                  "pins": {
+                    "$ref": "#/components/schemas/Pins"
+                  },
+                  "edge": {
+                    "$ref": "#/components/schemas/Edge"
+                  },
                   "duration": {
                     "type": "integer",
                     "minimum": 1,
@@ -400,105 +753,179 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["events"],
+                  "required": [
+                    "events"
+                  ],
                   "properties": {
                     "events": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/TraceEventWithPin" }
+                      "items": {
+                        "$ref": "#/components/schemas/TraceEventWithPin"
+                      }
                     }
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       }
     },
     "/power/3v3": {
       "get": {
-        "tags": ["power"],
+        "tags": [
+          "power"
+        ],
         "summary": "Read 3V3 rail enable state",
-        "parameters": [{ "$ref": "#/components/parameters/XLockId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Enable state",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/PowerState" }
+                "schema": {
+                  "$ref": "#/components/schemas/PowerState"
+                }
               }
             }
           },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       },
       "post": {
-        "tags": ["power"],
+        "tags": [
+          "power"
+        ],
         "summary": "Set 3V3 rail enable",
-        "parameters": [{ "$ref": "#/components/parameters/XLockId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/PowerEnable" }
+              "schema": {
+                "$ref": "#/components/schemas/PowerEnable"
+              }
             }
           }
         },
         "responses": {
-          "204": { "description": "Updated" },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "204": {
+            "description": "Updated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       }
     },
     "/power/5v": {
       "get": {
-        "tags": ["power"],
+        "tags": [
+          "power"
+        ],
         "summary": "Read 5V rail enable state",
-        "parameters": [{ "$ref": "#/components/parameters/XLockId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Enable state",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/PowerState" }
+                "schema": {
+                  "$ref": "#/components/schemas/PowerState"
+                }
               }
             }
           },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       },
       "post": {
-        "tags": ["power"],
+        "tags": [
+          "power"
+        ],
         "summary": "Set 5V rail enable",
-        "parameters": [{ "$ref": "#/components/parameters/XLockId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/PowerEnable" }
+              "schema": {
+                "$ref": "#/components/schemas/PowerEnable"
+              }
             }
           }
         },
         "responses": {
-          "204": { "description": "Updated" },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "412": { "$ref": "#/components/responses/PreconditionFailed" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "423": { "$ref": "#/components/responses/Locked" }
+          "204": {
+            "description": "Updated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
         }
       }
     },
-    "/locks": {
+    "/lock": {
       "post": {
-        "tags": ["locks"],
+        "tags": [
+          "lock"
+        ],
         "summary": "Create a lock",
         "requestBody": {
           "required": true,
@@ -506,12 +933,16 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["resources"],
+                "required": [
+                  "resources"
+                ],
                 "properties": {
                   "resources": {
                     "type": "array",
                     "minItems": 1,
-                    "items": { "$ref": "#/components/schemas/LockResource" }
+                    "items": {
+                      "$ref": "#/components/schemas/LockResource"
+                    }
                   }
                 }
               }
@@ -523,26 +954,38 @@
             "description": "Created",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Lock" }
+                "schema": {
+                  "$ref": "#/components/schemas/Lock"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "409": { "$ref": "#/components/responses/Conflict" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          }
         }
       }
     },
-    "/locks/{id}": {
+    "/lock/{id}": {
       "put": {
-        "tags": ["locks"],
+        "tags": [
+          "lock"
+        ],
         "summary": "Renew a lock",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -552,32 +995,50 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["id", "ttl", "expiresAt"],
+                  "required": [
+                    "id",
+                    "ttl",
+                    "expiresAt"
+                  ],
                   "properties": {
-                    "id": { "type": "string" },
-                    "ttl": { "$ref": "#/components/schemas/TimeUs" },
-                    "expiresAt": { "$ref": "#/components/schemas/TimeUs" }
+                    "id": {
+                      "type": "string"
+                    },
+                    "ttl": {
+                      "$ref": "#/components/schemas/TimeUs"
+                    },
+                    "expiresAt": {
+                      "$ref": "#/components/schemas/TimeUs"
+                    }
                   }
                 }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       },
       "delete": {
-        "tags": ["locks"],
+        "tags": [
+          "lock"
+        ],
         "summary": "Delete a lock (idempotent)",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
-          "204": { "description": "Deleted or already gone" }
+          "204": {
+            "description": "Deleted or already gone"
+          }
         }
       }
     }
@@ -588,14 +1049,20 @@
         "name": "pin",
         "in": "path",
         "required": true,
-        "schema": { "type": "integer", "minimum": 0, "maximum": 7 }
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        }
       },
       "XLockId": {
         "name": "X-Lock-Id",
         "in": "header",
         "required": false,
-        "schema": { "type": "string" },
-        "description": "Required when another lock holds the resource+method (GPIO pin or power rail). Missing or unknown yields 412; a different live holder yields 423."
+        "schema": {
+          "type": "string"
+        },
+        "description": "Required when another lock holds the resource+method (pin or power rail). Missing or unknown yields 412; a different live holder yields 423."
       }
     },
     "schemas": {
@@ -608,45 +1075,140 @@
         "type": "string",
         "enum": [
           "disable",
-          "input",
-          "output",
-          "output_open_drain",
-          "input_output",
-          "input_output_open_drain"
+          "digitalInput",
+          "digitalOutput",
+          "digitalInputOutput",
+          "pwmOutput"
         ]
       },
       "Edge": {
         "type": "string",
-        "enum": ["raising", "falling", "both"]
+        "enum": [
+          "raising",
+          "falling",
+          "both"
+        ]
       },
       "Pins": {
         "type": "array",
         "minItems": 1,
-        "items": { "type": "integer", "minimum": 0, "maximum": 7 }
-      },
-      "GpioConfig": {
-        "type": "object",
-        "required": ["mode", "pullUp", "pullDown"],
-        "properties": {
-          "mode": { "$ref": "#/components/schemas/Mode" },
-          "pullUp": { "type": "boolean" },
-          "pullDown": { "type": "boolean" }
+        "items": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
         }
       },
-      "GpioState": {
+      "PinConfig": {
         "type": "object",
-        "required": ["pin", "mode", "pullUp", "pullDown", "level"],
+        "required": [
+          "mode",
+          "pullUp",
+          "pullDown"
+        ],
         "properties": {
-          "pin": { "type": "integer", "minimum": 0, "maximum": 7 },
-          "mode": { "$ref": "#/components/schemas/Mode" },
-          "pullUp": { "type": "boolean" },
-          "pullDown": { "type": "boolean" },
-          "level": { "type": "integer", "enum": [0, 1] }
+          "mode": {
+            "$ref": "#/components/schemas/Mode"
+          },
+          "openDrain": {
+            "type": "boolean",
+            "default": false,
+            "description": "Allowed for digitalOutput, digitalInputOutput, and pwmOutput"
+          },
+          "pullUp": {
+            "type": "boolean"
+          },
+          "pullDown": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PinState": {
+        "type": "object",
+        "required": [
+          "pin",
+          "mode",
+          "openDrain",
+          "pullUp",
+          "pullDown",
+          "level"
+        ],
+        "properties": {
+          "pin": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "mode": {
+            "$ref": "#/components/schemas/Mode"
+          },
+          "openDrain": {
+            "type": "boolean"
+          },
+          "pullUp": {
+            "type": "boolean"
+          },
+          "pullDown": {
+            "type": "boolean"
+          },
+          "level": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        }
+      },
+      "PwmBody": {
+        "type": "object",
+        "required": [
+          "frequency",
+          "duty"
+        ],
+        "properties": {
+          "frequency": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50000,
+            "description": "Hz"
+          },
+          "duty": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Percent, decimals allowed"
+          }
+        }
+      },
+      "PwmState": {
+        "type": "object",
+        "required": [
+          "frequency",
+          "duty",
+          "time"
+        ],
+        "properties": {
+          "frequency": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50000
+          },
+          "duty": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "time": {
+            "$ref": "#/components/schemas/TimeUs"
+          }
         }
       },
       "PulseBody": {
         "type": "object",
-        "required": ["width", "level"],
+        "required": [
+          "width",
+          "level"
+        ],
         "properties": {
           "width": {
             "type": "integer",
@@ -654,26 +1216,58 @@
             "maximum": 1000000,
             "description": "Microseconds"
           },
-          "level": { "type": "integer", "enum": [0, 1] }
+          "level": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          }
         }
       },
       "TraceEvent": {
         "type": "object",
-        "required": ["edge", "level", "time"],
+        "required": [
+          "edge",
+          "level",
+          "time"
+        ],
         "properties": {
-          "edge": { "type": "string", "enum": ["raising", "falling"] },
-          "level": { "type": "integer", "enum": [0, 1] },
-          "time": { "$ref": "#/components/schemas/TimeUs" }
+          "edge": {
+            "type": "string",
+            "enum": [
+              "raising",
+              "falling"
+            ]
+          },
+          "level": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "time": {
+            "$ref": "#/components/schemas/TimeUs"
+          }
         }
       },
       "TraceEventWithPin": {
         "allOf": [
-          { "$ref": "#/components/schemas/TraceEvent" },
+          {
+            "$ref": "#/components/schemas/TraceEvent"
+          },
           {
             "type": "object",
-            "required": ["pin"],
+            "required": [
+              "pin"
+            ],
             "properties": {
-              "pin": { "type": "integer", "minimum": 0, "maximum": 7 }
+              "pin": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 7
+              }
             }
           }
         ]
@@ -681,40 +1275,77 @@
       "LockMethod": {
         "type": "array",
         "minItems": 1,
-        "items": { "type": "string", "enum": ["read", "write"] }
+        "items": {
+          "type": "string",
+          "enum": [
+            "read",
+            "write"
+          ]
+        }
       },
       "PowerEnable": {
         "type": "object",
-        "required": ["enable"],
+        "required": [
+          "enable"
+        ],
         "properties": {
-          "enable": { "type": "boolean" }
+          "enable": {
+            "type": "boolean"
+          }
         }
       },
       "PowerState": {
         "type": "object",
-        "required": ["enable", "time"],
+        "required": [
+          "enable",
+          "time"
+        ],
         "properties": {
-          "enable": { "type": "boolean" },
-          "time": { "$ref": "#/components/schemas/TimeUs" }
+          "enable": {
+            "type": "boolean"
+          },
+          "time": {
+            "$ref": "#/components/schemas/TimeUs"
+          }
         }
       },
       "LockResource": {
         "oneOf": [
           {
             "type": "object",
-            "required": ["pin", "method"],
+            "required": [
+              "pin",
+              "method"
+            ],
             "properties": {
-              "pin": { "type": "integer", "minimum": 0, "maximum": 7 },
-              "method": { "$ref": "#/components/schemas/LockMethod" }
+              "pin": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 7
+              },
+              "method": {
+                "$ref": "#/components/schemas/LockMethod"
+              }
             },
             "additionalProperties": false
           },
           {
             "type": "object",
-            "required": ["power", "method"],
+            "required": [
+              "power",
+              "method"
+            ],
             "properties": {
-              "power": { "type": "string", "enum": ["3v3", "5v"] },
-              "method": { "$ref": "#/components/schemas/LockMethod" }
+              "power": {
+                "type": "string",
+                "enum": [
+                  "3v3",
+                  "5v"
+                ]
+              },
+              "method": {
+                "$ref": "#/components/schemas/LockMethod"
+              }
             },
             "additionalProperties": false
           }
@@ -722,24 +1353,41 @@
       },
       "Lock": {
         "type": "object",
-        "required": ["id", "ttl", "expiresAt", "resources"],
+        "required": [
+          "id",
+          "ttl",
+          "expiresAt",
+          "resources"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "ttl": { "$ref": "#/components/schemas/TimeUs" },
-          "expiresAt": { "$ref": "#/components/schemas/TimeUs" },
+          "id": {
+            "type": "string"
+          },
+          "ttl": {
+            "$ref": "#/components/schemas/TimeUs"
+          },
+          "expiresAt": {
+            "$ref": "#/components/schemas/TimeUs"
+          },
           "resources": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/LockResource" }
+            "items": {
+              "$ref": "#/components/schemas/LockResource"
+            }
           }
         }
       },
       "Error": {
         "type": "object",
-        "required": ["error"],
+        "required": [
+          "error"
+        ],
         "properties": {
           "error": {
             "type": "object",
-            "required": ["reason"],
+            "required": [
+              "reason"
+            ],
             "properties": {
               "reason": {
                 "type": "string",
@@ -755,7 +1403,9 @@
         "description": "invalid_json or out-of-range body/query params",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       },
@@ -763,15 +1413,19 @@
         "description": "Unknown URL, pin in path out of 0-7, or lock id missing on PUT",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       },
       "Conflict": {
-        "description": "POST /locks overlaps an existing lock",
+        "description": "POST /lock overlaps an existing lock",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       },
@@ -779,7 +1433,9 @@
         "description": "X-Lock-Id missing or unknown/expired",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       },
@@ -787,15 +1443,19 @@
         "description": "Content-Type must be application/json",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       },
       "Unprocessable": {
-        "description": "Pin mode cannot perform the operation",
+        "description": "Pin mode cannot perform the operation, or LEDC resources exhausted",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       },
@@ -803,7 +1463,9 @@
         "description": "Resource+method held by a different live lock",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       }

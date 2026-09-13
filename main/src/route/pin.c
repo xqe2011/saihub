@@ -1,6 +1,6 @@
 /**
- * @name GPIO routes
- * @file gpio.c
+ * @name Pin routes
+ * @file pin.c
  * @author xqe2011
  */
 #include "route.h"
@@ -21,13 +21,62 @@
 static const char* tag = "SAIHUB-Http";
 
 #define TRACE_DEFAULT_DURATION_US 1000000ULL
+#define MODE_HINT "disable, digitalInput, digitalOutput, digitalInputOutput, pwmOutput"
 
-static esp_err_t Route_GpioListHandler(httpd_req_t* req)
+static esp_err_t Route_PinParseConfigBody(cJSON* body, GpioCtrl_Mode* modeOut, bool* openDrainOut, bool* pullUpOut,
+                                          bool* pullDownOut, char* reason, size_t reasonLen)
+{
+  cJSON* modeItem = cJSON_GetObjectItem(body, "mode");
+  cJSON* pullUpItem = cJSON_GetObjectItem(body, "pullUp");
+  cJSON* pullDownItem = cJSON_GetObjectItem(body, "pullDown");
+  cJSON* openDrainItem = cJSON_GetObjectItem(body, "openDrain");
+  GpioCtrl_Mode mode;
+  if (!cJSON_IsString(modeItem) || !GpioCtrl_ModeFromString(modeItem->valuestring, &mode)) {
+    snprintf(reason, reasonLen, "mode is invalid. Use one of: %s.", MODE_HINT);
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!cJSON_IsBool(pullUpItem) || !cJSON_IsBool(pullDownItem)) {
+    snprintf(reason, reasonLen, "pullUp and pullDown must be boolean.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  bool openDrain = false;
+  if (openDrainItem != NULL) {
+    if (!cJSON_IsBool(openDrainItem)) {
+      snprintf(reason, reasonLen, "openDrain must be boolean.");
+      return ESP_ERR_INVALID_ARG;
+    }
+    openDrain = cJSON_IsTrue(openDrainItem);
+  }
+  if (openDrain && (mode == GPIO_CTRL_MODE_DISABLE || mode == GPIO_CTRL_MODE_DIGITAL_INPUT)) {
+    snprintf(reason, reasonLen, "openDrain cannot be true when mode is disable or digitalInput.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  *modeOut = mode;
+  *openDrainOut = openDrain;
+  *pullUpOut = cJSON_IsTrue(pullUpItem);
+  *pullDownOut = cJSON_IsTrue(pullDownItem);
+  return ESP_OK;
+}
+
+static void Route_PinLevelWriteDenied(int pin, char* reason, size_t reasonLen)
+{
+  snprintf(reason, reasonLen,
+           "Pin %d cannot write level in its current mode. PUT /pin/%d with mode digitalOutput or "
+           "digitalInputOutput first.",
+           pin, pin);
+}
+
+static void Route_PinPwmDenied(int pin, char* reason, size_t reasonLen)
+{
+  snprintf(reason, reasonLen, "Pin %d is not in pwmOutput mode. PUT /pin/%d with mode pwmOutput first.", pin, pin);
+}
+
+static esp_err_t Route_PinListHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
   cJSON* root = cJSON_CreateObject();
-  cJSON* gpios = cJSON_CreateArray();
+  cJSON* pinsArr = cJSON_CreateArray();
   int count = GpioCtrl_GetLogicalCount();
   for (int i = 0; i < count; i++) {
     GpioCtrl_State st;
@@ -35,22 +84,23 @@ static esp_err_t Route_GpioListHandler(httpd_req_t* req)
     cJSON* item = cJSON_CreateObject();
     cJSON_AddNumberToObject(item, "pin", i);
     cJSON_AddStringToObject(item, "mode", GpioCtrl_ModeToString(st.mode));
+    cJSON_AddBoolToObject(item, "openDrain", st.openDrain);
     cJSON_AddBoolToObject(item, "pullUp", st.pullUp);
     cJSON_AddBoolToObject(item, "pullDown", st.pullDown);
     cJSON_AddNumberToObject(item, "level", st.level);
-    cJSON_AddItemToArray(gpios, item);
+    cJSON_AddItemToArray(pinsArr, item);
   }
-  cJSON_AddItemToObject(root, "gpios", gpios);
+  cJSON_AddItemToObject(root, "pins", pinsArr);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
   return HttpServer_SendJson(req, 200, root);
 }
 
-static esp_err_t Route_GpioPutConfigHandler(httpd_req_t* req)
+static esp_err_t Route_PinPutModeHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
   int pin = 0;
-  int pr = HttpServer_ParsePathPin(req->uri, "/gpios/", "/config", &pin);
+  int pr = HttpServer_ParsePathPin(req->uri, "/pin/", NULL, &pin);
   if (pr == -2) {
     return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
   }
@@ -58,7 +108,7 @@ static esp_err_t Route_GpioPutConfigHandler(httpd_req_t* req)
     char reason[96];
     char range[32];
     HttpServer_FormatPinRange(range, sizeof(range));
-    const char* p = req->uri + strlen("/gpios/");
+    const char* p = req->uri + strlen("/pin/");
     long raw = strtol(p, NULL, 10);
     snprintf(reason, sizeof(reason), "Pin %ld does not exist. Use a pin from %s.", raw, range);
     return HttpServer_SendError(req, 404, reason);
@@ -79,42 +129,39 @@ static esp_err_t Route_GpioPutConfigHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 400, "invalid_json");
   }
 
-  cJSON* modeItem = cJSON_GetObjectItem(body, "mode");
-  cJSON* pullUpItem = cJSON_GetObjectItem(body, "pullUp");
-  cJSON* pullDownItem = cJSON_GetObjectItem(body, "pullDown");
   GpioCtrl_Mode mode;
-  if (!cJSON_IsString(modeItem) || !GpioCtrl_ModeFromString(modeItem->valuestring, &mode)) {
+  bool openDrain = false;
+  bool pullUp = false;
+  bool pullDown = false;
+  if (Route_PinParseConfigBody(body, &mode, &openDrain, &pullUp, &pullDown, reason, sizeof(reason)) != ESP_OK) {
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400,
-                          "mode is invalid. Use one of: disable, input, output, output_open_drain, input_output, "
-                          "input_output_open_drain.");
+    return HttpServer_SendError(req, 400, reason);
   }
-  if (!cJSON_IsBool(pullUpItem) || !cJSON_IsBool(pullDownItem)) {
-    cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "pullUp and pullDown must be boolean.");
-  }
-  bool pullUp = cJSON_IsTrue(pullUpItem);
-  bool pullDown = cJSON_IsTrue(pullDownItem);
   cJSON_Delete(body);
 
-  if (GpioCtrl_SetConfig(pin, mode, pullUp, pullDown) != ESP_OK) {
+  esp_err_t cfg = GpioCtrl_SetConfig(pin, mode, openDrain, pullUp, pullDown);
+  if (cfg == ESP_ERR_NO_MEM) {
+    return HttpServer_SendError(
+        req, 422, "No free LEDC channel or timer for pwmOutput. Free another pwmOutput pin or reuse an existing frequency.");
+  }
+  if (cfg != ESP_OK) {
     return HttpServer_SendError(req, 500, "internal");
   }
   Lock_Touch(lockId[0] ? lockId : NULL);
   return HttpServer_SendEmpty(req, 204);
 }
 
-static esp_err_t Route_GpioGetLevelHandler(httpd_req_t* req)
+static esp_err_t Route_PinGetLevelHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
   int pin = 0;
-  int pr = HttpServer_ParsePathPin(req->uri, "/gpios/", "/level", &pin);
+  int pr = HttpServer_ParsePathPin(req->uri, "/pin/", "/level", &pin);
   if (pr == -2) {
     return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
   }
   if (pr == -3) {
-    const char* p = req->uri + strlen("/gpios/");
+    const char* p = req->uri + strlen("/pin/");
     long raw = strtol(p, NULL, 10);
     char reason[96];
     char range[32];
@@ -139,17 +186,17 @@ static esp_err_t Route_GpioGetLevelHandler(httpd_req_t* req)
   return HttpServer_SendJson(req, 200, root);
 }
 
-static esp_err_t Route_GpioPostLevelHandler(httpd_req_t* req)
+static esp_err_t Route_PinPostLevelHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
   int pin = 0;
-  int pr = HttpServer_ParsePathPin(req->uri, "/gpios/", "/level", &pin);
+  int pr = HttpServer_ParsePathPin(req->uri, "/pin/", "/level", &pin);
   if (pr == -2) {
     return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
   }
   if (pr == -3) {
-    const char* p = req->uri + strlen("/gpios/");
+    const char* p = req->uri + strlen("/pin/");
     long raw = strtol(p, NULL, 10);
     char reason[96];
     char range[32];
@@ -180,10 +227,7 @@ static esp_err_t Route_GpioPostLevelHandler(httpd_req_t* req)
   cJSON_Delete(body);
 
   if (!GpioCtrl_IsOutputCapable(pin)) {
-    snprintf(reason, sizeof(reason),
-             "Pin %d is configured as input, so level cannot be written. PUT /gpios/%d/config with mode output, "
-             "output_open_drain, input_output, or input_output_open_drain first.",
-             pin, pin);
+    Route_PinLevelWriteDenied(pin, reason, sizeof(reason));
     return HttpServer_SendError(req, 422, reason);
   }
   if (GpioCtrl_SetLevel(pin, level) != ESP_OK) {
@@ -193,17 +237,17 @@ static esp_err_t Route_GpioPostLevelHandler(httpd_req_t* req)
   return HttpServer_SendEmpty(req, 204);
 }
 
-static esp_err_t Route_GpioPostPulseHandler(httpd_req_t* req)
+static esp_err_t Route_PinPostPulseHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
   int pin = 0;
-  int pr = HttpServer_ParsePathPin(req->uri, "/gpios/", "/pulse", &pin);
+  int pr = HttpServer_ParsePathPin(req->uri, "/pin/", "/pulse", &pin);
   if (pr == -2) {
     return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
   }
   if (pr == -3) {
-    const char* p = req->uri + strlen("/gpios/");
+    const char* p = req->uri + strlen("/pin/");
     long raw = strtol(p, NULL, 10);
     char reason[96];
     char range[32];
@@ -240,10 +284,7 @@ static esp_err_t Route_GpioPostPulseHandler(httpd_req_t* req)
   cJSON_Delete(body);
 
   if (!GpioCtrl_IsOutputCapable(pin)) {
-    snprintf(reason, sizeof(reason),
-             "Pin %d is configured as input, so level cannot be written. PUT /gpios/%d/config with mode output, "
-             "output_open_drain, input_output, or input_output_open_drain first.",
-             pin, pin);
+    Route_PinLevelWriteDenied(pin, reason, sizeof(reason));
     return HttpServer_SendError(req, 422, reason);
   }
   if (GpioCtrl_Pulse(pin, level, width) != ESP_OK) {
@@ -253,7 +294,117 @@ static esp_err_t Route_GpioPostPulseHandler(httpd_req_t* req)
   return HttpServer_SendEmpty(req, 204);
 }
 
-static esp_err_t Route_GpioGetTraceHandler(httpd_req_t* req)
+static esp_err_t Route_PinGetPwmHandler(httpd_req_t* req)
+{
+  HttpServer_LogCall(req);
+  Lock_SweepExpired();
+  int pin = 0;
+  int pr = HttpServer_ParsePathPin(req->uri, "/pin/", "/pwm", &pin);
+  if (pr == -2) {
+    return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
+  }
+  if (pr == -3) {
+    const char* p = req->uri + strlen("/pin/");
+    long raw = strtol(p, NULL, 10);
+    char reason[96];
+    char range[32];
+    HttpServer_FormatPinRange(range, sizeof(range));
+    snprintf(reason, sizeof(reason), "Pin %ld does not exist. Use a pin from %s.", raw, range);
+    return HttpServer_SendError(req, 404, reason);
+  }
+
+  char lockId[64];
+  char reason[256];
+  int st = HttpServer_LockStatus(req, LOCK_KIND_GPIO, pin, LOCK_METHOD_READ, lockId, sizeof(lockId), reason, sizeof(reason));
+  if (st) return HttpServer_SendError(req, st, reason);
+
+  if (!GpioCtrl_IsPwmMode(pin)) {
+    Route_PinPwmDenied(pin, reason, sizeof(reason));
+    return HttpServer_SendError(req, 422, reason);
+  }
+
+  double frequency = 0;
+  double duty = 0;
+  if (GpioCtrl_GetPwm(pin, &frequency, &duty) != ESP_OK) {
+    return HttpServer_SendError(req, 500, "internal");
+  }
+  Lock_Touch(lockId[0] ? lockId : NULL);
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddNumberToObject(root, "frequency", frequency);
+  cJSON_AddNumberToObject(root, "duty", duty);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  return HttpServer_SendJson(req, 200, root);
+}
+
+static esp_err_t Route_PinPostPwmHandler(httpd_req_t* req)
+{
+  HttpServer_LogCall(req);
+  Lock_SweepExpired();
+  int pin = 0;
+  int pr = HttpServer_ParsePathPin(req->uri, "/pin/", "/pwm", &pin);
+  if (pr == -2) {
+    return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
+  }
+  if (pr == -3) {
+    const char* p = req->uri + strlen("/pin/");
+    long raw = strtol(p, NULL, 10);
+    char reason[96];
+    char range[32];
+    HttpServer_FormatPinRange(range, sizeof(range));
+    snprintf(reason, sizeof(reason), "Pin %ld does not exist. Use a pin from %s.", raw, range);
+    return HttpServer_SendError(req, 404, reason);
+  }
+
+  if (!HttpServer_HasJsonContentType(req)) {
+    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  }
+
+  char lockId[64];
+  char reason[256];
+  int st = HttpServer_LockStatus(req, LOCK_KIND_GPIO, pin, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
+  if (st) return HttpServer_SendError(req, st, reason);
+
+  esp_err_t perr = ESP_OK;
+  cJSON* body = HttpServer_ParseBody(req, &perr);
+  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+
+  cJSON* freqItem = cJSON_GetObjectItem(body, "frequency");
+  cJSON* dutyItem = cJSON_GetObjectItem(body, "duty");
+  if (!cJSON_IsNumber(freqItem) || freqItem->valuedouble < 1.0 ||
+      freqItem->valuedouble > (double)CONFIG_GPIO_PWM_MAX_FREQ_HZ) {
+    cJSON_Delete(body);
+    return HttpServer_SendError(req, 400, "frequency must be a number from 1 to 50000 Hz.");
+  }
+  if (!cJSON_IsNumber(dutyItem) || dutyItem->valuedouble < 0.0 || dutyItem->valuedouble > 100.0) {
+    cJSON_Delete(body);
+    return HttpServer_SendError(req, 400, "duty must be a number from 0 to 100.");
+  }
+  double frequency = freqItem->valuedouble;
+  double duty = dutyItem->valuedouble;
+  cJSON_Delete(body);
+
+  if (!GpioCtrl_IsPwmMode(pin)) {
+    Route_PinPwmDenied(pin, reason, sizeof(reason));
+    return HttpServer_SendError(req, 422, reason);
+  }
+
+  esp_err_t pwm = GpioCtrl_SetPwm(pin, frequency, duty);
+  if (pwm == ESP_ERR_NO_MEM) {
+    return HttpServer_SendError(
+        req, 422, "No free LEDC timer for this frequency. Free another pwmOutput pin or reuse an existing frequency.");
+  }
+  if (pwm == ESP_ERR_INVALID_STATE) {
+    Route_PinPwmDenied(pin, reason, sizeof(reason));
+    return HttpServer_SendError(req, 422, reason);
+  }
+  if (pwm != ESP_OK) {
+    return HttpServer_SendError(req, 500, "internal");
+  }
+  Lock_Touch(lockId[0] ? lockId : NULL);
+  return HttpServer_SendEmpty(req, 204);
+}
+
+static esp_err_t Route_PinGetTraceHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
@@ -264,12 +415,12 @@ static esp_err_t Route_GpioGetTraceHandler(httpd_req_t* req)
   char* q = strchr(path, '?');
   if (q) *q = '\0';
 
-  int pr = HttpServer_ParsePathPin(path, "/gpios/", "/trace", &pin);
+  int pr = HttpServer_ParsePathPin(path, "/pin/", "/trace", &pin);
   if (pr == -2) {
     return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
   }
   if (pr == -3) {
-    const char* p = path + strlen("/gpios/");
+    const char* p = path + strlen("/pin/");
     long raw = strtol(p, NULL, 10);
     char reason[96];
     char range[32];
@@ -281,7 +432,7 @@ static esp_err_t Route_GpioGetTraceHandler(httpd_req_t* req)
   char lockId[64];
   char reason[256];
   int st = HttpServer_LockStatus(req, LOCK_KIND_GPIO, pin, LOCK_METHOD_READ | LOCK_METHOD_WRITE, lockId, sizeof(lockId),
-                           reason, sizeof(reason));
+                                 reason, sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
 
   char edgeBuf[32] = {0};
@@ -326,7 +477,7 @@ static esp_err_t Route_GpioGetTraceHandler(httpd_req_t* req)
   return HttpServer_SendJson(req, 200, root);
 }
 
-static esp_err_t Route_GpioBatchGetLevelHandler(httpd_req_t* req)
+static esp_err_t Route_PinBatchGetLevelHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
@@ -368,7 +519,7 @@ static esp_err_t Route_GpioBatchGetLevelHandler(httpd_req_t* req)
   return HttpServer_SendJson(req, 200, root);
 }
 
-static esp_err_t Route_GpioBatchPostLevelHandler(httpd_req_t* req)
+static esp_err_t Route_PinBatchPostLevelHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
@@ -399,13 +550,10 @@ static esp_err_t Route_GpioBatchPostLevelHandler(httpd_req_t* req)
   char lockId[64];
   for (size_t i = 0; i < count; i++) {
     int st = HttpServer_LockStatus(req, LOCK_KIND_GPIO, pins[i], LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason,
-                             sizeof(reason));
+                                   sizeof(reason));
     if (st) return HttpServer_SendError(req, st, reason);
     if (!GpioCtrl_IsOutputCapable(pins[i])) {
-      snprintf(reason, sizeof(reason),
-               "Pin %d is configured as input, so level cannot be written. PUT /gpios/%d/config with mode output, "
-               "output_open_drain, input_output, or input_output_open_drain first.",
-               pins[i], pins[i]);
+      Route_PinLevelWriteDenied(pins[i], reason, sizeof(reason));
       return HttpServer_SendError(req, 422, reason);
     }
   }
@@ -418,7 +566,7 @@ static esp_err_t Route_GpioBatchPostLevelHandler(httpd_req_t* req)
   return HttpServer_SendEmpty(req, 204);
 }
 
-static esp_err_t Route_GpioBatchPutConfigHandler(httpd_req_t* req)
+static esp_err_t Route_PinBatchPutConfigHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
@@ -438,32 +586,30 @@ static esp_err_t Route_GpioBatchPutConfigHandler(httpd_req_t* req)
     cJSON_Delete(body);
     return HttpServer_SendError(req, 400, reason);
   }
-  cJSON* modeItem = cJSON_GetObjectItem(body, "mode");
-  cJSON* pullUpItem = cJSON_GetObjectItem(body, "pullUp");
-  cJSON* pullDownItem = cJSON_GetObjectItem(body, "pullDown");
   GpioCtrl_Mode mode;
-  if (!cJSON_IsString(modeItem) || !GpioCtrl_ModeFromString(modeItem->valuestring, &mode)) {
+  bool openDrain = false;
+  bool pullUp = false;
+  bool pullDown = false;
+  if (Route_PinParseConfigBody(body, &mode, &openDrain, &pullUp, &pullDown, reason, sizeof(reason)) != ESP_OK) {
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400,
-                          "mode is invalid. Use one of: disable, input, output, output_open_drain, input_output, "
-                          "input_output_open_drain.");
+    return HttpServer_SendError(req, 400, reason);
   }
-  if (!cJSON_IsBool(pullUpItem) || !cJSON_IsBool(pullDownItem)) {
-    cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "pullUp and pullDown must be boolean.");
-  }
-  bool pullUp = cJSON_IsTrue(pullUpItem);
-  bool pullDown = cJSON_IsTrue(pullDownItem);
   cJSON_Delete(body);
 
   char lockId[64];
   for (size_t i = 0; i < count; i++) {
     int st = HttpServer_LockStatus(req, LOCK_KIND_GPIO, pins[i], LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason,
-                             sizeof(reason));
+                                   sizeof(reason));
     if (st) return HttpServer_SendError(req, st, reason);
   }
   for (size_t i = 0; i < count; i++) {
-    if (GpioCtrl_SetConfig(pins[i], mode, pullUp, pullDown) != ESP_OK) {
+    esp_err_t cfg = GpioCtrl_SetConfig(pins[i], mode, openDrain, pullUp, pullDown);
+    if (cfg == ESP_ERR_NO_MEM) {
+      return HttpServer_SendError(
+          req, 422,
+          "No free LEDC channel or timer for pwmOutput. Free another pwmOutput pin or reuse an existing frequency.");
+    }
+    if (cfg != ESP_OK) {
       return HttpServer_SendError(req, 500, "internal");
     }
   }
@@ -471,7 +617,7 @@ static esp_err_t Route_GpioBatchPutConfigHandler(httpd_req_t* req)
   return HttpServer_SendEmpty(req, 204);
 }
 
-static esp_err_t Route_GpioBatchPostPulseHandler(httpd_req_t* req)
+static esp_err_t Route_PinBatchPostPulseHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
@@ -509,13 +655,10 @@ static esp_err_t Route_GpioBatchPostPulseHandler(httpd_req_t* req)
   char lockId[64];
   for (size_t i = 0; i < count; i++) {
     int st = HttpServer_LockStatus(req, LOCK_KIND_GPIO, pins[i], LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason,
-                             sizeof(reason));
+                                   sizeof(reason));
     if (st) return HttpServer_SendError(req, st, reason);
     if (!GpioCtrl_IsOutputCapable(pins[i])) {
-      snprintf(reason, sizeof(reason),
-               "Pin %d is configured as input, so level cannot be written. PUT /gpios/%d/config with mode output, "
-               "output_open_drain, input_output, or input_output_open_drain first.",
-               pins[i], pins[i]);
+      Route_PinLevelWriteDenied(pins[i], reason, sizeof(reason));
       return HttpServer_SendError(req, 422, reason);
     }
   }
@@ -528,7 +671,7 @@ static esp_err_t Route_GpioBatchPostPulseHandler(httpd_req_t* req)
   return HttpServer_SendEmpty(req, 204);
 }
 
-static esp_err_t Route_GpioBatchGetTraceHandler(httpd_req_t* req)
+static esp_err_t Route_PinBatchGetTraceHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
@@ -569,7 +712,7 @@ static esp_err_t Route_GpioBatchGetTraceHandler(httpd_req_t* req)
   char lockId[64];
   for (size_t i = 0; i < count; i++) {
     int st = HttpServer_LockStatus(req, LOCK_KIND_GPIO, pins[i], LOCK_METHOD_READ | LOCK_METHOD_WRITE, lockId, sizeof(lockId),
-                             reason, sizeof(reason));
+                                   reason, sizeof(reason));
     if (st) return HttpServer_SendError(req, st, reason);
   }
 
@@ -596,24 +739,27 @@ static esp_err_t Route_GpioBatchGetTraceHandler(httpd_req_t* req)
   return HttpServer_SendJson(req, 200, root);
 }
 
+/* Exact /pin/config before /pin/<pin> so wildcard does not swallow "config". */
 static const httpd_uri_t uris[] = {
-    {.uri = "/gpios/", .method = HTTP_GET, .handler = Route_GpioListHandler},
-    {.uri = "/gpios/*/config", .method = HTTP_PUT, .handler = Route_GpioPutConfigHandler},
-    {.uri = "/gpios/*/level", .method = HTTP_GET, .handler = Route_GpioGetLevelHandler},
-    {.uri = "/gpios/*/level", .method = HTTP_POST, .handler = Route_GpioPostLevelHandler},
-    {.uri = "/gpios/*/pulse", .method = HTTP_POST, .handler = Route_GpioPostPulseHandler},
-    {.uri = "/gpios/*/trace", .method = HTTP_GET, .handler = Route_GpioGetTraceHandler},
-    {.uri = "/gpios/level", .method = HTTP_GET, .handler = Route_GpioBatchGetLevelHandler},
-    {.uri = "/gpios/level", .method = HTTP_POST, .handler = Route_GpioBatchPostLevelHandler},
-    {.uri = "/gpios/config", .method = HTTP_PUT, .handler = Route_GpioBatchPutConfigHandler},
-    {.uri = "/gpios/pulse", .method = HTTP_POST, .handler = Route_GpioBatchPostPulseHandler},
-    {.uri = "/gpios/trace", .method = HTTP_GET, .handler = Route_GpioBatchGetTraceHandler},
+    {.uri = "/pin/", .method = HTTP_GET, .handler = Route_PinListHandler},
+    {.uri = "/pin/config", .method = HTTP_PUT, .handler = Route_PinBatchPutConfigHandler},
+    {.uri = "/pin/level", .method = HTTP_GET, .handler = Route_PinBatchGetLevelHandler},
+    {.uri = "/pin/level", .method = HTTP_POST, .handler = Route_PinBatchPostLevelHandler},
+    {.uri = "/pin/pulse", .method = HTTP_POST, .handler = Route_PinBatchPostPulseHandler},
+    {.uri = "/pin/trace", .method = HTTP_GET, .handler = Route_PinBatchGetTraceHandler},
+    {.uri = "/pin/*/level", .method = HTTP_GET, .handler = Route_PinGetLevelHandler},
+    {.uri = "/pin/*/level", .method = HTTP_POST, .handler = Route_PinPostLevelHandler},
+    {.uri = "/pin/*/pulse", .method = HTTP_POST, .handler = Route_PinPostPulseHandler},
+    {.uri = "/pin/*/pwm", .method = HTTP_GET, .handler = Route_PinGetPwmHandler},
+    {.uri = "/pin/*/pwm", .method = HTTP_POST, .handler = Route_PinPostPwmHandler},
+    {.uri = "/pin/*/trace", .method = HTTP_GET, .handler = Route_PinGetTraceHandler},
+    {.uri = "/pin/*", .method = HTTP_PUT, .handler = Route_PinPutModeHandler},
 };
 
-esp_err_t Route_GpioRegister(httpd_handle_t server)
+esp_err_t Route_PinRegister(httpd_handle_t server)
 {
   for (size_t i = 0; i < TOOL_GET_ARRAY_LENGTH(uris); i++) {
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_register_uri_handler(server, &uris[i]), "register gpio uri failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_register_uri_handler(server, &uris[i]), "register pin uri failed");
   }
   return ESP_OK;
 }

@@ -177,7 +177,7 @@ int HttpServer_LockStatus(httpd_req_t* req, Lock_Kind kind, int pin, uint8_t met
   esp_err_t ret = Lock_CheckAccess(kind, pin, methods, hdr);
   if (ret == ESP_ERR_NOT_FOUND) {
     snprintf(reasonOut, reasonLen,
-             "X-Lock-Id is missing or is not a known lock. Send a current lock id from POST /locks, or omit the "
+             "X-Lock-Id is missing or is not a known lock. Send a current lock id from POST /lock, or omit the "
              "header only if the resource is unlocked.");
     return 412;
   }
@@ -212,6 +212,8 @@ int HttpServer_ParsePathPin(const char* uri, const char* prefix, const char* suf
     size_t sl = strlen(suffix);
     if (strncmp(end, suffix, sl) != 0) return -2;
     if (end[sl] != '\0' && end[sl] != '?') return -2;
+  } else if (*end != '\0' && *end != '?') {
+    return -2;
   }
   *pinOut = (int)pin;
   if (!GpioCtrl_IsValidLogicalPin(*pinOut)) return -3;
@@ -333,7 +335,7 @@ esp_err_t HttpServer_Start(void)
 
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_start(&server, &config), "httpd_start failed");
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_OpenApiRegister(server), "openapi routes failed");
-  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_GpioRegister(server), "gpio routes failed");
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(server), "pin routes failed");
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(server), "lock routes failed");
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PowerRegister(server), "power routes failed");
   httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, HttpServer_NotFoundHandler);

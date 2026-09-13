@@ -162,7 +162,7 @@ static esp_err_t Route_LockRenewHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
-  const char* prefix = "/locks/";
+  const char* prefix = "/lock/";
   if (strncmp(req->uri, prefix, strlen(prefix)) != 0) {
     return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
   }
@@ -174,7 +174,7 @@ static esp_err_t Route_LockRenewHandler(httpd_req_t* req)
   if (Lock_Renew(id, &entry) != ESP_OK) {
     char reason[160];
     snprintf(reason, sizeof(reason),
-             "Lock id %s does not exist. Create a lock with POST /locks (see GET /openapi.json).", id);
+             "Lock id %s does not exist. Create a lock with POST /lock (see GET /openapi.json).", id);
     return HttpServer_SendError(req, 404, reason);
   }
   cJSON* root = cJSON_CreateObject();
@@ -189,7 +189,7 @@ static esp_err_t Route_LockDeleteHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
-  const char* prefix = "/locks/";
+  const char* prefix = "/lock/";
   if (strncmp(req->uri, prefix, strlen(prefix)) != 0) {
     return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
   }
@@ -199,9 +199,9 @@ static esp_err_t Route_LockDeleteHandler(httpd_req_t* req)
 }
 
 static const httpd_uri_t uris[] = {
-    {.uri = "/locks", .method = HTTP_POST, .handler = Route_LockCreateHandler},
-    {.uri = "/locks/*", .method = HTTP_PUT, .handler = Route_LockRenewHandler},
-    {.uri = "/locks/*", .method = HTTP_DELETE, .handler = Route_LockDeleteHandler},
+    {.uri = "/lock", .method = HTTP_POST, .handler = Route_LockCreateHandler},
+    {.uri = "/lock/*", .method = HTTP_PUT, .handler = Route_LockRenewHandler},
+    {.uri = "/lock/*", .method = HTTP_DELETE, .handler = Route_LockDeleteHandler},
 };
 
 esp_err_t Route_LockRegister(httpd_handle_t server)

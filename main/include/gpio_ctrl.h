@@ -13,11 +13,10 @@
 
 typedef enum {
   GPIO_CTRL_MODE_DISABLE = 0,
-  GPIO_CTRL_MODE_INPUT,
-  GPIO_CTRL_MODE_OUTPUT,
-  GPIO_CTRL_MODE_OUTPUT_OPEN_DRAIN,
-  GPIO_CTRL_MODE_INPUT_OUTPUT,
-  GPIO_CTRL_MODE_INPUT_OUTPUT_OPEN_DRAIN,
+  GPIO_CTRL_MODE_DIGITAL_INPUT,
+  GPIO_CTRL_MODE_DIGITAL_OUTPUT,
+  GPIO_CTRL_MODE_DIGITAL_INPUT_OUTPUT,
+  GPIO_CTRL_MODE_PWM_OUTPUT,
 } GpioCtrl_Mode;
 
 typedef enum {
@@ -33,6 +32,7 @@ typedef enum {
 
 typedef struct {
   GpioCtrl_Mode mode;
+  bool openDrain;
   bool pullUp;
   bool pullDown;
   int level;
@@ -49,11 +49,14 @@ bool GpioCtrl_IsValidLogicalPin(int pin);
 int GpioCtrl_GetLogicalCount(void);
 esp_err_t GpioCtrl_Init(void);
 esp_err_t GpioCtrl_GetState(int logicalPin, GpioCtrl_State* out);
-esp_err_t GpioCtrl_SetConfig(int logicalPin, GpioCtrl_Mode mode, bool pullUp, bool pullDown);
+esp_err_t GpioCtrl_SetConfig(int logicalPin, GpioCtrl_Mode mode, bool openDrain, bool pullUp, bool pullDown);
 esp_err_t GpioCtrl_GetLevel(int logicalPin, int* level);
 esp_err_t GpioCtrl_SetLevel(int logicalPin, int level);
 esp_err_t GpioCtrl_Pulse(int logicalPin, int level, uint64_t widthUs);
 bool GpioCtrl_IsOutputCapable(int logicalPin);
+bool GpioCtrl_IsPwmMode(int logicalPin);
+esp_err_t GpioCtrl_SetPwm(int logicalPin, double frequencyHz, double dutyPercent);
+esp_err_t GpioCtrl_GetPwm(int logicalPin, double* frequencyHz, double* dutyPercent);
 const char* GpioCtrl_ModeToString(GpioCtrl_Mode mode);
 bool GpioCtrl_ModeFromString(const char* s, GpioCtrl_Mode* out);
 bool GpioCtrl_EdgeFromString(const char* s, GpioCtrl_Edge* out);
