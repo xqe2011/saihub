@@ -31,5 +31,6 @@
   ],
   "idf.openOcdConfigs": [
     "board/esp32c5-builtin.cfg"
-  ]
+  ],
+  "idf.flashType": "JTAG"
 }

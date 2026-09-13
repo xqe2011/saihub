@@ -1,0 +1,21 @@
+dependencies:
+  espressif/cjson:
+    component_hash: e788323270d90738662d66fffa910bfe1fba019bba087f01557e70c40485b469
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.7.19~2
+  idf:
+    source:
+      type: idf
+    version: 6.0.2
+direct_dependencies:
+- espressif/cjson
+- idf
+manifest_hash: ae0a43ebdd446093004a5ea3eb589eae6d8dd1bf70cdb98aa64456b5caeaca0a
+target: esp32c5
+version: 3.0.0
