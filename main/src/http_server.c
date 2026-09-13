@@ -316,6 +316,168 @@ esp_err_t HttpServer_ParsePinsArray(cJSON* root, int* pins, size_t maxPins, size
   return ESP_OK;
 }
 
+static esp_err_t HttpServer_ParseLockMethods(cJSON* methods, uint8_t* bitsOut, char* reason, size_t reasonLen)
+{
+  if (!cJSON_IsArray(methods) || cJSON_GetArraySize(methods) == 0) {
+    snprintf(reason, reasonLen, "Each resource.method entry must be read or write.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  uint8_t bits = 0;
+  for (int m = 0; m < cJSON_GetArraySize(methods); m++) {
+    cJSON* mv = cJSON_GetArrayItem(methods, m);
+    if (!cJSON_IsString(mv)) {
+      snprintf(reason, reasonLen, "Each resource.method entry must be read or write.");
+      return ESP_ERR_INVALID_ARG;
+    }
+    if (strcmp(mv->valuestring, "read") == 0)
+      bits |= LOCK_METHOD_READ;
+    else if (strcmp(mv->valuestring, "write") == 0)
+      bits |= LOCK_METHOD_WRITE;
+    else {
+      snprintf(reason, reasonLen, "method is invalid. Each resource.method entry must be read or write.");
+      return ESP_ERR_INVALID_ARG;
+    }
+  }
+  *bitsOut = bits;
+  return ESP_OK;
+}
+
+static cJSON* HttpServer_MethodsToJson(uint8_t methods)
+{
+  cJSON* methodsArr = cJSON_CreateArray();
+  if (methods & LOCK_METHOD_READ) cJSON_AddItemToArray(methodsArr, cJSON_CreateString("read"));
+  if (methods & LOCK_METHOD_WRITE) cJSON_AddItemToArray(methodsArr, cJSON_CreateString("write"));
+  return methodsArr;
+}
+
+esp_err_t HttpServer_ParseLockResources(cJSON* resourcesArr, Lock_Resource* out, size_t maxOut, size_t* countOut,
+                                        char* reason, size_t reasonLen)
+{
+  if (!cJSON_IsArray(resourcesArr) || cJSON_GetArraySize(resourcesArr) == 0) {
+    snprintf(reason, reasonLen, "resources must be a non-empty array.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  char range[32];
+  HttpServer_FormatPinRange(range, sizeof(range));
+  size_t count = 0;
+  int groupCount = cJSON_GetArraySize(resourcesArr);
+  for (int g = 0; g < groupCount; g++) {
+    cJSON* item = cJSON_GetArrayItem(resourcesArr, g);
+    if (!cJSON_IsObject(item)) {
+      snprintf(reason, reasonLen, "resources[%d] must be an object.", g);
+      return ESP_ERR_INVALID_ARG;
+    }
+    cJSON* typeItem = cJSON_GetObjectItem(item, "type");
+    cJSON* pinsItem = cJSON_GetObjectItem(item, "pins");
+    cJSON* railsItem = cJSON_GetObjectItem(item, "rails");
+    cJSON* methodsItem = cJSON_GetObjectItem(item, "method");
+    if (!cJSON_IsString(typeItem) || typeItem->valuestring == NULL) {
+      snprintf(reason, reasonLen, "resources[%d].type must be pin or power.", g);
+      return ESP_ERR_INVALID_ARG;
+    }
+    uint8_t bits = 0;
+    if (HttpServer_ParseLockMethods(methodsItem, &bits, reason, reasonLen) != ESP_OK) return ESP_ERR_INVALID_ARG;
+
+    if (strcmp(typeItem->valuestring, "pin") == 0) {
+      if (railsItem != NULL) {
+        snprintf(reason, reasonLen, "resources[%d] with type pin must not include rails.", g);
+        return ESP_ERR_INVALID_ARG;
+      }
+      if (!cJSON_IsArray(pinsItem) || cJSON_GetArraySize(pinsItem) == 0) {
+        snprintf(reason, reasonLen, "resources[%d].pins must be a non-empty array of integers from %s.", g, range);
+        return ESP_ERR_INVALID_ARG;
+      }
+      int pinN = cJSON_GetArraySize(pinsItem);
+      for (int p = 0; p < pinN; p++) {
+        if (count >= maxOut) {
+          snprintf(reason, reasonLen, "resources expand to too many lock entries (max %u).", (unsigned)maxOut);
+          return ESP_ERR_INVALID_ARG;
+        }
+        cJSON* pinVal = cJSON_GetArrayItem(pinsItem, p);
+        if (!cJSON_IsNumber(pinVal) || !GpioCtrl_IsValidLogicalPin(pinVal->valueint)) {
+          snprintf(reason, reasonLen, "resources[%d].pins[%d] is invalid. Use a pin from %s.", g, p, range);
+          return ESP_ERR_INVALID_ARG;
+        }
+        out[count].kind = LOCK_KIND_GPIO;
+        out[count].pin = pinVal->valueint;
+        out[count].methods = bits;
+        count++;
+      }
+    } else if (strcmp(typeItem->valuestring, "power") == 0) {
+      if (pinsItem != NULL) {
+        snprintf(reason, reasonLen, "resources[%d] with type power must not include pins.", g);
+        return ESP_ERR_INVALID_ARG;
+      }
+      if (!cJSON_IsArray(railsItem) || cJSON_GetArraySize(railsItem) == 0) {
+        snprintf(reason, reasonLen, "resources[%d].rails must be a non-empty array of 3v3 or 5v.", g);
+        return ESP_ERR_INVALID_ARG;
+      }
+      int railN = cJSON_GetArraySize(railsItem);
+      for (int r = 0; r < railN; r++) {
+        if (count >= maxOut) {
+          snprintf(reason, reasonLen, "resources expand to too many lock entries (max %u).", (unsigned)maxOut);
+          return ESP_ERR_INVALID_ARG;
+        }
+        cJSON* railVal = cJSON_GetArrayItem(railsItem, r);
+        Lock_Kind kind;
+        if (!cJSON_IsString(railVal) || !Lock_PowerFromString(railVal->valuestring, &kind)) {
+          snprintf(reason, reasonLen, "resources[%d].rails[%d] is invalid. Use one of: 3v3, 5v.", g, r);
+          return ESP_ERR_INVALID_ARG;
+        }
+        out[count].kind = kind;
+        out[count].pin = 0;
+        out[count].methods = bits;
+        count++;
+      }
+    } else {
+      snprintf(reason, reasonLen, "resources[%d].type must be pin or power.", g);
+      return ESP_ERR_INVALID_ARG;
+    }
+  }
+  *countOut = count;
+  return ESP_OK;
+}
+
+cJSON* HttpServer_SerializeLockResources(const Lock_Resource* resources, size_t count)
+{
+  cJSON* resArr = cJSON_CreateArray();
+  if (resArr == NULL || resources == NULL || count == 0) return resArr;
+  bool used[LOCK_MAX_RESOURCES];
+  memset(used, 0, sizeof(used));
+  if (count > LOCK_MAX_RESOURCES) count = LOCK_MAX_RESOURCES;
+
+  for (size_t i = 0; i < count; i++) {
+    if (used[i]) continue;
+    uint8_t methods = resources[i].methods;
+    cJSON* r = cJSON_CreateObject();
+    cJSON_AddItemToObject(r, "method", HttpServer_MethodsToJson(methods));
+
+    if (resources[i].kind == LOCK_KIND_GPIO) {
+      cJSON_AddStringToObject(r, "type", "pin");
+      cJSON* pins = cJSON_CreateArray();
+      for (size_t j = i; j < count; j++) {
+        if (used[j]) continue;
+        if (resources[j].kind != LOCK_KIND_GPIO || resources[j].methods != methods) continue;
+        cJSON_AddItemToArray(pins, cJSON_CreateNumber(resources[j].pin));
+        used[j] = true;
+      }
+      cJSON_AddItemToObject(r, "pins", pins);
+    } else {
+      cJSON_AddStringToObject(r, "type", "power");
+      cJSON* rails = cJSON_CreateArray();
+      for (size_t j = i; j < count; j++) {
+        if (used[j]) continue;
+        if (resources[j].kind == LOCK_KIND_GPIO || resources[j].methods != methods) continue;
+        cJSON_AddItemToArray(rails, cJSON_CreateString(Lock_KindToString(resources[j].kind)));
+        used[j] = true;
+      }
+      cJSON_AddItemToObject(r, "rails", rails);
+    }
+    cJSON_AddItemToArray(resArr, r);
+  }
+  return resArr;
+}
+
 esp_err_t HttpServer_ReadBody(httpd_req_t* req, char** outBuf, size_t* outLen)
 {
   int total = req->content_len;

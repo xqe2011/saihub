@@ -5,18 +5,16 @@
  */
 #include "route.h"
 
-#include "gpio_ctrl.h"
 #include "http_server.h"
 #include "lock.h"
 #include "tool.h"
 
 #include <cJSON.h>
 #include <esp_http_server.h>
-#include <esp_log.h>
 #include <stdio.h>
 #include <string.h>
 
-static const char* tag = "SAIHUB-Http";
+static const char* tag = "SAIHUB-Lock";
 
 static esp_err_t Route_LockCreateHandler(httpd_req_t* req)
 {
@@ -30,82 +28,18 @@ static esp_err_t Route_LockCreateHandler(httpd_req_t* req)
   if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
   cJSON* resources = cJSON_GetObjectItem(body, "resources");
-  if (!cJSON_IsArray(resources) || cJSON_GetArraySize(resources) == 0) {
-    cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "resources must be a non-empty array.");
-  }
-
   Lock_Resource res[LOCK_MAX_RESOURCES];
-  size_t count = (size_t)cJSON_GetArraySize(resources);
-  if (count > LOCK_MAX_RESOURCES) {
+  size_t count = 0;
+  char reason[192];
+  if (HttpServer_ParseLockResources(resources, res, LOCK_MAX_RESOURCES, &count, reason, sizeof(reason)) != ESP_OK) {
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "resources array is too long.");
-  }
-
-  char range[32];
-  HttpServer_FormatPinRange(range, sizeof(range));
-
-  for (size_t i = 0; i < count; i++) {
-    cJSON* item = cJSON_GetArrayItem(resources, (int)i);
-    cJSON* pinItem = cJSON_GetObjectItem(item, "pin");
-    cJSON* powerItem = cJSON_GetObjectItem(item, "power");
-    cJSON* methods = cJSON_GetObjectItem(item, "method");
-
-    bool hasPin = cJSON_IsNumber(pinItem);
-    bool hasPower = cJSON_IsString(powerItem);
-    if (hasPin == hasPower) {
-      cJSON_Delete(body);
-      return HttpServer_SendError(req, 400,
-                            "Each resource must have exactly one of pin or power.");
-    }
-
-    Lock_Kind kind;
-    int pin = 0;
-    if (hasPin) {
-      if (!GpioCtrl_IsValidLogicalPin(pinItem->valueint)) {
-        cJSON_Delete(body);
-        char reason[96];
-        snprintf(reason, sizeof(reason), "resources[%u].pin is invalid. Use a pin from %s.", (unsigned)i, range);
-        return HttpServer_SendError(req, 400, reason);
-      }
-      kind = LOCK_KIND_GPIO;
-      pin = pinItem->valueint;
-    } else {
-      if (!Lock_PowerFromString(powerItem->valuestring, &kind)) {
-        cJSON_Delete(body);
-        return HttpServer_SendError(req, 400, "power is invalid. Use one of: 3v3, 5v.");
-      }
-    }
-
-    if (!cJSON_IsArray(methods) || cJSON_GetArraySize(methods) == 0) {
-      cJSON_Delete(body);
-      return HttpServer_SendError(req, 400, "Each resource.method entry must be read or write.");
-    }
-    uint8_t bits = 0;
-    for (int m = 0; m < cJSON_GetArraySize(methods); m++) {
-      cJSON* mv = cJSON_GetArrayItem(methods, m);
-      if (!cJSON_IsString(mv)) {
-        cJSON_Delete(body);
-        return HttpServer_SendError(req, 400, "Each resource.method entry must be read or write.");
-      }
-      if (strcmp(mv->valuestring, "read") == 0) bits |= LOCK_METHOD_READ;
-      else if (strcmp(mv->valuestring, "write") == 0)
-        bits |= LOCK_METHOD_WRITE;
-      else {
-        cJSON_Delete(body);
-        return HttpServer_SendError(req, 400, "method is invalid. Each resource.method entry must be read or write.");
-      }
-    }
-    res[i].kind = kind;
-    res[i].pin = pin;
-    res[i].methods = bits;
+    return HttpServer_SendError(req, 400, reason);
   }
   cJSON_Delete(body);
 
   Lock_Entry created;
   esp_err_t cret = Lock_Create(res, count, &created);
   if (cret == ESP_ERR_INVALID_STATE) {
-    char reason[160];
     if (res[0].kind == LOCK_KIND_GPIO) {
       snprintf(reason, sizeof(reason),
                "Cannot create lock: pin %d is already held. DELETE that lock or wait until it expires.", res[0].pin);
@@ -136,25 +70,7 @@ static esp_err_t Route_LockCreateHandler(httpd_req_t* req)
   int64_t now = Lock_NowUs();
   cJSON_AddNumberToObject(root, "ttl", (double)(created.expiresAtUs - now));
   cJSON_AddNumberToObject(root, "expiresAt", (double)created.expiresAtUs);
-  cJSON* resArr = cJSON_CreateArray();
-  for (size_t i = 0; i < created.resourceCount; i++) {
-    cJSON* r = cJSON_CreateObject();
-    if (created.resources[i].kind == LOCK_KIND_GPIO) {
-      cJSON_AddNumberToObject(r, "pin", created.resources[i].pin);
-    } else {
-      cJSON_AddStringToObject(r, "power", Lock_KindToString(created.resources[i].kind));
-    }
-    cJSON* methodsArr = cJSON_CreateArray();
-    if (created.resources[i].methods & LOCK_METHOD_READ) {
-      cJSON_AddItemToArray(methodsArr, cJSON_CreateString("read"));
-    }
-    if (created.resources[i].methods & LOCK_METHOD_WRITE) {
-      cJSON_AddItemToArray(methodsArr, cJSON_CreateString("write"));
-    }
-    cJSON_AddItemToObject(r, "method", methodsArr);
-    cJSON_AddItemToArray(resArr, r);
-  }
-  cJSON_AddItemToObject(root, "resources", resArr);
+  cJSON_AddItemToObject(root, "resources", HttpServer_SerializeLockResources(created.resources, created.resourceCount));
   return HttpServer_SendJson(req, 201, root);
 }
 
