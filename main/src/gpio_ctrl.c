@@ -11,23 +11,21 @@
 #include <driver/gpio.h>
 #include <driver/ledc.h>
 #include <esp_log.h>
-#include <esp_rom_gpio.h>
 #include <esp_rom_sys.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
 #include <math.h>
-#include <soc/gpio_sig_map.h>
 #include <string.h>
 #include <sys/time.h>
 
 static const char* tag = "SAIHUB-Gpio";
 
 #define GPIO_CTRL_LEDC_SPEED LEDC_LOW_SPEED_MODE
-#define GPIO_CTRL_LEDC_DUTY_MAX (1U << CONFIG_GPIO_PWM_DUTY_RES_BITS)
 #define GPIO_CTRL_LEDC_CHANNEL_COUNT SOC_LEDC_CHANNEL_NUM
 #define GPIO_CTRL_LEDC_TIMER_COUNT SOC_LEDC_TIMER_NUM
+#define GPIO_CTRL_LEDC_SRC_CLK_HZ 80000000U
 
 typedef struct {
   GpioCtrl_Mode mode;
@@ -40,6 +38,7 @@ typedef struct {
   int ledcTimer;   /* -1 if none */
   double pwmFrequencyHz;
   double pwmDutyPercent;
+  int outputLevel; /* last gpio_set_level; GET uses this in digitalOutput */
 } GpioPinRuntime;
 
 typedef struct {
@@ -52,6 +51,7 @@ typedef struct {
 typedef struct {
   bool inUse;
   uint32_t frequencyHz;
+  uint32_t dutyResolution;
   int refCount;
 } LedcTimerSlot;
 
@@ -188,24 +188,6 @@ const char* GpioCtrl_PowerRailToString(GpioCtrl_PowerRail rail)
   }
 }
 
-static gpio_mode_t GpioCtrl_ToEspMode(GpioCtrl_Mode mode, bool openDrain)
-{
-  switch (mode) {
-    case GPIO_CTRL_MODE_DISABLE:
-      return GPIO_MODE_DISABLE;
-    case GPIO_CTRL_MODE_DIGITAL_INPUT:
-      return GPIO_MODE_INPUT;
-    case GPIO_CTRL_MODE_DIGITAL_OUTPUT:
-      return openDrain ? GPIO_MODE_OUTPUT_OD : GPIO_MODE_OUTPUT;
-    case GPIO_CTRL_MODE_DIGITAL_INPUT_OUTPUT:
-      return openDrain ? GPIO_MODE_INPUT_OUTPUT_OD : GPIO_MODE_INPUT_OUTPUT;
-    case GPIO_CTRL_MODE_PWM_OUTPUT:
-      return openDrain ? GPIO_MODE_OUTPUT_OD : GPIO_MODE_OUTPUT;
-    default:
-      return GPIO_MODE_DISABLE;
-  }
-}
-
 static gpio_pull_mode_t GpioCtrl_ToPullMode(bool pullUp, bool pullDown)
 {
   if (pullUp && pullDown) return GPIO_PULLUP_PULLDOWN;
@@ -219,7 +201,26 @@ static esp_err_t GpioCtrl_SyncPad(int logicalPin)
   if (!GpioCtrl_IsValidLogicalPin(logicalPin)) return ESP_ERR_INVALID_ARG;
   int hw = GpioCtrl_Hw(logicalPin);
   GpioPinRuntime* p = &pins[logicalPin];
-  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_direction(hw, GpioCtrl_ToEspMode(p->mode, p->openDrain)));
+  bool input = p->mode == GPIO_CTRL_MODE_DIGITAL_INPUT || p->mode == GPIO_CTRL_MODE_DIGITAL_INPUT_OUTPUT;
+  bool output = p->mode == GPIO_CTRL_MODE_DIGITAL_OUTPUT || p->mode == GPIO_CTRL_MODE_DIGITAL_INPUT_OUTPUT ||
+                p->mode == GPIO_CTRL_MODE_PWM_OUTPUT;
+
+  if (input) {
+    TOOL_CHECK_ESP_OK_OR_RETURN(gpio_input_enable(hw));
+  }
+  /* gpio_output_enable() reroutes the matrix to GPIO_OUT; skip while LEDC owns the pin. */
+  if (!p->pwmActive) {
+    if (output) {
+      TOOL_CHECK_ESP_OK_OR_RETURN(gpio_output_enable(hw));
+    } else {
+      TOOL_CHECK_ESP_OK_OR_RETURN(gpio_output_disable(hw));
+    }
+  }
+  if (p->openDrain) {
+    TOOL_CHECK_ESP_OK_OR_RETURN(gpio_od_enable(hw));
+  } else {
+    TOOL_CHECK_ESP_OK_OR_RETURN(gpio_od_disable(hw));
+  }
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_pull_mode(hw, GpioCtrl_ToPullMode(p->pullUp, p->pullDown)));
   return ESP_OK;
 }
@@ -235,6 +236,15 @@ bool GpioCtrl_IsPwmMode(int logicalPin)
 {
   if (!GpioCtrl_IsValidLogicalPin(logicalPin)) return false;
   return pins[logicalPin].mode == GPIO_CTRL_MODE_PWM_OUTPUT;
+}
+
+static int GpioCtrl_ReadLevel(int logicalPin)
+{
+  /* digitalOutput has no input buffer; return the output latch instead of GPIO_IN. */
+  if (pins[logicalPin].mode == GPIO_CTRL_MODE_DIGITAL_OUTPUT) {
+    return pins[logicalPin].outputLevel;
+  }
+  return gpio_get_level(GpioCtrl_Hw(logicalPin));
 }
 
 static int64_t GpioCtrl_NowUs(void)
@@ -272,10 +282,44 @@ static void IRAM_ATTR GpioCtrl_IsrHandler(void* arg)
 static esp_err_t GpioCtrl_InitPowerRail(int hwPin, bool* enableOut)
 {
   gpio_reset_pin(hwPin);
-  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_direction(hwPin, GPIO_MODE_OUTPUT));
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_output_enable(hwPin));
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_pull_mode(hwPin, GPIO_FLOATING));
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(hwPin, 0));
   *enableOut = false;
+  return ESP_OK;
+}
+
+static uint32_t GpioCtrl_PwmResolutionBits(uint32_t frequencyHz)
+{
+  return ledc_find_suitable_duty_resolution(GPIO_CTRL_LEDC_SRC_CLK_HZ, frequencyHz);
+}
+
+static esp_err_t GpioCtrl_InitLedcFade(void)
+{
+  uint32_t resolution = GpioCtrl_PwmResolutionBits(CONFIG_GPIO_PWM_DEFAULT_FREQ_HZ);
+  if (resolution == 0) return ESP_ERR_NOT_SUPPORTED;
+
+  ledc_timer_config_t cfg = {
+      .speed_mode = GPIO_CTRL_LEDC_SPEED,
+      .duty_resolution = (ledc_timer_bit_t)resolution,
+      .timer_num = (ledc_timer_t)0,
+      .freq_hz = CONFIG_GPIO_PWM_DEFAULT_FREQ_HZ,
+      .clk_cfg = LEDC_AUTO_CLK,
+      .deconfigure = false,
+  };
+  TOOL_CHECK_ESP_OK_OR_RETURN(ledc_timer_config(&cfg));
+
+  esp_err_t fadeErr = ledc_fade_func_install(0);
+
+  ledc_timer_pause(GPIO_CTRL_LEDC_SPEED, (ledc_timer_t)0);
+  ledc_timer_config_t undo = {
+      .speed_mode = GPIO_CTRL_LEDC_SPEED,
+      .timer_num = (ledc_timer_t)0,
+      .deconfigure = true,
+  };
+  ledc_timer_config(&undo);
+
+  TOOL_CHECK_ESP_OK_OR_RETURN(fadeErr);
   return ESP_OK;
 }
 
@@ -297,34 +341,45 @@ static void GpioCtrl_FreeChannel(int channel)
   }
 }
 
-static int GpioCtrl_AcquireTimer(uint32_t frequencyHz)
+static esp_err_t GpioCtrl_AcquireTimer(uint32_t frequencyHz, int* timerOut)
 {
+  if (timerOut == NULL) return ESP_ERR_INVALID_ARG;
   for (int i = 0; i < GPIO_CTRL_LEDC_TIMER_COUNT; i++) {
     if (timers[i].inUse && timers[i].frequencyHz == frequencyHz) {
       timers[i].refCount++;
-      return i;
+      *timerOut = i;
+      return ESP_OK;
     }
   }
+
+  uint32_t resolution = GpioCtrl_PwmResolutionBits(frequencyHz);
+  if (resolution == 0) {
+    ESP_LOGW(tag, "LEDC cannot achieve %u Hz at APB %u Hz", (unsigned)frequencyHz, (unsigned)GPIO_CTRL_LEDC_SRC_CLK_HZ);
+    return ESP_ERR_NOT_SUPPORTED;
+  }
+
   for (int i = 0; i < GPIO_CTRL_LEDC_TIMER_COUNT; i++) {
     if (!timers[i].inUse) {
       ledc_timer_config_t cfg = {
           .speed_mode = GPIO_CTRL_LEDC_SPEED,
-          .duty_resolution = (ledc_timer_bit_t)CONFIG_GPIO_PWM_DUTY_RES_BITS,
+          .duty_resolution = (ledc_timer_bit_t)resolution,
           .timer_num = (ledc_timer_t)i,
           .freq_hz = frequencyHz,
           .clk_cfg = LEDC_AUTO_CLK,
           .deconfigure = false,
       };
       if (ledc_timer_config(&cfg) != ESP_OK) {
-        return -1;
+        return ESP_ERR_NOT_SUPPORTED;
       }
       timers[i].inUse = true;
       timers[i].frequencyHz = frequencyHz;
+      timers[i].dutyResolution = resolution;
       timers[i].refCount = 1;
-      return i;
+      *timerOut = i;
+      return ESP_OK;
     }
   }
-  return -1;
+  return ESP_ERR_NO_MEM;
 }
 
 static void GpioCtrl_ReleaseTimer(int timer)
@@ -344,16 +399,18 @@ static void GpioCtrl_ReleaseTimer(int timer)
     ledc_timer_config(&cfg);
     timers[timer].inUse = false;
     timers[timer].frequencyHz = 0;
+    timers[timer].dutyResolution = 0;
   }
 }
 
-static uint32_t GpioCtrl_DutyToTicks(double dutyPercent)
+static uint32_t GpioCtrl_DutyToTicks(double dutyPercent, uint32_t resolutionBits)
 {
+  uint32_t dutyMax = 1U << resolutionBits;
   if (dutyPercent <= 0.0) return 0;
-  if (dutyPercent >= 100.0) return GPIO_CTRL_LEDC_DUTY_MAX;
-  double ticks = (dutyPercent / 100.0) * (double)GPIO_CTRL_LEDC_DUTY_MAX;
+  if (dutyPercent >= 100.0) return dutyMax;
+  double ticks = (dutyPercent / 100.0) * (double)dutyMax;
   uint32_t rounded = (uint32_t)lround(ticks);
-  if (rounded > GPIO_CTRL_LEDC_DUTY_MAX) rounded = GPIO_CTRL_LEDC_DUTY_MAX;
+  if (rounded > dutyMax) rounded = dutyMax;
   return rounded;
 }
 
@@ -370,7 +427,7 @@ static esp_err_t GpioCtrl_DetachPwm(int logicalPin)
   if (p->ledcTimer >= 0) {
     GpioCtrl_ReleaseTimer(p->ledcTimer);
   }
-  esp_rom_gpio_connect_out_signal(hw, SIG_GPIO_OUT_IDX, false, false);
+  gpio_output_disable(hw);
 
   p->pwmActive = false;
   p->ledcChannel = -1;
@@ -392,11 +449,14 @@ static esp_err_t GpioCtrl_AttachPwm(int logicalPin, uint32_t frequencyHz, double
     ESP_LOGW(tag, "no free LEDC channel for pin %d", logicalPin);
     return ESP_ERR_NO_MEM;
   }
-  int timer = GpioCtrl_AcquireTimer(frequencyHz);
-  if (timer < 0) {
+  int timer = -1;
+  esp_err_t terr = GpioCtrl_AcquireTimer(frequencyHz, &timer);
+  if (terr != ESP_OK) {
     GpioCtrl_FreeChannel(channel);
-    ESP_LOGW(tag, "no free LEDC timer for pin %d freq %u", logicalPin, (unsigned)frequencyHz);
-    return ESP_ERR_NO_MEM;
+    if (terr == ESP_ERR_NO_MEM) {
+      ESP_LOGW(tag, "no free LEDC timer for pin %d freq %u", logicalPin, (unsigned)frequencyHz);
+    }
+    return terr;
   }
 
   ledc_channel_config_t ch = {
@@ -405,7 +465,7 @@ static esp_err_t GpioCtrl_AttachPwm(int logicalPin, uint32_t frequencyHz, double
       .channel = (ledc_channel_t)channel,
       .intr_type = LEDC_INTR_DISABLE,
       .timer_sel = (ledc_timer_t)timer,
-      .duty = GpioCtrl_DutyToTicks(dutyPercent),
+      .duty = GpioCtrl_DutyToTicks(dutyPercent, timers[timer].dutyResolution),
       .hpoint = 0,
       .flags = {.output_invert = 0},
   };
@@ -421,7 +481,8 @@ static esp_err_t GpioCtrl_AttachPwm(int logicalPin, uint32_t frequencyHz, double
   p->ledcTimer = timer;
   p->pwmFrequencyHz = (double)frequencyHz;
   p->pwmDutyPercent = dutyPercent;
-  return ESP_OK;
+  /* ledc_channel_config() forces push-pull; re-apply open-drain / pull. */
+  return GpioCtrl_SyncPad(logicalPin);
 }
 
 static esp_err_t GpioCtrl_ApplyPwm(int logicalPin, uint32_t frequencyHz, double dutyPercent)
@@ -433,17 +494,20 @@ static esp_err_t GpioCtrl_ApplyPwm(int logicalPin, uint32_t frequencyHz, double 
 
   if (timers[p->ledcTimer].frequencyHz != frequencyHz) {
     int oldTimer = p->ledcTimer;
-    int newTimer = GpioCtrl_AcquireTimer(frequencyHz);
-    if (newTimer < 0) {
-      return ESP_ERR_NO_MEM;
+    int newTimer = -1;
+    esp_err_t terr = GpioCtrl_AcquireTimer(frequencyHz, &newTimer);
+    if (terr != ESP_OK) return terr;
+    terr = ledc_bind_channel_timer(GPIO_CTRL_LEDC_SPEED, (ledc_channel_t)p->ledcChannel, (ledc_timer_t)newTimer);
+    if (terr != ESP_OK) {
+      GpioCtrl_ReleaseTimer(newTimer);
+      return terr;
     }
-    TOOL_CHECK_ESP_OK_OR_RETURN(ledc_bind_channel_timer(GPIO_CTRL_LEDC_SPEED, (ledc_channel_t)p->ledcChannel, (ledc_timer_t)newTimer));
     GpioCtrl_ReleaseTimer(oldTimer);
     p->ledcTimer = newTimer;
   }
 
-  TOOL_CHECK_ESP_OK_OR_RETURN(
-      ledc_set_duty_and_update(GPIO_CTRL_LEDC_SPEED, (ledc_channel_t)p->ledcChannel, GpioCtrl_DutyToTicks(dutyPercent), 0));
+  TOOL_CHECK_ESP_OK_OR_RETURN(ledc_set_duty_and_update(GPIO_CTRL_LEDC_SPEED, (ledc_channel_t)p->ledcChannel,
+                                                       GpioCtrl_DutyToTicks(dutyPercent, timers[p->ledcTimer].dutyResolution), 0));
   p->pwmFrequencyHz = (double)frequencyHz;
   p->pwmDutyPercent = dutyPercent;
   return ESP_OK;
@@ -466,6 +530,7 @@ esp_err_t GpioCtrl_Init(void)
   TOOL_CHECK_OR_LOG_RETURN(traceQueue == NULL, "trace queue create failed");
 
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_install_isr_service(0));
+  TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_InitLedcFade());
 
   for (int i = 0; i < GpioCtrl_GetLogicalCount(); i++) {
     int hw = GpioCtrl_Hw(i);
@@ -499,15 +564,17 @@ esp_err_t GpioCtrl_SetConfig(int logicalPin, GpioCtrl_Mode mode, bool openDrain,
   p->pullDown = pullDown;
   p->interruptActive = false;
 
-  if (mode == GPIO_CTRL_MODE_PWM_OUTPUT) {
+  if (mode == GPIO_CTRL_MODE_PWM_OUTPUT && !p->pwmActive) {
     uint32_t freq = (uint32_t)lround(p->pwmFrequencyHz);
     if (freq < 1) freq = CONFIG_GPIO_PWM_DEFAULT_FREQ_HZ;
     if (freq > CONFIG_GPIO_PWM_MAX_FREQ_HZ) freq = CONFIG_GPIO_PWM_MAX_FREQ_HZ;
     esp_err_t err = GpioCtrl_AttachPwm(logicalPin, freq, p->pwmDutyPercent);
     if (err != ESP_OK) {
       p->mode = prev;
+      GpioCtrl_SyncPad(logicalPin);
       return err;
     }
+    return ESP_OK;
   }
 
   TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_SyncPad(logicalPin));
@@ -521,14 +588,14 @@ esp_err_t GpioCtrl_GetState(int logicalPin, GpioCtrl_State* out)
   out->openDrain = pins[logicalPin].openDrain;
   out->pullUp = pins[logicalPin].pullUp;
   out->pullDown = pins[logicalPin].pullDown;
-  out->level = gpio_get_level(GpioCtrl_Hw(logicalPin));
+  out->level = GpioCtrl_ReadLevel(logicalPin);
   return ESP_OK;
 }
 
 esp_err_t GpioCtrl_GetLevel(int logicalPin, int* level)
 {
   if (!GpioCtrl_IsValidLogicalPin(logicalPin) || level == NULL) return ESP_ERR_INVALID_ARG;
-  *level = gpio_get_level(GpioCtrl_Hw(logicalPin));
+  *level = GpioCtrl_ReadLevel(logicalPin);
   return ESP_OK;
 }
 
@@ -536,7 +603,9 @@ esp_err_t GpioCtrl_SetLevel(int logicalPin, int level)
 {
   if (!GpioCtrl_IsValidLogicalPin(logicalPin) || (level != 0 && level != 1)) return ESP_ERR_INVALID_ARG;
   if (!GpioCtrl_IsOutputCapable(logicalPin)) return ESP_ERR_INVALID_STATE;
-  return gpio_set_level(GpioCtrl_Hw(logicalPin), level);
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(GpioCtrl_Hw(logicalPin), level));
+  pins[logicalPin].outputLevel = level;
+  return ESP_OK;
 }
 
 esp_err_t GpioCtrl_Pulse(int logicalPin, int level, uint64_t widthUs)
@@ -546,9 +615,11 @@ esp_err_t GpioCtrl_Pulse(int logicalPin, int level, uint64_t widthUs)
   if (!GpioCtrl_IsOutputCapable(logicalPin)) return ESP_ERR_INVALID_STATE;
 
   int hw = GpioCtrl_Hw(logicalPin);
+  int idle = level ? 0 : 1;
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(hw, level));
   esp_rom_delay_us((uint32_t)widthUs);
-  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(hw, level ? 0 : 1));
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(hw, idle));
+  pins[logicalPin].outputLevel = idle;
   return ESP_OK;
 }
 
@@ -567,7 +638,6 @@ esp_err_t GpioCtrl_SetPwm(int logicalPin, double frequencyHz, double dutyPercent
   if (err != ESP_OK) return err;
   pins[logicalPin].pwmFrequencyHz = frequencyHz;
   pins[logicalPin].pwmDutyPercent = dutyPercent;
-  TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_SyncPad(logicalPin));
   return ESP_OK;
 }
 
