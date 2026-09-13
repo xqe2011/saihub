@@ -1,0 +1,24 @@
+---
+description: Never mention ESP32 or chip/SDK internals in user-facing responses
+alwaysApply: true
+---
+
+# No chip details in responses
+
+Never name the MCU, vendor, or SDK in anything a user or API client can see.
+
+Forbidden in chat replies, HTTP/MCP error `reason` strings, OpenAPI descriptions, and other client-facing copy: `ESP32`, `ESP32-S3`, Espressif, ESP-IDF, LEDC, APB, and similar silicon/SDK terms.
+
+Speak in product terms instead: pin, PWM, frequency, duty, resources.
+
+Firmware logs, identifiers, and SDK API names in `.c`/`.h` may use those terms. Do not leak them into responses.
+
+```
+# ❌ BAD (OpenAPI / HTTP / chat)
+"ESP32-S3 LEDC cannot generate very low frequencies"
+"LEDC timer exhausted"
+
+# ✅ GOOD
+"Hz. Very low frequencies may be rejected."
+"PWM resources exhausted. Free another pwmOutput pin or reuse an existing frequency."
+```
