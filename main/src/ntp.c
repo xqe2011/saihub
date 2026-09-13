@@ -27,15 +27,18 @@ static void Ntp_TimeSyncNotification(struct timeval* tv)
 
 esp_err_t Ntp_Init(void)
 {
-  esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-  esp_sntp_setservername(0, CONFIG_NTP_SERVER);
-  esp_sntp_set_time_sync_notification_cb(Ntp_TimeSyncNotification);
+  /* SNTP APIs need the tcpip stack (esp_netif_init). Configure in Ntp_SyncAndWait. */
+  isSynced = false;
   return ESP_OK;
 }
 
 esp_err_t Ntp_SyncAndWait(void)
 {
   isSynced = false;
+  /* Must run after Wifi_Init / esp_netif_init — setoperatingmode uses tcpip_callback. */
+  esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+  esp_sntp_setservername(0, CONFIG_NTP_SERVER);
+  esp_sntp_set_time_sync_notification_cb(Ntp_TimeSyncNotification);
   if (esp_sntp_enabled()) {
     esp_sntp_restart();
   } else {
