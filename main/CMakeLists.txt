@@ -7,5 +7,5 @@ endforeach()
 idf_component_register(
     SRCS "${SRC_FILES}"
     INCLUDE_DIRS "include"
-    EMBED_FILES "../openapi.json" "../mcp.json"
+    EMBED_FILES "../openapi.json" "../mcp.json" "embed/portal.html.gz"
 )

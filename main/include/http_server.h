@@ -18,6 +18,7 @@
 
 esp_err_t HttpServer_Init(void);
 esp_err_t HttpServer_Start(void);
+esp_err_t HttpServer_StartPairing(void);
 esp_err_t HttpServer_Stop(void);
 
 const char* HttpServer_MethodName(int method);

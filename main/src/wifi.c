@@ -11,25 +11,47 @@
 
 #include <esp_event.h>
 #include <esp_log.h>
+#include <esp_mac.h>
 #include <esp_netif.h>
+#include <lwip/ip4_addr.h>
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/timers.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const char* tag = "SAIHUB-Wifi";
 
+#define WIFI_PAIR_AP_CLOSE_DELAY_MS 5000
+#define WIFI_SCAN_MAX_AP 32
+
 static bool allowReconnect = true;
 static bool isConnected = false;
+static bool isPairing = false;
+static bool portalConnectInFlight = false;
+static Wifi_PairState pairState = WIFI_PAIR_STATE_IDLE;
+static char pairIp[16] = {0};
+static char pairReason[96] = {0};
 static char lastRequestConnectSSID[33] = {0};
 static char lastRequestConnectPassword[65] = {0};
+static char pairingApSsid[32] = {0};
 static Wifi_ConnectedCallback connectedCallbacks[4];
 static Wifi_DisconnectedCallback disconnectedCallbacks[4];
+static Wifi_PairingStartedCallback pairingStartedCallbacks[4];
+static Wifi_PairingStoppedCallback pairingStoppedCallbacks[4];
 static TimerHandle_t reconnectTimer;
+static TimerHandle_t pairCloseTimer;
+static esp_netif_t* staNetif = NULL;
 
 bool Wifi_IsConnected(void)
 {
   return isConnected;
+}
+
+bool Wifi_IsPairing(void)
+{
+  return isPairing;
 }
 
 esp_err_t Wifi_RegisterConnectedCallback(Wifi_ConnectedCallback callback)
@@ -42,7 +64,39 @@ esp_err_t Wifi_RegisterDisconnectedCallback(Wifi_DisconnectedCallback callback)
   TOOL_REGISTER_CALLBACK(disconnectedCallbacks, callback, "disconnected");
 }
 
-esp_err_t Wifi_ConnectWifi(const char* ssid, const char* password)
+esp_err_t Wifi_RegisterPairingStartedCallback(Wifi_PairingStartedCallback callback)
+{
+  TOOL_REGISTER_CALLBACK(pairingStartedCallbacks, callback, "pairing-started");
+}
+
+esp_err_t Wifi_RegisterPairingStoppedCallback(Wifi_PairingStoppedCallback callback)
+{
+  TOOL_REGISTER_CALLBACK(pairingStoppedCallbacks, callback, "pairing-stopped");
+}
+
+Wifi_PairState Wifi_GetPairStatus(char* ipOut, size_t ipLen, char* reasonOut, size_t reasonLen)
+{
+  if (ipOut != NULL && ipLen > 0) {
+    strncpy(ipOut, pairIp, ipLen - 1);
+    ipOut[ipLen - 1] = '\0';
+  }
+  if (reasonOut != NULL && reasonLen > 0) {
+    strncpy(reasonOut, pairReason, reasonLen - 1);
+    reasonOut[reasonLen - 1] = '\0';
+  }
+  return pairState;
+}
+
+static void Wifi_BuildApSsid(void)
+{
+  uint8_t mac[6] = {0};
+  if (esp_wifi_get_mac(WIFI_IF_STA, mac) != ESP_OK) {
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  }
+  snprintf(pairingApSsid, sizeof(pairingApSsid), "SAIHUB-%02x%02x%02x", mac[3], mac[4], mac[5]);
+}
+
+static esp_err_t Wifi_ApplyStaConfig(const char* ssid, const char* password)
 {
   if (ssid == NULL || password == NULL || strlen(ssid) == 0 || strlen(ssid) > 32 || strlen(password) > 64) {
     ESP_LOGE(tag, "SSID or password invalid length");
@@ -55,27 +109,205 @@ esp_err_t Wifi_ConnectWifi(const char* ssid, const char* password)
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_set_config(WIFI_IF_STA, &config), "set wifi config failed");
 
   strncpy(lastRequestConnectSSID, ssid, sizeof(lastRequestConnectSSID) - 1);
+  lastRequestConnectSSID[sizeof(lastRequestConnectSSID) - 1] = '\0';
   strncpy(lastRequestConnectPassword, password, sizeof(lastRequestConnectPassword) - 1);
-  allowReconnect = true;
+  lastRequestConnectPassword[sizeof(lastRequestConnectPassword) - 1] = '\0';
+  return ESP_OK;
+}
 
+esp_err_t Wifi_ConnectWifi(const char* ssid, const char* password)
+{
+  TOOL_CHECK_ESP_OK_OR_RETURN(Wifi_ApplyStaConfig(ssid, password));
+  allowReconnect = true;
+  portalConnectInFlight = false;
   esp_wifi_disconnect();
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_connect(), "wifi connect request failed");
   ESP_LOGI(tag, "Connecting to SSID: %s", ssid);
   return ESP_OK;
 }
 
+esp_err_t Wifi_ConnectWifiAsync(const char* ssid, const char* password)
+{
+  if (!isPairing) {
+    ESP_LOGW(tag, "async connect rejected; not pairing");
+    return ESP_ERR_INVALID_STATE;
+  }
+  if (Wifi_ApplyStaConfig(ssid, password) != ESP_OK) {
+    pairState = WIFI_PAIR_STATE_FAILED;
+    snprintf(pairReason, sizeof(pairReason), "SSID or password is invalid.");
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  pairState = WIFI_PAIR_STATE_CONNECTING;
+  pairIp[0] = '\0';
+  pairReason[0] = '\0';
+  portalConnectInFlight = true;
+  allowReconnect = false;
+  xTimerStop(reconnectTimer, 0);
+
+  esp_wifi_disconnect();
+  esp_err_t err = esp_wifi_connect();
+  if (err != ESP_OK) {
+    portalConnectInFlight = false;
+    pairState = WIFI_PAIR_STATE_FAILED;
+    snprintf(pairReason, sizeof(pairReason), "Could not start connection.");
+    return err;
+  }
+  ESP_LOGI(tag, "Async connecting to SSID: %s", ssid);
+  return ESP_OK;
+}
+
+esp_err_t Wifi_ScanNetworks(Wifi_Network* out, size_t maxOut, size_t* countOut)
+{
+  if (out == NULL || countOut == NULL || maxOut == 0) return ESP_ERR_INVALID_ARG;
+  *countOut = 0;
+
+  wifi_scan_config_t scanConfig = {
+      .ssid = NULL,
+      .bssid = NULL,
+      .channel = 0,
+      .show_hidden = false,
+      .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+      .scan_time.active.min = 100,
+      .scan_time.active.max = 300,
+  };
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_scan_start(&scanConfig, true), "wifi scan failed");
+
+  uint16_t apCount = 0;
+  TOOL_CHECK_ESP_OK_OR_RETURN(esp_wifi_scan_get_ap_num(&apCount));
+  if (apCount == 0) return ESP_OK;
+
+  uint16_t fetch = apCount > WIFI_SCAN_MAX_AP ? WIFI_SCAN_MAX_AP : apCount;
+  wifi_ap_record_t* records = calloc(fetch, sizeof(wifi_ap_record_t));
+  if (records == NULL) return ESP_ERR_NO_MEM;
+  esp_err_t err = esp_wifi_scan_get_ap_records(&fetch, records);
+  if (err != ESP_OK) {
+    free(records);
+    return err;
+  }
+
+  size_t n = 0;
+  for (uint16_t i = 0; i < fetch && n < maxOut; i++) {
+    if (records[i].ssid[0] == '\0') continue;
+    bool dup = false;
+    for (size_t j = 0; j < n; j++) {
+      if (strcmp(out[j].ssid, (const char*)records[i].ssid) == 0) {
+        if (records[i].rssi > out[j].rssi) out[j].rssi = records[i].rssi;
+        dup = true;
+        break;
+      }
+    }
+    if (dup) continue;
+    strncpy(out[n].ssid, (const char*)records[i].ssid, sizeof(out[n].ssid) - 1);
+    out[n].ssid[sizeof(out[n].ssid) - 1] = '\0';
+    out[n].rssi = records[i].rssi;
+    out[n].secure = records[i].authmode != WIFI_AUTH_OPEN;
+    n++;
+  }
+  free(records);
+  *countOut = n;
+  return ESP_OK;
+}
+
+static void Wifi_FinishPairingStop(void)
+{
+  if (!isPairing) return;
+  bool fireConnected = isConnected && pairState == WIFI_PAIR_STATE_CONNECTED;
+  isPairing = false;
+  portalConnectInFlight = false;
+  xTimerStop(pairCloseTimer, 0);
+
+  esp_wifi_set_mode(WIFI_MODE_STA);
+
+  TOOL_EXECUTE_CALLBACKS(pairingStoppedCallbacks);
+  if (fireConnected) {
+    TOOL_EXECUTE_CALLBACKS(connectedCallbacks);
+  }
+}
+
+static void Wifi_PairCloseCallback(TimerHandle_t timer)
+{
+  (void)timer;
+  ESP_LOGI(tag, "Closing pairing AP after successful connect");
+  Wifi_FinishPairingStop();
+}
+
+esp_err_t Wifi_StartPairing(void)
+{
+  if (isPairing) return ESP_OK;
+
+  Wifi_BuildApSsid();
+  wifi_config_t apConfig = {0};
+  strncpy((char*)apConfig.ap.ssid, pairingApSsid, sizeof(apConfig.ap.ssid) - 1);
+  apConfig.ap.ssid_len = strlen(pairingApSsid);
+  apConfig.ap.channel = 1;
+  apConfig.ap.authmode = WIFI_AUTH_OPEN;
+  apConfig.ap.max_connection = 4;
+  apConfig.ap.ssid_hidden = 0;
+
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_set_mode(WIFI_MODE_APSTA), "set APSTA failed");
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_set_config(WIFI_IF_AP, &apConfig), "set AP config failed");
+
+  isPairing = true;
+  pairState = WIFI_PAIR_STATE_IDLE;
+  pairIp[0] = '\0';
+  pairReason[0] = '\0';
+  portalConnectInFlight = false;
+  xTimerStop(pairCloseTimer, 0);
+
+  ESP_LOGI(tag, "Pairing AP started: %s", pairingApSsid);
+  TOOL_EXECUTE_CALLBACKS(pairingStartedCallbacks);
+  return ESP_OK;
+}
+
+esp_err_t Wifi_StopPairing(void)
+{
+  if (!isPairing) return ESP_OK;
+  Wifi_FinishPairingStop();
+  allowReconnect = true;
+  return ESP_OK;
+}
+
 static void Wifi_ReconnectCallback(TimerHandle_t timer)
 {
   (void)timer;
-  if (allowReconnect) {
+  if (allowReconnect && !portalConnectInFlight) {
     esp_wifi_connect();
   }
+}
+
+static void Wifi_OnGotIp(void)
+{
+  Nvs_SetString("wifi.ssid", lastRequestConnectSSID);
+  Nvs_SetString("wifi.password", lastRequestConnectPassword);
+  isConnected = true;
+
+  esp_netif_ip_info_t ipInfo;
+  if (staNetif != NULL && esp_netif_get_ip_info(staNetif, &ipInfo) == ESP_OK) {
+    snprintf(pairIp, sizeof(pairIp), IPSTR, IP2STR(&ipInfo.ip));
+  } else {
+    pairIp[0] = '\0';
+  }
+
+  ESP_LOGI(tag, "WiFi connected ip=%s", pairIp[0] ? pairIp : "?");
+
+  if (isPairing) {
+    pairState = WIFI_PAIR_STATE_CONNECTED;
+    pairReason[0] = '\0';
+    portalConnectInFlight = false;
+    allowReconnect = true;
+    xTimerStop(pairCloseTimer, 0);
+    xTimerStart(pairCloseTimer, portMAX_DELAY);
+    /* Defer connected callbacks until AP/portal close so port 80 is free. */
+    return;
+  }
+
+  TOOL_EXECUTE_CALLBACKS(connectedCallbacks);
 }
 
 static void Wifi_EventHandler(void* arg, esp_event_base_t eventBase, int32_t eventId, void* eventData)
 {
   (void)arg;
-  (void)eventData;
 
   if (eventBase == WIFI_EVENT) {
     if (eventId == WIFI_EVENT_STA_START) {
@@ -90,11 +322,27 @@ static void Wifi_EventHandler(void* arg, esp_event_base_t eventBase, int32_t eve
         ESP_LOGW(tag, "No WiFi credentials in NVS or config.h");
       }
     } else if (eventId == WIFI_EVENT_STA_DISCONNECTED) {
+      wifi_event_sta_disconnected_t* disc = (wifi_event_sta_disconnected_t*)eventData;
       bool wasConnected = isConnected;
       isConnected = false;
       if (wasConnected) {
         TOOL_EXECUTE_CALLBACKS(disconnectedCallbacks);
       }
+
+      if (portalConnectInFlight) {
+        portalConnectInFlight = false;
+        pairState = WIFI_PAIR_STATE_FAILED;
+        uint8_t reason = disc ? disc->reason : 0;
+        if (reason == WIFI_REASON_AUTH_FAIL || reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT ||
+            reason == WIFI_REASON_HANDSHAKE_TIMEOUT || reason == WIFI_REASON_NO_AP_FOUND) {
+          snprintf(pairReason, sizeof(pairReason), "Could not join that network. Check the password and try again.");
+        } else {
+          snprintf(pairReason, sizeof(pairReason), "Connection failed. Try again.");
+        }
+        ESP_LOGW(tag, "Pairing connect failed reason=%u", (unsigned)reason);
+        return;
+      }
+
       if (allowReconnect) {
         xTimerStop(reconnectTimer, portMAX_DELAY);
         xTimerStart(reconnectTimer, portMAX_DELAY);
@@ -103,11 +351,7 @@ static void Wifi_EventHandler(void* arg, esp_event_base_t eventBase, int32_t eve
   }
 
   if (eventBase == IP_EVENT && eventId == IP_EVENT_STA_GOT_IP) {
-    Nvs_SetString("wifi.ssid", lastRequestConnectSSID);
-    Nvs_SetString("wifi.password", lastRequestConnectPassword);
-    isConnected = true;
-    ESP_LOGI(tag, "WiFi connected");
-    TOOL_EXECUTE_CALLBACKS(connectedCallbacks);
+    Wifi_OnGotIp();
   }
 }
 
@@ -117,9 +361,14 @@ esp_err_t Wifi_Init(void)
                                   Wifi_ReconnectCallback);
   TOOL_CHECK_OR_LOG_RETURN(reconnectTimer == NULL, "create reconnect timer failed");
 
+  pairCloseTimer = xTimerCreate("wifi-pair-close", pdMS_TO_TICKS(WIFI_PAIR_AP_CLOSE_DELAY_MS), pdFALSE, NULL,
+                                Wifi_PairCloseCallback);
+  TOOL_CHECK_OR_LOG_RETURN(pairCloseTimer == NULL, "create pair close timer failed");
+
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_netif_init());
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_event_loop_create_default());
-  esp_netif_create_default_wifi_sta();
+  staNetif = esp_netif_create_default_wifi_sta();
+  TOOL_CHECK_OR_LOG_RETURN(esp_netif_create_default_wifi_ap() == NULL || staNetif == NULL, "create wifi netif failed");
 
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &Wifi_EventHandler, NULL));
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &Wifi_EventHandler, NULL));

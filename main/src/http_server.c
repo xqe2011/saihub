@@ -19,6 +19,7 @@
 
 static const char* tag = "SAIHUB-Http";
 static httpd_handle_t server = NULL;
+static bool pairingServer = false;
 
 int64_t HttpServer_NowUs(void)
 {
@@ -528,6 +529,9 @@ static esp_err_t HttpServer_NotFoundHandler(httpd_req_t* req, httpd_err_code_t e
 {
   (void)err;
   HttpServer_LogCall(req);
+  if (pairingServer) {
+    return HttpServer_SendError(req, 404, "This URL does not exist. Open / for Wi-Fi setup.");
+  }
   return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
 }
 
@@ -541,16 +545,19 @@ esp_err_t HttpServer_Stop(void)
   if (server) {
     httpd_stop(server);
     server = NULL;
+    pairingServer = false;
     ESP_LOGI(tag, "HTTP server stopped");
   }
   return ESP_OK;
 }
 
-esp_err_t HttpServer_Start(void)
+static esp_err_t HttpServer_StartWithConfig(bool pairing)
 {
   if (server) {
-    return ESP_OK;
+    if (pairingServer == pairing) return ESP_OK;
+    HttpServer_Stop();
   }
+
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
   config.uri_match_fn = httpd_uri_match_wildcard;
@@ -560,15 +567,32 @@ esp_err_t HttpServer_Start(void)
   config.send_wait_timeout = 65;
 
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_start(&server, &config), "httpd_start failed");
-  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_OpenApiRegister(server), "openapi routes failed");
-  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(server), "pin routes failed");
-  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(server), "lock routes failed");
-  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PowerRegister(server), "power routes failed");
-  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ScriptRegister(server), "script routes failed");
-  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_McpRegister(server), "mcp routes failed");
+  pairingServer = pairing;
+
+  if (pairing) {
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PortalRegister(server), "portal routes failed");
+  } else {
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_OpenApiRegister(server), "openapi routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(server), "pin routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(server), "lock routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PowerRegister(server), "power routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ScriptRegister(server), "script routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_McpRegister(server), "mcp routes failed");
+  }
+
   static const httpd_uri_t optionsUri = {.uri = "/*", .method = HTTP_OPTIONS, .handler = HttpServer_SendOptions};
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_register_uri_handler(server, &optionsUri), "options cors route failed");
   httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, HttpServer_NotFoundHandler);
-  ESP_LOGI(tag, "HTTP server started on port 80");
+  ESP_LOGI(tag, "HTTP server started on port 80 (%s)", pairing ? "pairing" : "api");
   return ESP_OK;
+}
+
+esp_err_t HttpServer_Start(void)
+{
+  return HttpServer_StartWithConfig(false);
+}
+
+esp_err_t HttpServer_StartPairing(void)
+{
+  return HttpServer_StartWithConfig(true);
 }

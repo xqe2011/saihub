@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>SAIHUB</title>
+<style>
+:root{
+  --ink:#0e1a17;
+  --foam:#e8f4ef;
+  --mist:rgba(232,244,239,.72);
+  --mint:#3dcf9a;
+  --mint-deep:#1f9a6c;
+  --line:rgba(14,26,23,.12);
+  --danger:#c44b3c;
+  --ok:#1f9a6c;
+  --card:rgba(255,255,255,.78);
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;}
+body{
+  font-family:"Avenir Next","Segoe UI",Candara,Gill Sans,sans-serif;
+  color:var(--ink);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #7ee0b8 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #c9e8ff 0%, transparent 50%),
+    linear-gradient(165deg,#f3faf7 0%,#d9ebe3 45%,#c5ddd4 100%);
+  background-attachment:fixed;
+}
+body::before{
+  content:"";
+  position:fixed;inset:0;pointer-events:none;opacity:.35;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cpath d='M0 60h120M60 0v120' stroke='%230e1a17' stroke-opacity='.05'/%3E%3C/svg%3E");
+}
+.wrap{position:relative;max-width:28rem;margin:0 auto;padding:2.25rem 1.25rem 3rem;}
+.brand{
+  font-family:Palatino,"Palatino Linotype","Book Antiqua",Georgia,serif;
+  font-size:clamp(2.6rem,10vw,3.4rem);
+  letter-spacing:.02em;
+  line-height:.95;
+  margin:0 0 .35rem;
+  animation:rise .7s ease both;
+}
+.tag{
+  margin:0 0 1.75rem;
+  color:rgba(14,26,23,.72);
+  font-size:1.02rem;
+  animation:rise .7s .08s ease both;
+}
+h2{
+  font-size:.78rem;
+  text-transform:uppercase;
+  letter-spacing:.14em;
+  margin:0 0 .75rem;
+  color:rgba(14,26,23,.55);
+}
+.panel{
+  background:var(--card);
+  backdrop-filter:blur(10px);
+  border:1px solid var(--line);
+  border-radius:1.1rem;
+  padding:1rem;
+  margin-bottom:1rem;
+  animation:rise .7s .14s ease both;
+}
+.list{display:flex;flex-direction:column;gap:.55rem;max-height:40vh;overflow:auto;}
+.net{
+  display:flex;align-items:center;gap:.75rem;
+  width:100%;text-align:left;
+  border:1px solid transparent;border-radius:.85rem;
+  background:rgba(255,255,255,.55);
+  padding:.85rem .9rem;cursor:pointer;
+  font:inherit;color:inherit;
+  transition:border-color .2s, transform .2s, background .2s;
+}
+.net:hover{border-color:rgba(31,154,108,.45);transform:translateY(-1px)}
+.net.active{border-color:var(--mint-deep);background:rgba(61,207,154,.18)}
+.net .meta{margin-left:auto;font-size:.78rem;opacity:.65;white-space:nowrap}
+.bars{display:inline-flex;gap:2px;align-items:flex-end;height:14px}
+.bars i{display:block;width:3px;background:rgba(14,26,23,.25);border-radius:1px}
+.bars i.on{background:var(--mint-deep)}
+.bars i:nth-child(1){height:4px}.bars i:nth-child(2){height:8px}.bars i:nth-child(3){height:12px}
+.row{display:flex;gap:.6rem;margin-top:.85rem}
+input[type=password],input[type=text]{
+  flex:1;border:1px solid var(--line);border-radius:.8rem;
+  padding:.85rem 1rem;font:inherit;background:#fff;
+}
+button.primary,button.ghost{
+  border:0;border-radius:.8rem;padding:.85rem 1.1rem;font:inherit;font-weight:600;cursor:pointer;
+}
+button.primary{background:linear-gradient(135deg,var(--mint),var(--mint-deep));color:#fff}
+button.primary:disabled{opacity:.5;cursor:not-allowed}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.status{
+  min-height:1.4rem;margin-top:.85rem;font-size:.92rem;
+  animation:pulse 1.6s ease infinite;
+}
+.status.ok{color:var(--ok);animation:none}
+.status.err{color:var(--danger);animation:none}
+.ip{
+  display:none;margin-top:.75rem;padding:.9rem 1rem;border-radius:.85rem;
+  background:rgba(61,207,154,.16);border:1px solid rgba(31,154,108,.35);
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1.05rem;
+}
+.ip.show{display:block;animation:rise .45s ease both}
+.empty{opacity:.65;padding:.5rem 0}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes pulse{0%,100%{opacity:.55}50%{opacity:1}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1 class="brand">SAIHUB</h1>
+  <p class="tag">Choose a network to connect this hub.</p>
+
+  <section class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem">
+      <h2 style="margin:0">Nearby Wi‑Fi</h2>
+      <button class="ghost" type="button" id="refresh">Refresh</button>
+    </div>
+    <div class="list" id="list"><div class="empty">Scanning…</div></div>
+    <div class="row">
+      <input id="password" type="password" placeholder="Password" autocomplete="current-password"/>
+      <button class="primary" type="button" id="connect" disabled>Connect</button>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="ip" id="ip"></div>
+  </section>
+</main>
+<script>
+const listEl=document.getElementById('list');
+const statusEl=document.getElementById('status');
+const ipEl=document.getElementById('ip');
+const passEl=document.getElementById('password');
+const connectBtn=document.getElementById('connect');
+let selected=null, pollTimer=null;
+
+function bars(rssi){
+  const n=rssi>-55?3:rssi>-70?2:1;
+  return '<span class="bars">'+[1,2,3].map(i=>'<i class="'+(i<=n?'on':'')+'"></i>').join('')+'</span>';
+}
+
+async function loadNetworks(){
+  statusEl.className='status';
+  statusEl.textContent='Scanning…';
+  ipEl.className='ip';
+  try{
+    const r=await fetch('/wifi/networks');
+    const j=await r.json();
+    const nets=j.networks||[];
+    if(!nets.length){listEl.innerHTML='<div class="empty">No networks found.</div>';statusEl.textContent='';return;}
+    listEl.innerHTML='';
+    nets.sort((a,b)=>b.rssi-a.rssi).forEach(n=>{
+      const b=document.createElement('button');
+      b.type='button';b.className='net'+(selected===n.ssid?' active':'');
+      b.innerHTML='<span>'+escapeHtml(n.ssid)+(n.secure?' · locked':'')+'</span><span class="meta">'+bars(n.rssi)+'</span>';
+      b.onclick=()=>{selected=n.ssid;passEl.value='';[...listEl.children].forEach(x=>x.classList.remove('active'));b.classList.add('active');connectBtn.disabled=false;statusEl.textContent='';ipEl.className='ip';};
+      listEl.appendChild(b);
+    });
+    statusEl.textContent='';
+  }catch(e){
+    listEl.innerHTML='<div class="empty">Could not scan. Retry.</div>';
+    statusEl.className='status err';statusEl.textContent='Scan failed.';
+  }
+}
+
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+async function connect(){
+  if(!selected)return;
+  connectBtn.disabled=true;
+  statusEl.className='status';statusEl.textContent='Connecting…';
+  ipEl.className='ip';
+  try{
+    const r=await fetch('/wifi/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid:selected,password:passEl.value||''})});
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.reason||'Request failed');}
+    pollStatus();
+  }catch(e){
+    statusEl.className='status err';statusEl.textContent=e.message||'Could not start connection.';
+    connectBtn.disabled=false;
+  }
+}
+
+async function pollStatus(){
+  clearTimeout(pollTimer);
+  try{
+    const r=await fetch('/wifi/status');
+    const j=await r.json();
+    if(j.state==='connected'){
+      statusEl.className='status ok';
+      statusEl.textContent='Connected. This setup network will close shortly.';
+      if(j.ip){ipEl.textContent='IP '+j.ip;ipEl.className='ip show';}
+      return;
+    }
+    if(j.state==='failed'){
+      statusEl.className='status err';
+      statusEl.textContent=j.reason||'Connection failed.';
+      connectBtn.disabled=false;
+      return;
+    }
+    statusEl.textContent=j.state==='connecting'?'Connecting…':'Waiting…';
+  }catch(e){
+    statusEl.textContent='Waiting for device…';
+  }
+  pollTimer=setTimeout(pollStatus,1200);
+}
+
+document.getElementById('refresh').onclick=loadNetworks;
+connectBtn.onclick=connect;
+loadNetworks();
+</script>
+</body>
+</html>
