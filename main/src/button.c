@@ -28,7 +28,7 @@ static void Button_Task(void* arg)
 {
   (void)arg;
   while (true) {
-    int raw = gpio_get_level(CONFIG_GPIO_BUTTON_PIN);
+    int raw = gpio_get_level(CONFIG_BUTTON_PIN);
     int64_t now = esp_timer_get_time();
     if (raw != lastRawLevel) {
       lastRawLevel = raw;
@@ -52,14 +52,14 @@ static void Button_Task(void* arg)
 esp_err_t Button_Init(void)
 {
   gpio_config_t io = {
-      .pin_bit_mask = 1ULL << CONFIG_GPIO_BUTTON_PIN,
+      .pin_bit_mask = 1ULL << CONFIG_BUTTON_PIN,
       .mode = GPIO_MODE_INPUT,
       .pull_up_en = GPIO_PULLUP_ENABLE,
       .pull_down_en = GPIO_PULLDOWN_DISABLE,
       .intr_type = GPIO_INTR_DISABLE,
   };
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(gpio_config(&io), "button gpio config failed");
-  stableLevel = gpio_get_level(CONFIG_GPIO_BUTTON_PIN);
+  stableLevel = gpio_get_level(CONFIG_BUTTON_PIN);
   lastRawLevel = stableLevel;
   lastChangeUs = esp_timer_get_time();
 
