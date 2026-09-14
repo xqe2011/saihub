@@ -224,6 +224,7 @@ static bool Script_TimedOut(void)
 static void Script_RaiseAbort(lua_State* L)
 {
   lua_newtable(L);
+  int status = 422;
   if (scriptAbort == SCRIPT_ABORT_TIMEOUT) {
     lua_pushstring(L, "Script exceeded timeout.");
   } else if (scriptAbort == SCRIPT_ABORT_MAX_CALLS) {
@@ -234,6 +235,8 @@ static void Script_RaiseAbort(lua_State* L)
     lua_pushstring(L, "Script aborted.");
   }
   lua_setfield(L, -2, "reason");
+  lua_pushinteger(L, status);
+  lua_setfield(L, -2, "status");
   lua_error(L);
 }
 
@@ -257,11 +260,29 @@ static bool Script_IsReasonTable(lua_State* L, int idx)
   return ok;
 }
 
-static void Script_PushReason(lua_State* L, const char* reason)
+static int Script_SanitizeFailStatus(int status)
+{
+  switch (status) {
+    case 400:
+    case 409:
+    case 412:
+    case 415:
+    case 422:
+    case 423:
+    case 500:
+      return status;
+    default:
+      return 422;
+  }
+}
+
+static void Script_PushErr(lua_State* L, const char* reason, int status)
 {
   lua_newtable(L);
   lua_pushstring(L, reason ? reason : "error");
   lua_setfield(L, -2, "reason");
+  lua_pushinteger(L, Script_SanitizeFailStatus(status));
+  lua_setfield(L, -2, "status");
 }
 
 static int Script_LuaError(lua_State* L)
@@ -288,7 +309,7 @@ static int Script_LuaError(lua_State* L)
     snprintf(reason, sizeof(reason),
              "The script reported an error: %s. Catch it with pcall or fix the script.", msg);
   }
-  Script_PushReason(L, reason);
+  Script_PushErr(L, reason, 422);
   return lua_error(L);
 }
 
@@ -479,7 +500,7 @@ static int Script_LuaTool(lua_State* L)
   const char* name = lua_tostring(L, lua_upvalueindex(1));
   cJSON* args = Script_LuaArgsToJson(L, 1);
   if (args == NULL) {
-    Script_PushReason(L, "tool arguments must be a table.");
+    Script_PushErr(L, "tool arguments must be a table.", 400);
     return lua_error(L);
   }
 
@@ -503,7 +524,7 @@ static int Script_LuaTool(lua_State* L)
     cJSON* width = cJSON_GetObjectItem(args, "width");
     if (cJSON_IsNumber(width) && width->valuedouble > (double)remainUs) {
       cJSON_Delete(args);
-      Script_PushReason(L, "pulse width exceeds remaining script timeout.");
+      Script_PushErr(L, "pulse width exceeds remaining script timeout.", 422);
       return lua_error(L);
     }
   } else if (strcmp(name, "trace_pins") == 0) {
@@ -511,7 +532,7 @@ static int Script_LuaTool(lua_State* L)
     double dur = cJSON_IsNumber(duration) ? duration->valuedouble : 1000000.0;
     if (dur > (double)remainUs) {
       cJSON_Delete(args);
-      Script_PushReason(L, "trace duration exceeds remaining script timeout.");
+      Script_PushErr(L, "trace duration exceeds remaining script timeout.", 422);
       return lua_error(L);
     }
   }
@@ -519,7 +540,7 @@ static int Script_LuaTool(lua_State* L)
   ToolCall_Result tr = ToolCall_Invoke(name, args);
   cJSON_Delete(args);
   if (!tr.ok) {
-    Script_PushReason(L, tr.reason);
+    Script_PushErr(L, tr.reason, tr.httpStatus);
     return lua_error(L);
   }
 
@@ -599,21 +620,26 @@ static void Script_FormatScriptFail(char* out, size_t outLen, const char* msg)
   }
 }
 
-static void Script_ExtractErrReason(lua_State* L, char* out, size_t outLen)
+static int Script_ExtractErr(lua_State* L, char* out, size_t outLen)
 {
   if (Script_IsReasonTable(L, -1)) {
     lua_getfield(L, -1, "reason");
     const char* r = lua_tostring(L, -1);
-    snprintf(out, outLen, "%s", r ? r : "error");
+    if (r != NULL && strncmp(r, "The script ", 11) == 0) {
+      snprintf(out, outLen, "%s", r);
+    } else {
+      Script_FormatScriptFail(out, outLen, r);
+    }
     lua_pop(L, 1);
-    return;
+    return 422;
   }
   if (lua_isstring(L, -1)) {
     Script_FormatScriptFail(out, outLen, lua_tostring(L, -1));
-    return;
+    return 422;
   }
   Script_FormatScriptFail(out, outLen, luaL_tolstring(L, -1, NULL));
   lua_pop(L, 1);
+  return 422;
 }
 
 static void Script_ExecuteJob(Script_Job* job)
@@ -662,7 +688,7 @@ static void Script_ExecuteJob(Script_Job* job)
   if (L == NULL) {
     snprintf(out->reason, sizeof(out->reason), "Script ran out of memory.");
     job->status = SCRIPT_ERR_RUNTIME;
-    out->httpStatus = 400;
+    out->httpStatus = 422;
     return;
   }
 
@@ -671,7 +697,7 @@ static void Script_ExecuteJob(Script_Job* job)
 
   int loadStatus = luaL_loadbuffer(L, job->script, scriptLen, "script");
   if (loadStatus != LUA_OK) {
-    Script_ExtractErrReason(L, out->reason, sizeof(out->reason));
+    (void)Script_ExtractErr(L, out->reason, sizeof(out->reason));
     out->elapsedUs = (uint64_t)(Script_NowUs() - started);
     out->calls = scriptCalls;
     lua_close(L);
@@ -686,29 +712,28 @@ static void Script_ExecuteJob(Script_Job* job)
 
   if (scriptAbort == SCRIPT_ABORT_TIMEOUT || (runStatus != LUA_OK && scriptAbort == SCRIPT_ABORT_TIMEOUT)) {
     snprintf(out->reason, sizeof(out->reason), "Script exceeded timeout.");
-    out->httpStatus = 408;
+    out->httpStatus = 422;
     lua_close(L);
     job->status = SCRIPT_ERR_TIMEOUT;
     return;
   }
   if (scriptAbort == SCRIPT_ABORT_MAX_CALLS) {
     snprintf(out->reason, sizeof(out->reason), "Script exceeded maxCalls.");
-    out->httpStatus = 400;
+    out->httpStatus = 422;
     lua_close(L);
     job->status = SCRIPT_ERR_RUNTIME;
     return;
   }
   if (scriptAbort == SCRIPT_ABORT_OOM) {
     snprintf(out->reason, sizeof(out->reason), "Script ran out of memory.");
-    out->httpStatus = 400;
+    out->httpStatus = 422;
     lua_close(L);
     job->status = SCRIPT_ERR_RUNTIME;
     return;
   }
 
   if (runStatus != LUA_OK) {
-    Script_ExtractErrReason(L, out->reason, sizeof(out->reason));
-    out->httpStatus = 400;
+    out->httpStatus = Script_ExtractErr(L, out->reason, sizeof(out->reason));
     lua_close(L);
     job->status = SCRIPT_ERR_RUNTIME;
     return;

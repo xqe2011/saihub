@@ -1125,16 +1125,30 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "408": {
-            "$ref": "#/components/responses/RequestTimeout"
+            "description": "invalid JSON, out-of-range params, or Lua source failed to parse",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
             "$ref": "#/components/responses/ScriptBusy"
           },
           "415": {
             "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "description": "Uncaught error() or tool failure, timeout, maxCalls exceeded, or script heap exhausted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -1671,16 +1685,6 @@
       },
       "Conflict": {
         "description": "POST /lock overlaps an existing lock",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        }
-      },
-      "RequestTimeout": {
-        "description": "Script exceeded timeout",
         "content": {
           "application/json": {
             "schema": {

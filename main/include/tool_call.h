@@ -13,6 +13,7 @@ typedef struct {
   bool ok;
   cJSON* payload; /* caller-owned on success; NULL on error */
   char reason[256];
+  int httpStatus; /* REST status to use if this failure is uncaught by a script */
 } ToolCall_Result;
 
 /**

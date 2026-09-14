@@ -102,9 +102,6 @@ esp_err_t HttpServer_SendError(httpd_req_t* req, int status, const char* reason)
     case 405:
       httpd_resp_set_status(req, "405 Method Not Allowed");
       break;
-    case 408:
-      httpd_resp_set_status(req, "408 Request Timeout");
-      break;
     case 409:
       httpd_resp_set_status(req, "409 Conflict");
       break;
