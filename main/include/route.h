@@ -15,5 +15,6 @@ esp_err_t Route_LockRegister(httpd_handle_t server);
 esp_err_t Route_PowerRegister(httpd_handle_t server);
 esp_err_t Route_McpRegister(httpd_handle_t server);
 esp_err_t Route_ScriptRegister(httpd_handle_t server);
+esp_err_t Route_PortalRegister(httpd_handle_t server);
 
 #endif
