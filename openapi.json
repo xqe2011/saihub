@@ -3,7 +3,7 @@
   "info": {
     "title": "Saihub Pin REST API",
     "version": "1.0.0",
-    "description": "No-TLS JSON REST API for logical pins 0-7, PWM, power rails (3v3/5v), edge tracing, resource locks, and on-device Lua scripts. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}."
+    "description": "No-TLS JSON REST API for logical pins 0-7, PWM, power rails (3v3/5v), edge tracing, resource locks, and on-device Lua 5.4 scripts. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}."
   },
   "servers": [
     {
@@ -26,7 +26,8 @@
       "name": "lock"
     },
     {
-      "name": "script"
+      "name": "script",
+      "description": "Sandboxed Lua 5.4. Allowed libraries: base, table, string, math, utf8. require/dofile/loadfile/load/collectgarbage are nil. No io, os, package, debug, or coroutine. Tools are globals with MCP argument keys. sleep(us) delays in microseconds. print() is captured. First return value is result. Errors raise {reason=\"...\"}; catch with pcall. Timeout, maxCalls, and out-of-memory abort the run."
     },
     {
       "name": "meta"
@@ -1066,8 +1067,8 @@
         "tags": [
           "script"
         ],
-        "summary": "Run a Lua script on-device",
-        "description": "Execute a sandboxed Lua script that can call the same tools as MCP (pin/power/lock). Optional maxCalls and timeout (microseconds) must not exceed firmware ceilings. Default lock for nested tool calls: X-Lock-Id. One script at a time.",
+        "summary": "Run a Lua 5.4 script on-device",
+        "description": "Execute a sandboxed Lua 5.4 script that can call the same pin/power/lock tools as MCP (not run_script). Optional maxCalls and timeout (microseconds) must not exceed firmware ceilings. Default lock for nested tool calls: X-Lock-Id. One script at a time.\n\nLua 5.4. Allowed libraries: base, table, string, math, utf8. require, dofile, loadfile, load, and collectgarbage are nil. No io, os, package, debug, or coroutine.\n\nEach tool is a global that takes one argument table with the same keys as MCP (always pass pins even for one pin). JSON arrays become 1-based Lua tables. sleep(us) delays in microseconds and counts toward timeout, not maxCalls. print() is captured as output. The first return value is result (JSON).\n\nErrors raise a table {reason=\"...\"}. Catch with pcall and read err.reason. Uncaught errors fail the request with that reason; print output is discarded.\n\nCatchable with pcall:\n- Tool failure: system sentence (no \"The script reported\" prefix), e.g. pin/lock/mode errors\n- error(\"msg\"): \"The script reported an error: msg. Catch it with pcall or fix the script.\"\n- error() or error(\"\"): \"The script called error with no message. Catch it with pcall or fix the script.\"\n\nNot catchable (abort the whole run even if pcall returns):\n- timeout: \"Script exceeded timeout.\"\n- maxCalls: \"Script exceeded maxCalls.\"\n- out of memory: \"Script ran out of memory.\"\n- syntax or uncaught Lua runtime: \"The script failed: <message>. Catch it with pcall or fix the script.\"\n\nExample:\nconfigure_pins{pins={0}, mode=\"digitalOutput\", pullUp=false, pullDown=false}\nset_pin_levels{pins={0}, level=1}\nsleep(5000)\nlocal r = get_pin_levels{pins={0}}\nprint(\"level\", r.levels[1])\nreturn r\n\nError handling:\nlocal ok, err = pcall(function()\n  set_pin_levels{pins={0}, level=1}\nend)\nif not ok then\n  return {ok=false, reason=err.reason}\nend",
         "parameters": [
           {
             "name": "X-Lock-Id",
@@ -1094,7 +1095,7 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 8192,
-                    "description": "Lua source"
+                    "description": "Lua 5.4 source. Allowed libraries: base, table, string, math, utf8."
                   },
                   "maxCalls": {
                     "type": "integer",
@@ -1109,6 +1110,11 @@
                     "description": "Wall-clock budget in microseconds (default and ceiling from firmware)"
                   }
                 }
+              },
+              "example": {
+                "script": "configure_pins{pins={0}, mode=\"digitalOutput\", pullUp=false, pullDown=false}\nset_pin_levels{pins={0}, level=1}\nsleep(5000)\nlocal r = get_pin_levels{pins={0}}\nprint(\"level\", r.levels[1])\nreturn r",
+                "maxCalls": 16,
+                "timeout": 1000000
               }
             }
           }
@@ -1120,6 +1126,17 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScriptResult"
+                },
+                "example": {
+                  "result": {
+                    "levels": [
+                      1
+                    ],
+                    "time": 123456
+                  },
+                  "output": "level\t1\n",
+                  "calls": 3,
+                  "elapsed": 6123
                 }
               }
             }
@@ -1644,7 +1661,7 @@
         ],
         "properties": {
           "result": {
-            "description": "First Lua return value as JSON, or null",
+            "description": "First Lua 5.4 return value as JSON, or null. JSON arrays in tool results are 1-based Lua tables.",
             "nullable": true
           },
           "output": {
