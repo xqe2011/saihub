@@ -87,6 +87,7 @@ static esp_err_t Route_LockRenewHandler(httpd_req_t* req)
   if (id[0] == '\0') {
     return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
   }
+  TOOL_CALL_LOG("rest %s %s id=%s", HttpServer_MethodName(req->method), req->uri, id);
   Lock_Entry entry;
   if (Lock_Renew(id, &entry) != ESP_OK) {
     char reason[160];
@@ -111,6 +112,7 @@ static esp_err_t Route_LockDeleteHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
   }
   const char* id = req->uri + strlen(prefix);
+  TOOL_CALL_LOG("rest %s %s id=%s", HttpServer_MethodName(req->method), req->uri, id);
   Lock_Delete(id); /* always 204 */
   return HttpServer_SendEmpty(req, 204);
 }

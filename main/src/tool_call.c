@@ -483,7 +483,101 @@ static ToolCall_Result ToolCall_DeleteLock(cJSON* args)
   return ToolCall_OkEmpty();
 }
 
-ToolCall_Result ToolCall_Invoke(const char* name, cJSON* args)
+static const char* ToolCall_ArgStr(const cJSON* args, const char* key)
+{
+  cJSON* it = cJSON_GetObjectItem(args, key);
+  return (cJSON_IsString(it) && it->valuestring != NULL) ? it->valuestring : "";
+}
+
+static const char* ToolCall_ArgBool(const cJSON* args, const char* key)
+{
+  cJSON* it = cJSON_GetObjectItem(args, key);
+  if (!cJSON_IsBool(it)) return "";
+  return cJSON_IsTrue(it) ? "true" : "false";
+}
+
+static int ToolCall_ArgInt(const cJSON* args, const char* key, int def)
+{
+  cJSON* it = cJSON_GetObjectItem(args, key);
+  return cJSON_IsNumber(it) ? it->valueint : def;
+}
+
+static double ToolCall_ArgNum(const cJSON* args, const char* key, double def)
+{
+  cJSON* it = cJSON_GetObjectItem(args, key);
+  return cJSON_IsNumber(it) ? it->valuedouble : def;
+}
+
+/** Format pins:[…] into "1,2,3". buf must hold at least 32 bytes. */
+static const char* ToolCall_ArgPins(const cJSON* args, char* buf, size_t bufLen)
+{
+  buf[0] = '\0';
+  cJSON* pins = cJSON_GetObjectItem(args, "pins");
+  if (!cJSON_IsArray(pins) || bufLen < 2) return buf;
+  size_t n = 0;
+  for (const cJSON* el = pins->child; el != NULL; el = el->next) {
+    if (!cJSON_IsNumber(el)) continue;
+    int wrote = snprintf(buf + n, bufLen - n, (n == 0) ? "%d" : ",%d", el->valueint);
+    if (wrote < 0 || (size_t)wrote >= bufLen - n) break;
+    n += (size_t)wrote;
+  }
+  return buf;
+}
+
+static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* args)
+{
+  if (via == NULL) via = "?";
+  if (name == NULL) name = "?";
+  char pins[32];
+
+  if (strcmp(name, "list_pins") == 0) {
+    TOOL_CALL_LOG("%s list_pins()", via);
+  } else if (strcmp(name, "configure_pins") == 0) {
+    TOOL_CALL_LOG("%s configure_pins(pins=[%s], mode=%s, pullUp=%s, pullDown=%s, openDrain=%s, lockId=%s)", via,
+                  ToolCall_ArgPins(args, pins, sizeof(pins)), ToolCall_ArgStr(args, "mode"),
+                  ToolCall_ArgBool(args, "pullUp"), ToolCall_ArgBool(args, "pullDown"),
+                  ToolCall_ArgBool(args, "openDrain"), ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "get_pin_levels") == 0) {
+    TOOL_CALL_LOG("%s get_pin_levels(pins=[%s], lockId=%s)", via, ToolCall_ArgPins(args, pins, sizeof(pins)),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "set_pin_levels") == 0) {
+    TOOL_CALL_LOG("%s set_pin_levels(pins=[%s], level=%d, lockId=%s)", via, ToolCall_ArgPins(args, pins, sizeof(pins)),
+                  ToolCall_ArgInt(args, "level", -1), ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "pulse_pins") == 0) {
+    TOOL_CALL_LOG("%s pulse_pins(pins=[%s], width=%g, level=%d, lockId=%s)", via,
+                  ToolCall_ArgPins(args, pins, sizeof(pins)), ToolCall_ArgNum(args, "width", 0),
+                  ToolCall_ArgInt(args, "level", -1), ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "get_pin_pwms") == 0) {
+    TOOL_CALL_LOG("%s get_pin_pwms(pins=[%s], lockId=%s)", via, ToolCall_ArgPins(args, pins, sizeof(pins)),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "set_pin_pwms") == 0) {
+    TOOL_CALL_LOG("%s set_pin_pwms(pins=[%s], frequency=%g, duty=%g, lockId=%s)", via,
+                  ToolCall_ArgPins(args, pins, sizeof(pins)), ToolCall_ArgNum(args, "frequency", 0),
+                  ToolCall_ArgNum(args, "duty", 0), ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "trace_pins") == 0) {
+    TOOL_CALL_LOG("%s trace_pins(pins=[%s], edge=%s, duration=%g, lockId=%s)", via,
+                  ToolCall_ArgPins(args, pins, sizeof(pins)), ToolCall_ArgStr(args, "edge"),
+                  ToolCall_ArgNum(args, "duration", (double)TRACE_DEFAULT_DURATION_US),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "get_output_power_state") == 0) {
+    TOOL_CALL_LOG("%s get_output_power_state(rail=%s, lockId=%s)", via, ToolCall_ArgStr(args, "rail"),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "set_output_power_state") == 0) {
+    TOOL_CALL_LOG("%s set_output_power_state(rail=%s, enable=%s, lockId=%s)", via, ToolCall_ArgStr(args, "rail"),
+                  ToolCall_ArgBool(args, "enable"), ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "create_lock") == 0) {
+    cJSON* resources = cJSON_GetObjectItem(args, "resources");
+    TOOL_CALL_LOG("%s create_lock(resources=%d)", via, cJSON_IsArray(resources) ? cJSON_GetArraySize(resources) : 0);
+  } else if (strcmp(name, "renew_lock") == 0) {
+    TOOL_CALL_LOG("%s renew_lock(id=%s)", via, ToolCall_ArgStr(args, "id"));
+  } else if (strcmp(name, "delete_lock") == 0) {
+    TOOL_CALL_LOG("%s delete_lock(id=%s)", via, ToolCall_ArgStr(args, "id"));
+  } else {
+    TOOL_CALL_LOG("%s %s(...)", via, name);
+  }
+}
+
+ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
 {
   if (name == NULL) return ToolCall_Err("name is required.");
   cJSON* ownedEmpty = NULL;
@@ -491,6 +585,7 @@ ToolCall_Result ToolCall_Invoke(const char* name, cJSON* args)
     ownedEmpty = cJSON_CreateObject();
     args = ownedEmpty;
   }
+  ToolCall_LogInvoke(via, name, args);
 
   ToolCall_Result r;
   if (strcmp(name, "list_pins") == 0)

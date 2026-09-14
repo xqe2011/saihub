@@ -30,6 +30,7 @@ static bool allowReconnect = true;
 static bool isConnected = false;
 static bool isPairing = false;
 static bool portalConnectInFlight = false;
+static bool ignorePairingStaLeave = false;
 static Wifi_PairState pairState = WIFI_PAIR_STATE_IDLE;
 static char pairIp[16] = {0};
 static char pairReason[96] = {0};
@@ -120,6 +121,7 @@ esp_err_t Wifi_ConnectWifi(const char* ssid, const char* password)
   TOOL_CHECK_ESP_OK_OR_RETURN(Wifi_ApplyStaConfig(ssid, password));
   allowReconnect = true;
   portalConnectInFlight = false;
+  ignorePairingStaLeave = false;
   esp_wifi_disconnect();
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_connect(), "wifi connect request failed");
   ESP_LOGI(tag, "Connecting to SSID: %s", ssid);
@@ -145,9 +147,12 @@ esp_err_t Wifi_ConnectWifiAsync(const char* ssid, const char* password)
   allowReconnect = false;
   xTimerStop(reconnectTimer, 0);
 
+  /* Leaving the current STA AP posts DISCONNECTED; that is not a pairing failure. */
+  ignorePairingStaLeave = isConnected;
   esp_wifi_disconnect();
   esp_err_t err = esp_wifi_connect();
   if (err != ESP_OK) {
+    ignorePairingStaLeave = false;
     portalConnectInFlight = false;
     pairState = WIFI_PAIR_STATE_FAILED;
     snprintf(pairReason, sizeof(pairReason), "Could not start connection.");
@@ -215,6 +220,7 @@ static void Wifi_FinishPairingStop(void)
   bool fireConnected = isConnected && pairState == WIFI_PAIR_STATE_CONNECTED;
   isPairing = false;
   portalConnectInFlight = false;
+  ignorePairingStaLeave = false;
   xTimerStop(pairCloseTimer, 0);
 
   esp_wifi_set_mode(WIFI_MODE_STA);
@@ -253,6 +259,7 @@ esp_err_t Wifi_StartPairing(void)
   pairIp[0] = '\0';
   pairReason[0] = '\0';
   portalConnectInFlight = false;
+  ignorePairingStaLeave = false;
   xTimerStop(pairCloseTimer, 0);
 
   ESP_LOGI(tag, "Pairing AP started: %s", pairingApSsid);
@@ -295,6 +302,7 @@ static void Wifi_OnGotIp(void)
     pairState = WIFI_PAIR_STATE_CONNECTED;
     pairReason[0] = '\0';
     portalConnectInFlight = false;
+    ignorePairingStaLeave = false;
     allowReconnect = true;
     xTimerStop(pairCloseTimer, 0);
     xTimerStart(pairCloseTimer, portMAX_DELAY);
@@ -330,9 +338,14 @@ static void Wifi_EventHandler(void* arg, esp_event_base_t eventBase, int32_t eve
       }
 
       if (portalConnectInFlight) {
+        uint8_t reason = disc ? disc->reason : 0;
+        if (ignorePairingStaLeave) {
+          ignorePairingStaLeave = false;
+          ESP_LOGI(tag, "Left previous AP; pairing connect continues reason=%u", (unsigned)reason);
+          return;
+        }
         portalConnectInFlight = false;
         pairState = WIFI_PAIR_STATE_FAILED;
-        uint8_t reason = disc ? disc->reason : 0;
         if (reason == WIFI_REASON_AUTH_FAIL || reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT ||
             reason == WIFI_REASON_HANDSHAKE_TIMEOUT || reason == WIFI_REASON_NO_AP_FOUND) {
           snprintf(pairReason, sizeof(pairReason), "Could not join that network. Check the password and try again.");

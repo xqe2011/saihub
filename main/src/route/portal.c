@@ -16,9 +16,9 @@
 
 static const char* tag = "SAIHUB-Portal";
 
-/* EMBED_FILES "embed/portal.html.gz" → embed_portal_html_gz */
-extern const uint8_t embed_portal_html_gz_start[] asm("_binary_embed_portal_html_gz_start");
-extern const uint8_t embed_portal_html_gz_end[] asm("_binary_embed_portal_html_gz_end");
+/* EMBED_FILES "embed/portal.html.gz" → portal_html_gz (IDF uses the basename) */
+extern const uint8_t portal_html_gz_start[] asm("_binary_portal_html_gz_start");
+extern const uint8_t portal_html_gz_end[] asm("_binary_portal_html_gz_end");
 
 static const char* Portal_StateString(Wifi_PairState state)
 {
@@ -49,11 +49,11 @@ static esp_err_t Portal_GetIndexHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   HttpServer_SetCors(req);
-  size_t len = (size_t)(embed_portal_html_gz_end - embed_portal_html_gz_start);
+  size_t len = (size_t)(portal_html_gz_end - portal_html_gz_start);
   httpd_resp_set_type(req, "text/html");
   httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-  return httpd_resp_send(req, (const char*)embed_portal_html_gz_start, len);
+  return httpd_resp_send(req, (const char*)portal_html_gz_start, len);
 }
 
 static esp_err_t Portal_GetNetworksHandler(httpd_req_t* req)

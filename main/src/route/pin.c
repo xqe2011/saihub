@@ -40,6 +40,7 @@ static void Route_PinPwmDenied(int pin, char* reason, size_t reasonLen)
 static esp_err_t Route_PinListHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
+  TOOL_CALL_LOG("rest %s %s", HttpServer_MethodName(req->method), req->uri);
   Lock_SweepExpired();
   cJSON* root = cJSON_CreateObject();
   cJSON* pinsArr = cJSON_CreateArray();
@@ -138,6 +139,8 @@ static esp_err_t Route_PinGetLevelHandler(httpd_req_t* req)
     snprintf(reason, sizeof(reason), "Pin %ld does not exist. Use a pin from %s.", raw, range);
     return HttpServer_SendError(req, 404, reason);
   }
+
+  TOOL_CALL_LOG("rest %s %s pin=%d", HttpServer_MethodName(req->method), req->uri, pin);
 
   char lockId[64];
   char reason[256];
@@ -282,6 +285,8 @@ static esp_err_t Route_PinGetPwmHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 404, reason);
   }
 
+  TOOL_CALL_LOG("rest %s %s pin=%d", HttpServer_MethodName(req->method), req->uri, pin);
+
   char lockId[64];
   char reason[256];
   int st = HttpServer_LockStatus(req, LOCK_KIND_GPIO, pin, LOCK_METHOD_READ, lockId, sizeof(lockId), reason, sizeof(reason));
@@ -400,6 +405,8 @@ static esp_err_t Route_PinGetTraceHandler(httpd_req_t* req)
     snprintf(reason, sizeof(reason), "Pin %ld does not exist. Use a pin from %s.", raw, range);
     return HttpServer_SendError(req, 404, reason);
   }
+
+  TOOL_CALL_LOG("rest %s %s pin=%d", HttpServer_MethodName(req->method), req->uri, pin);
 
   char lockId[64];
   char reason[256];

@@ -45,6 +45,9 @@ static esp_err_t Route_PowerGetHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
   }
 
+  TOOL_CALL_LOG("rest %s %s rail=%s", HttpServer_MethodName(req->method), req->uri,
+                rail == GPIO_CTRL_POWER_3V3 ? "3v3" : "5v");
+
   char lockId[64];
   char reason[256];
   int st = HttpServer_LockStatus(req, Route_PowerLockKind(rail), 0, LOCK_METHOD_READ, lockId, sizeof(lockId), reason,

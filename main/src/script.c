@@ -538,7 +538,7 @@ static int Script_LuaTool(lua_State* L)
     }
   }
 
-  ToolCall_Result tr = ToolCall_Invoke(name, args);
+  ToolCall_Result tr = ToolCall_Invoke("lua", name, args);
   cJSON_Delete(args);
   if (!tr.ok) {
     Script_PushErr(L, tr.reason, tr.httpStatus);

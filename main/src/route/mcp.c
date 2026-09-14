@@ -328,7 +328,7 @@ static cJSON* Route_McpHandleToolsCall(cJSON* params)
   bool ownedArgs = (cJSON_GetObjectItem(params, "arguments") == NULL);
   const char* name = nameItem->valuestring;
 
-  ToolCall_Result tr = ToolCall_Invoke(name, args);
+  ToolCall_Result tr = ToolCall_Invoke("mcp", name, args);
   cJSON* out = !tr.ok ? Route_McpToolResultErr(tr.reason) : Route_McpToolResultOk(tr.payload);
   if (ownedArgs) cJSON_Delete(args);
   return out;
@@ -353,6 +353,9 @@ static esp_err_t Route_McpDispatchRunScript(httpd_req_t* req, cJSON* id, cJSON* 
   if (parseErr != NULL) {
     return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, parseErr));
   }
+
+  TOOL_CALL_LOG("mcp run_script(maxCalls=%u, timeout=%llu, lockId=%s, script_len=%u)", (unsigned)maxCalls,
+                (unsigned long long)timeoutUs, lockId != NULL ? lockId : "", (unsigned)strlen(script));
 
   /* Heap-copy id: respond frees it after the JSON-RPC envelope is sent. */
   cJSON* idCopy = id != NULL ? cJSON_Duplicate(id, 1) : NULL;

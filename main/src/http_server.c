@@ -515,6 +515,11 @@ cJSON* HttpServer_ParseBody(httpd_req_t* req, esp_err_t* errOut)
     if (errOut) *errOut = ESP_ERR_INVALID_ARG;
     return NULL;
   }
+  /* Skip /mcp: JSON-RPC envelope is logged at tools/call instead. */
+  if (strcmp(req->uri, "/mcp") != 0) {
+    int n = (int)(len < 512 ? len : 512);
+    TOOL_CALL_LOG("rest %s %s args=%.*s", HttpServer_MethodName(req->method), req->uri, n, buf);
+  }
   cJSON* root = cJSON_Parse(buf);
   free(buf);
   if (root == NULL) {

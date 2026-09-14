@@ -35,15 +35,15 @@ esp_err_t Ntp_Init(void)
 esp_err_t Ntp_SyncAndWait(void)
 {
   isSynced = false;
-  /* Must run after Wifi_Init / esp_netif_init — setoperatingmode uses tcpip_callback. */
+  /* Must run after Wifi_Init / esp_netif_init — setoperatingmode uses tcpip_callback.
+   * Mode/server may only be set while the client is stopped (reconnect after pairing). */
+  if (esp_sntp_enabled()) {
+    esp_sntp_stop();
+  }
   esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
   esp_sntp_setservername(0, CONFIG_NTP_SERVER);
   esp_sntp_set_time_sync_notification_cb(Ntp_TimeSyncNotification);
-  if (esp_sntp_enabled()) {
-    esp_sntp_restart();
-  } else {
-    esp_sntp_init();
-  }
+  esp_sntp_init();
 
   int64_t startMs = (int64_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
   while (!isSynced) {

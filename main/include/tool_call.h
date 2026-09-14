@@ -20,7 +20,8 @@ typedef struct {
  * Invoke a pin/power/lock tool by MCP name.
  * Does not handle run_script. Caller owns payload and must cJSON_Delete it.
  * Empty-success tools return payload {"ok":true}.
+ * via is logged as the call source (mcp|lua).
  */
-ToolCall_Result ToolCall_Invoke(const char* name, cJSON* args);
+ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args);
 
 #endif

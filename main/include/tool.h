@@ -28,6 +28,9 @@
 
 #define TOOL_MIN(a, b) (((a) < (b)) ? (a) : (b))
 
+/** Tool-call trace: TOOL_CALL_LOG("mcp %s", name) -> "Tool mcp set_pin_levels" */
+#define TOOL_CALL_LOG(fmt, ...) ESP_LOGI("SAIHUB-Tool", "Tool " fmt, ##__VA_ARGS__)
+
 #define TOOL_EXECUTE_CALLBACKS(callbacks, ...)                       \
   for (size_t i = 0; i < TOOL_GET_ARRAY_LENGTH(callbacks); i++) {    \
     if (callbacks[i] != NULL) callbacks[i](__VA_ARGS__);             \
