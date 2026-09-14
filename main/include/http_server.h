@@ -39,7 +39,7 @@ esp_err_t HttpServer_ParsePinConfigBody(cJSON* body, GpioCtrl_Mode* modeOut, boo
                                         bool* pullDownOut, char* reason, size_t reasonLen);
 /**
  * Expand typed lock resources [{type:pin,pins,method}|{type:power,rails,method}] into Lock_Resource entries.
- * Expanded count is capped by maxOut (typically LOCK_MAX_RESOURCES).
+ * Expanded count is capped by maxOut (typically CONFIG_LOCK_MAX_RESOURCES).
  */
 esp_err_t HttpServer_ParseLockResources(cJSON* resourcesArr, Lock_Resource* out, size_t maxOut, size_t* countOut,
                                         char* reason, size_t reasonLen);

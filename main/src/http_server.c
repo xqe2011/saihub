@@ -5,6 +5,7 @@
  */
 #include "http_server.h"
 
+#include "config.h"
 #include "gpio_ctrl.h"
 #include "route.h"
 #include "tool.h"
@@ -442,9 +443,9 @@ cJSON* HttpServer_SerializeLockResources(const Lock_Resource* resources, size_t 
 {
   cJSON* resArr = cJSON_CreateArray();
   if (resArr == NULL || resources == NULL || count == 0) return resArr;
-  bool used[LOCK_MAX_RESOURCES];
+  bool used[CONFIG_LOCK_MAX_RESOURCES];
   memset(used, 0, sizeof(used));
-  if (count > LOCK_MAX_RESOURCES) count = LOCK_MAX_RESOURCES;
+  if (count > CONFIG_LOCK_MAX_RESOURCES) count = CONFIG_LOCK_MAX_RESOURCES;
 
   for (size_t i = 0; i < count; i++) {
     if (used[i]) continue;

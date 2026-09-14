@@ -1,0 +1,479 @@
+{
+  "$defs": {
+    "pin": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 7
+    },
+    "pins": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/pin"
+      }
+    },
+    "lockId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Required when another lock holds the resource."
+    },
+    "level": {
+      "type": "integer",
+      "enum": [
+        0,
+        1
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "disable",
+        "digitalInput",
+        "digitalOutput",
+        "digitalInputOutput",
+        "pwmOutput"
+      ]
+    },
+    "edge": {
+      "type": "string",
+      "enum": [
+        "raising",
+        "falling",
+        "both"
+      ],
+      "default": "both"
+    },
+    "rail": {
+      "type": "string",
+      "enum": [
+        "3v3",
+        "5v"
+      ]
+    },
+    "rails": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/rail"
+      }
+    },
+    "lockMethod": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "read",
+          "write"
+        ]
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "list_pins",
+      "description": "List logical pins 0-7 with mode, pulls, and level.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "configure_pins",
+      "description": "Configure one or more pins. Always pass pins (e.g. pins:[1]).",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "pins",
+          "mode",
+          "pullUp",
+          "pullDown"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pins": {
+            "$ref": "#/$defs/pins"
+          },
+          "mode": {
+            "$ref": "#/$defs/mode"
+          },
+          "pullUp": {
+            "type": "boolean"
+          },
+          "pullDown": {
+            "type": "boolean"
+          },
+          "openDrain": {
+            "type": "boolean",
+            "default": false,
+            "description": "Allowed for digitalOutput, digitalInputOutput, and pwmOutput"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_pin_levels",
+      "description": "Read digital levels for pins. Returns levels array in pins order.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "pins"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pins": {
+            "$ref": "#/$defs/pins"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
+      "name": "set_pin_levels",
+      "description": "Write digital level for one or more pins.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "pins",
+          "level"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pins": {
+            "$ref": "#/$defs/pins"
+          },
+          "level": {
+            "$ref": "#/$defs/level"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
+      "name": "pulse_pins",
+      "description": "Pulse one or more pins for width microseconds.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "pins",
+          "width",
+          "level"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pins": {
+            "$ref": "#/$defs/pins"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000,
+            "description": "Microseconds"
+          },
+          "level": {
+            "$ref": "#/$defs/level"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_pin_pwms",
+      "description": "Read PWM frequency and duty for pins (pwmOutput only).",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "pins"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pins": {
+            "$ref": "#/$defs/pins"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
+      "name": "set_pin_pwms",
+      "description": "Set PWM frequency and duty for pins (pwmOutput only).",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "pins",
+          "frequency",
+          "duty"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pins": {
+            "$ref": "#/$defs/pins"
+          },
+          "frequency": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50000,
+            "description": "Hz. Very low frequencies may be rejected."
+          },
+          "duty": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Percent, decimals allowed"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
+      "name": "trace_pins",
+      "description": "Capture edge events on one or more pins.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "pins"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pins": {
+            "$ref": "#/$defs/pins"
+          },
+          "edge": {
+            "$ref": "#/$defs/edge"
+          },
+          "duration": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60000000,
+            "default": 1000000,
+            "description": "Microseconds (max 60 seconds). Default 1000000."
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_output_power_state",
+      "description": "Read 3v3 or 5v rail enable state.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "rail"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "rail": {
+            "$ref": "#/$defs/rail"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
+      "name": "set_output_power_state",
+      "description": "Set 3v3 or 5v rail enable state.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "rail",
+          "enable"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "rail": {
+            "$ref": "#/$defs/rail"
+          },
+          "enable": {
+            "type": "boolean"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
+      "name": "create_lock",
+      "description": "Create a lock. Each resource is type pin with pins, or type power with rails.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "resources"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "resources": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "pins",
+                    "method"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "pin"
+                    },
+                    "pins": {
+                      "$ref": "#/$defs/pins"
+                    },
+                    "method": {
+                      "$ref": "#/$defs/lockMethod"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "rails",
+                    "method"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "power"
+                    },
+                    "rails": {
+                      "$ref": "#/$defs/rails"
+                    },
+                    "method": {
+                      "$ref": "#/$defs/lockMethod"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "renew_lock",
+      "description": "Renew a lock TTL by id.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "delete_lock",
+      "description": "Delete a lock by id (idempotent).",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ]
+}

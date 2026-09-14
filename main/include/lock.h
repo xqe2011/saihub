@@ -6,12 +6,12 @@
 #ifndef LOCK_H__
 #define LOCK_H__
 
+#include "config.h"
+
 #include <esp_err.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#define LOCK_MAX_RESOURCES 8
 
 typedef enum {
   LOCK_METHOD_READ = 1,
@@ -33,7 +33,7 @@ typedef struct {
 typedef struct {
   char id[32];
   int64_t expiresAtUs;
-  Lock_Resource resources[LOCK_MAX_RESOURCES];
+  Lock_Resource resources[CONFIG_LOCK_MAX_RESOURCES];
   size_t resourceCount;
   bool used;
 } Lock_Entry;

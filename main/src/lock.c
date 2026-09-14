@@ -145,7 +145,7 @@ static const Lock_Entry* Lock_FindHolder(Lock_Kind kind, int pin, uint8_t method
 
 esp_err_t Lock_Create(const Lock_Resource* resources, size_t count, Lock_Entry* out)
 {
-  if (resources == NULL || count == 0 || count > LOCK_MAX_RESOURCES || out == NULL) {
+  if (resources == NULL || count == 0 || count > CONFIG_LOCK_MAX_RESOURCES || out == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
 

@@ -5,6 +5,7 @@
  */
 #include "route.h"
 
+#include "config.h"
 #include "http_server.h"
 #include "lock.h"
 #include "tool.h"
@@ -28,10 +29,10 @@ static esp_err_t Route_LockCreateHandler(httpd_req_t* req)
   if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
   cJSON* resources = cJSON_GetObjectItem(body, "resources");
-  Lock_Resource res[LOCK_MAX_RESOURCES];
+  Lock_Resource res[CONFIG_LOCK_MAX_RESOURCES];
   size_t count = 0;
   char reason[192];
-  if (HttpServer_ParseLockResources(resources, res, LOCK_MAX_RESOURCES, &count, reason, sizeof(reason)) != ESP_OK) {
+  if (HttpServer_ParseLockResources(resources, res, CONFIG_LOCK_MAX_RESOURCES, &count, reason, sizeof(reason)) != ESP_OK) {
     cJSON_Delete(body);
     return HttpServer_SendError(req, 400, reason);
   }

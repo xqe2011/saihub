@@ -20,6 +20,9 @@
 
 static const char* tag = "SAIHUB-Mcp";
 
+extern const uint8_t mcp_json_start[] asm("_binary_mcp_json_start");
+extern const uint8_t mcp_json_end[] asm("_binary_mcp_json_end");
+
 #define MCP_PROTOCOL_VERSION "2025-06-18"
 #define TRACE_DEFAULT_DURATION_US 1000000ULL
 
@@ -200,267 +203,45 @@ static int Route_McpCheckPinsLock(const Mcp_PinSelection* sel, uint8_t methods, 
   return 0;
 }
 
-static void Route_McpAddProp(cJSON* props, const char* name, cJSON* schema)
+static bool Route_McpJsonHasRef(const cJSON* node)
 {
-  cJSON_AddItemToObject(props, name, schema);
-}
-
-static cJSON* Route_McpIntSchema(int minimum, int maximum)
-{
-  cJSON* s = cJSON_CreateObject();
-  cJSON_AddStringToObject(s, "type", "integer");
-  cJSON_AddNumberToObject(s, "minimum", minimum);
-  cJSON_AddNumberToObject(s, "maximum", maximum);
-  return s;
-}
-
-static cJSON* Route_McpNumberSchema(double minimum, double maximum)
-{
-  cJSON* s = cJSON_CreateObject();
-  cJSON_AddStringToObject(s, "type", "number");
-  cJSON_AddNumberToObject(s, "minimum", minimum);
-  cJSON_AddNumberToObject(s, "maximum", maximum);
-  return s;
-}
-
-static cJSON* Route_McpBoolSchema(void)
-{
-  cJSON* s = cJSON_CreateObject();
-  cJSON_AddStringToObject(s, "type", "boolean");
-  return s;
-}
-
-static cJSON* Route_McpStringSchema(void)
-{
-  cJSON* s = cJSON_CreateObject();
-  cJSON_AddStringToObject(s, "type", "string");
-  return s;
-}
-
-static cJSON* Route_McpEnumStringSchema(const char* const* values, size_t count)
-{
-  cJSON* s = cJSON_CreateObject();
-  cJSON_AddStringToObject(s, "type", "string");
-  cJSON* arr = cJSON_CreateArray();
-  for (size_t i = 0; i < count; i++) {
-    cJSON_AddItemToArray(arr, cJSON_CreateString(values[i]));
+  if (node == NULL) return false;
+  if (cJSON_IsObject(node) && cJSON_GetObjectItemCaseSensitive((cJSON*)node, "$ref") != NULL) {
+    return true;
   }
-  cJSON_AddItemToObject(s, "enum", arr);
-  return s;
-}
-
-static cJSON* Route_McpPinsArraySchema(void)
-{
-  cJSON* s = cJSON_CreateObject();
-  cJSON_AddStringToObject(s, "type", "array");
-  cJSON_AddNumberToObject(s, "minItems", 1);
-  cJSON_AddItemToObject(s, "items", Route_McpIntSchema(0, 7));
-  return s;
-}
-
-static void Route_McpAddLockIdProp(cJSON* props)
-{
-  Route_McpAddProp(props, "lockId", Route_McpStringSchema());
-}
-
-static cJSON* Route_McpToolDef(const char* name, const char* description, cJSON* inputSchema)
-{
-  cJSON* tool = cJSON_CreateObject();
-  cJSON_AddStringToObject(tool, "name", name);
-  cJSON_AddStringToObject(tool, "description", description);
-  cJSON_AddItemToObject(tool, "inputSchema", inputSchema);
-  return tool;
-}
-
-static cJSON* Route_McpEmptyObjectSchema(void)
-{
-  cJSON* schema = cJSON_CreateObject();
-  cJSON_AddStringToObject(schema, "type", "object");
-  cJSON_AddItemToObject(schema, "properties", cJSON_CreateObject());
-  cJSON* required = cJSON_CreateArray();
-  cJSON_AddItemToObject(schema, "required", required);
-  return schema;
-}
-
-static cJSON* Route_McpObjectSchema(cJSON* props, const char* const* requiredNames, size_t requiredCount)
-{
-  cJSON* schema = cJSON_CreateObject();
-  cJSON_AddStringToObject(schema, "type", "object");
-  cJSON_AddItemToObject(schema, "properties", props);
-  cJSON* required = cJSON_CreateArray();
-  for (size_t i = 0; i < requiredCount; i++) {
-    cJSON_AddItemToArray(required, cJSON_CreateString(requiredNames[i]));
+  if (cJSON_IsObject(node) || cJSON_IsArray(node)) {
+    const cJSON* child = NULL;
+    cJSON_ArrayForEach(child, node) {
+      if (Route_McpJsonHasRef(child)) return true;
+    }
   }
-  cJSON_AddItemToObject(schema, "required", required);
-  return schema;
+  return false;
 }
 
 static cJSON* Route_McpToolsListResult(void)
 {
-  static const char* modes[] = {"disable", "digitalInput", "digitalOutput", "digitalInputOutput", "pwmOutput"};
-  static const char* edges[] = {"raising", "falling", "both"};
-  static const char* rails[] = {"3v3", "5v"};
-  static const char* methods[] = {"read", "write"};
-  static const char* lockTypes[] = {"pin", "power"};
-
-  cJSON* tools = cJSON_CreateArray();
-
-  cJSON_AddItemToArray(tools, Route_McpToolDef("list_pins", "List logical pins 0-7 with mode, pulls, and level.",
-                                               Route_McpEmptyObjectSchema()));
-
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
-    Route_McpAddProp(props, "mode", Route_McpEnumStringSchema(modes, TOOL_GET_ARRAY_LENGTH(modes)));
-    Route_McpAddProp(props, "pullUp", Route_McpBoolSchema());
-    Route_McpAddProp(props, "pullDown", Route_McpBoolSchema());
-    Route_McpAddProp(props, "openDrain", Route_McpBoolSchema());
-    Route_McpAddLockIdProp(props);
-    static const char* req[] = {"pins", "mode", "pullUp", "pullDown"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("configure_pins",
-                                                 "Configure one or more pins. Always pass pins (e.g. pins:[1]).",
-                                                 Route_McpObjectSchema(props, req, TOOL_GET_ARRAY_LENGTH(req))));
+  size_t len = (size_t)(mcp_json_end - mcp_json_start);
+  cJSON* result = cJSON_ParseWithLength((const char*)mcp_json_start, len);
+  if (result == NULL) {
+    ESP_LOGE(tag, "mcp.json parse failed");
+    result = cJSON_CreateObject();
+    cJSON_AddItemToObject(result, "tools", cJSON_CreateArray());
+    return result;
   }
 
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
-    Route_McpAddLockIdProp(props);
-    static const char* req[] = {"pins"};
-    cJSON_AddItemToArray(tools,
-                         Route_McpToolDef("get_pin_levels",
-                                          "Read digital levels for pins. Returns levels array in pins order.",
-                                          Route_McpObjectSchema(props, req, 1)));
+  /* MCP clients treat each tool inputSchema as its own JSON Schema document. */
+  cJSON* defs = cJSON_DetachItemFromObjectCaseSensitive(result, "$defs");
+  cJSON* tools = cJSON_GetObjectItemCaseSensitive(result, "tools");
+  if (defs != NULL && cJSON_IsArray(tools)) {
+    cJSON* tool = NULL;
+    cJSON_ArrayForEach(tool, tools) {
+      cJSON* schema = cJSON_GetObjectItemCaseSensitive(tool, "inputSchema");
+      if (!cJSON_IsObject(schema) || !Route_McpJsonHasRef(schema)) continue;
+      cJSON* copy = cJSON_Duplicate(defs, 1);
+      if (copy != NULL) cJSON_AddItemToObject(schema, "$defs", copy);
+    }
   }
-
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
-    Route_McpAddProp(props, "level", Route_McpIntSchema(0, 1));
-    Route_McpAddLockIdProp(props);
-    static const char* req[] = {"pins", "level"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("set_pin_levels", "Write digital level for one or more pins.",
-                                                 Route_McpObjectSchema(props, req, 2)));
-  }
-
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
-    Route_McpAddProp(props, "width", Route_McpIntSchema(1, 1000000));
-    Route_McpAddProp(props, "level", Route_McpIntSchema(0, 1));
-    Route_McpAddLockIdProp(props);
-    static const char* req[] = {"pins", "width", "level"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("pulse_pins", "Pulse one or more pins for width microseconds.",
-                                                 Route_McpObjectSchema(props, req, 3)));
-  }
-
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
-    Route_McpAddLockIdProp(props);
-    static const char* req[] = {"pins"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("get_pin_pwms", "Read PWM frequency and duty for pins (pwmOutput only).",
-                                                 Route_McpObjectSchema(props, req, 1)));
-  }
-
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
-    Route_McpAddProp(props, "frequency", Route_McpNumberSchema(1, 50000));
-    Route_McpAddProp(props, "duty", Route_McpNumberSchema(0, 100));
-    Route_McpAddLockIdProp(props);
-    static const char* req[] = {"pins", "frequency", "duty"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("set_pin_pwms", "Set PWM frequency and duty for pins (pwmOutput only).",
-                                                 Route_McpObjectSchema(props, req, 3)));
-  }
-
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "pins", Route_McpPinsArraySchema());
-    Route_McpAddProp(props, "edge", Route_McpEnumStringSchema(edges, TOOL_GET_ARRAY_LENGTH(edges)));
-    Route_McpAddProp(props, "duration", Route_McpIntSchema(1, 60000000));
-    Route_McpAddLockIdProp(props);
-    static const char* req[] = {"pins"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("trace_pins", "Capture edge events on one or more pins.",
-                                                 Route_McpObjectSchema(props, req, 1)));
-  }
-
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "rail", Route_McpEnumStringSchema(rails, TOOL_GET_ARRAY_LENGTH(rails)));
-    Route_McpAddLockIdProp(props);
-    static const char* req[] = {"rail"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("get_output_power_state", "Read 3v3 or 5v rail enable state.",
-                                                 Route_McpObjectSchema(props, req, 1)));
-  }
-
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "rail", Route_McpEnumStringSchema(rails, TOOL_GET_ARRAY_LENGTH(rails)));
-    Route_McpAddProp(props, "enable", Route_McpBoolSchema());
-    Route_McpAddLockIdProp(props);
-    static const char* req[] = {"rail", "enable"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("set_output_power_state", "Set 3v3 or 5v rail enable state.",
-                                                 Route_McpObjectSchema(props, req, 2)));
-  }
-
-  {
-    cJSON* methodSchema = cJSON_CreateObject();
-    cJSON_AddStringToObject(methodSchema, "type", "array");
-    cJSON_AddNumberToObject(methodSchema, "minItems", 1);
-    cJSON_AddItemToObject(methodSchema, "items", Route_McpEnumStringSchema(methods, TOOL_GET_ARRAY_LENGTH(methods)));
-
-    cJSON* railsSchema = cJSON_CreateObject();
-    cJSON_AddStringToObject(railsSchema, "type", "array");
-    cJSON_AddNumberToObject(railsSchema, "minItems", 1);
-    cJSON_AddItemToObject(railsSchema, "items", Route_McpEnumStringSchema(rails, TOOL_GET_ARRAY_LENGTH(rails)));
-
-    cJSON* itemSchema = cJSON_CreateObject();
-    cJSON_AddStringToObject(itemSchema, "type", "object");
-    cJSON_AddStringToObject(itemSchema, "description",
-                            "Typed lock group: type pin requires pins; type power requires rails.");
-    cJSON* itemProps = cJSON_CreateObject();
-    Route_McpAddProp(itemProps, "type", Route_McpEnumStringSchema(lockTypes, TOOL_GET_ARRAY_LENGTH(lockTypes)));
-    Route_McpAddProp(itemProps, "pins", Route_McpPinsArraySchema());
-    Route_McpAddProp(itemProps, "rails", railsSchema);
-    Route_McpAddProp(itemProps, "method", methodSchema);
-    cJSON_AddItemToObject(itemSchema, "properties", itemProps);
-    cJSON* itemReq = cJSON_CreateArray();
-    cJSON_AddItemToArray(itemReq, cJSON_CreateString("type"));
-    cJSON_AddItemToArray(itemReq, cJSON_CreateString("method"));
-    cJSON_AddItemToObject(itemSchema, "required", itemReq);
-
-    cJSON* resources = cJSON_CreateObject();
-    cJSON_AddStringToObject(resources, "type", "array");
-    cJSON_AddNumberToObject(resources, "minItems", 1);
-    cJSON_AddItemToObject(resources, "items", itemSchema);
-
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "resources", resources);
-    static const char* req[] = {"resources"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("create_lock",
-                                                 "Create a lock. resources use type pin+pins or type power+rails.",
-                                                 Route_McpObjectSchema(props, req, 1)));
-  }
-
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "id", Route_McpStringSchema());
-    static const char* req[] = {"id"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("renew_lock", "Renew a lock TTL by id.",
-                                                 Route_McpObjectSchema(props, req, 1)));
-  }
-
-  {
-    cJSON* props = cJSON_CreateObject();
-    Route_McpAddProp(props, "id", Route_McpStringSchema());
-    static const char* req[] = {"id"};
-    cJSON_AddItemToArray(tools, Route_McpToolDef("delete_lock", "Delete a lock by id (idempotent).",
-                                                 Route_McpObjectSchema(props, req, 1)));
-  }
-
-  cJSON* result = cJSON_CreateObject();
-  cJSON_AddItemToObject(result, "tools", tools);
+  cJSON_Delete(defs);
   return result;
 }
 
@@ -800,10 +581,10 @@ static cJSON* Route_McpCallSetOutputPowerState(cJSON* args)
 static cJSON* Route_McpCallCreateLock(cJSON* args)
 {
   cJSON* resources = cJSON_GetObjectItem(args, "resources");
-  Lock_Resource res[LOCK_MAX_RESOURCES];
+  Lock_Resource res[CONFIG_LOCK_MAX_RESOURCES];
   size_t count = 0;
   char reason[192];
-  if (HttpServer_ParseLockResources(resources, res, LOCK_MAX_RESOURCES, &count, reason, sizeof(reason)) != ESP_OK) {
+  if (HttpServer_ParseLockResources(resources, res, CONFIG_LOCK_MAX_RESOURCES, &count, reason, sizeof(reason)) != ESP_OK) {
     return Route_McpToolResultErr(reason);
   }
 
