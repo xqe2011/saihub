@@ -570,6 +570,7 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
   config.lru_purge_enable = true;
   config.recv_wait_timeout = 65;
   config.send_wait_timeout = 65;
+  if (pairing) config.max_open_sockets = 12;
 
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_start(&server, &config), "httpd_start failed");
   pairingServer = pairing;

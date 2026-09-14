@@ -6,6 +6,7 @@
 #include "wifi.h"
 
 #include "config.h"
+#include "dns.h"
 #include "nvs.h"
 #include "tool.h"
 
@@ -44,6 +45,8 @@ static Wifi_PairingStoppedCallback pairingStoppedCallbacks[4];
 static TimerHandle_t reconnectTimer;
 static TimerHandle_t pairCloseTimer;
 static esp_netif_t* staNetif = NULL;
+static esp_netif_t* apNetif = NULL;
+static const char portalDhcpUri[] = CONFIG_WIFI_PORTAL_URL;
 
 bool Wifi_IsConnected(void)
 {
@@ -214,6 +217,39 @@ esp_err_t Wifi_ScanNetworks(Wifi_Network* out, size_t maxOut, size_t* countOut)
   return ESP_OK;
 }
 
+static void Wifi_ApplyPairingDhcp(void)
+{
+  if (apNetif == NULL) apNetif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+  if (apNetif == NULL) {
+    ESP_LOGW(tag, "AP netif missing; captive DHCP not set");
+    return;
+  }
+
+  esp_err_t err = esp_netif_dhcps_stop(apNetif);
+  if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+    ESP_LOGW(tag, "dhcps stop failed %s", esp_err_to_name(err));
+  }
+
+  esp_netif_dns_info_t dns = {0};
+  dns.ip.type = ESP_IPADDR_TYPE_V4;
+  dns.ip.u_addr.ip4.addr = ESP_IP4TOADDR(192, 168, 4, 1);
+  err = esp_netif_set_dns_info(apNetif, ESP_NETIF_DNS_MAIN, &dns);
+  if (err != ESP_OK) ESP_LOGW(tag, "set DNS info failed %s", esp_err_to_name(err));
+
+  uint8_t offerDns = 1;
+  err = esp_netif_dhcps_option(apNetif, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER, &offerDns, sizeof(offerDns));
+  if (err != ESP_OK) ESP_LOGW(tag, "DHCP DNS option failed %s", esp_err_to_name(err));
+
+  err = esp_netif_dhcps_option(apNetif, ESP_NETIF_OP_SET, ESP_NETIF_CAPTIVEPORTAL_URI, (void*)portalDhcpUri,
+                               strlen(portalDhcpUri));
+  if (err != ESP_OK) ESP_LOGW(tag, "DHCP portal URI failed %s", esp_err_to_name(err));
+
+  err = esp_netif_dhcps_start(apNetif);
+  if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED) {
+    ESP_LOGW(tag, "dhcps start failed %s", esp_err_to_name(err));
+  }
+}
+
 static void Wifi_FinishPairingStop(void)
 {
   if (!isPairing) return;
@@ -222,6 +258,7 @@ static void Wifi_FinishPairingStop(void)
   portalConnectInFlight = false;
   ignorePairingStaLeave = false;
   xTimerStop(pairCloseTimer, 0);
+  Dns_Stop();
 
   esp_wifi_set_mode(WIFI_MODE_STA);
 
@@ -253,6 +290,11 @@ esp_err_t Wifi_StartPairing(void)
 
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_set_mode(WIFI_MODE_APSTA), "set APSTA failed");
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_set_config(WIFI_IF_AP, &apConfig), "set AP config failed");
+
+  Wifi_ApplyPairingDhcp();
+  if (Dns_Start() != ESP_OK) {
+    ESP_LOGW(tag, "DNS hijack failed; captive prompt may not appear");
+  }
 
   isPairing = true;
   pairState = WIFI_PAIR_STATE_IDLE;
@@ -381,7 +423,8 @@ esp_err_t Wifi_Init(void)
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_netif_init());
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_event_loop_create_default());
   staNetif = esp_netif_create_default_wifi_sta();
-  TOOL_CHECK_OR_LOG_RETURN(esp_netif_create_default_wifi_ap() == NULL || staNetif == NULL, "create wifi netif failed");
+  apNetif = esp_netif_create_default_wifi_ap();
+  TOOL_CHECK_OR_LOG_RETURN(apNetif == NULL || staNetif == NULL, "create wifi netif failed");
 
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &Wifi_EventHandler, NULL));
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &Wifi_EventHandler, NULL));

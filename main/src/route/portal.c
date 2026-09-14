@@ -35,16 +35,6 @@ static const char* Portal_StateString(Wifi_PairState state)
   }
 }
 
-static esp_err_t Portal_SendRedirectHome(httpd_req_t* req)
-{
-  HttpServer_LogCall(req);
-  HttpServer_SetCors(req);
-  httpd_resp_set_status(req, "302 Found");
-  httpd_resp_set_hdr(req, "Location", "/wifi/page");
-  httpd_resp_set_type(req, "text/plain");
-  return httpd_resp_send(req, "Redirecting", HTTPD_RESP_USE_STRLEN);
-}
-
 static esp_err_t Portal_GetIndexHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
@@ -54,6 +44,17 @@ static esp_err_t Portal_GetIndexHandler(httpd_req_t* req)
   httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
   return httpd_resp_send(req, (const char*)portal_html_gz_start, len);
+}
+
+esp_err_t Route_PortalSendRedirect(httpd_req_t* req)
+{
+  HttpServer_LogCall(req);
+  HttpServer_SetCors(req);
+  httpd_resp_set_status(req, "302 Found");
+  httpd_resp_set_hdr(req, "Location", CONFIG_WIFI_PORTAL_URL);
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  httpd_resp_set_type(req, "text/plain");
+  return httpd_resp_send(req, "Redirecting", HTTPD_RESP_USE_STRLEN);
 }
 
 static esp_err_t Portal_GetNetworksHandler(httpd_req_t* req)
@@ -143,13 +144,7 @@ static const httpd_uri_t portalUris[] = {
     {.uri = "/wifi/networks", .method = HTTP_GET, .handler = Portal_GetNetworksHandler},
     {.uri = "/wifi/connect", .method = HTTP_POST, .handler = Portal_PostConnectHandler},
     {.uri = "/wifi/status", .method = HTTP_GET, .handler = Portal_GetStatusHandler},
-    {.uri = "/generate_204", .method = HTTP_GET, .handler = Portal_SendRedirectHome},
-    {.uri = "/gen_204", .method = HTTP_GET, .handler = Portal_SendRedirectHome},
-    {.uri = "/hotspot-detect.html", .method = HTTP_GET, .handler = Portal_SendRedirectHome},
-    {.uri = "/library/test/success.html", .method = HTTP_GET, .handler = Portal_SendRedirectHome},
-    {.uri = "/ncsi.txt", .method = HTTP_GET, .handler = Portal_SendRedirectHome},
-    {.uri = "/connecttest.txt", .method = HTTP_GET, .handler = Portal_SendRedirectHome},
-    {.uri = "/fwlink/", .method = HTTP_GET, .handler = Portal_SendRedirectHome},
+    {.uri = "/*", .method = HTTP_GET, .handler = Route_PortalSendRedirect},
 };
 
 esp_err_t Route_PortalRegister(httpd_handle_t server)
