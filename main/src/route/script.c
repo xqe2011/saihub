@@ -18,6 +18,30 @@
 
 static const char* tag = "SAIHUB-Script";
 
+static void Route_ScriptRespond(httpd_req_t* req, Script_Status st, Script_Result* sr, void* userCtx)
+{
+  (void)userCtx;
+  if (st != SCRIPT_OK) {
+    int status = sr->httpStatus ? sr->httpStatus : 400;
+    HttpServer_SendError(req, status, sr->reason);
+    Script_ResultFree(sr);
+    return;
+  }
+
+  cJSON* root = cJSON_CreateObject();
+  if (sr->result != NULL) {
+    cJSON_AddItemToObject(root, "result", sr->result);
+    sr->result = NULL;
+  } else {
+    cJSON_AddNullToObject(root, "result");
+  }
+  cJSON_AddStringToObject(root, "output", sr->output ? sr->output : "");
+  cJSON_AddNumberToObject(root, "calls", (double)sr->calls);
+  cJSON_AddNumberToObject(root, "elapsed", (double)sr->elapsedUs);
+  Script_ResultFree(sr);
+  HttpServer_SendJson(req, 200, root);
+}
+
 static esp_err_t Route_ScriptPostHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
@@ -67,32 +91,12 @@ static esp_err_t Route_ScriptPostHandler(httpd_req_t* req)
   char lockId[64] = {0};
   HttpServer_GetLockHeader(req, lockId, sizeof(lockId));
 
-  /* Keep script string until Script_Run returns; body owns it. */
+  /* Script_RunAsync copies the source; body can be freed immediately after. */
   const char* script = scriptItem->valuestring;
-
-  Script_Result sr;
-  Script_Status st = Script_Run(script, maxCalls, timeoutUs, lockId[0] ? lockId : NULL, &sr);
+  esp_err_t ret =
+      Script_RunAsync(req, script, maxCalls, timeoutUs, lockId[0] ? lockId : NULL, Route_ScriptRespond, NULL);
   cJSON_Delete(body);
-
-  if (st != SCRIPT_OK) {
-    int status = sr.httpStatus ? sr.httpStatus : 400;
-    esp_err_t ret = HttpServer_SendError(req, status, sr.reason);
-    Script_ResultFree(&sr);
-    return ret;
-  }
-
-  cJSON* root = cJSON_CreateObject();
-  if (sr.result != NULL) {
-    cJSON_AddItemToObject(root, "result", sr.result);
-    sr.result = NULL;
-  } else {
-    cJSON_AddNullToObject(root, "result");
-  }
-  cJSON_AddStringToObject(root, "output", sr.output ? sr.output : "");
-  cJSON_AddNumberToObject(root, "calls", (double)sr.calls);
-  cJSON_AddNumberToObject(root, "elapsed", (double)sr.elapsedUs);
-  Script_ResultFree(&sr);
-  return HttpServer_SendJson(req, 200, root);
+  return ret;
 }
 
 static const httpd_uri_t uris[] = {

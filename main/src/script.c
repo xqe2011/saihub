@@ -10,6 +10,7 @@
 #include "tool_call.h"
 
 #include <cJSON.h>
+#include <esp_http_server.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -784,6 +785,117 @@ esp_err_t Script_Init(void)
   Script_ArenaReset();
   ESP_LOGI(tag, "script runner ready heap=%u stack=%u", (unsigned)CONFIG_SCRIPT_LUA_HEAP_BYTES,
            (unsigned)CONFIG_SCRIPT_STACK_BYTES);
+  return ESP_OK;
+}
+
+bool Script_IsBusy(void)
+{
+  if (scriptBusyMutex == NULL) return false;
+  if (xSemaphoreTake(scriptBusyMutex, portMAX_DELAY) != pdTRUE) return true;
+  bool busy = scriptBusy;
+  xSemaphoreGive(scriptBusyMutex);
+  return busy;
+}
+
+static void Script_FillBusy(Script_Result* out)
+{
+  memset(out, 0, sizeof(*out));
+  snprintf(out->reason, sizeof(out->reason), "A script is already running. Wait for it to finish.");
+  out->httpStatus = 409;
+}
+
+static void Script_FillInternal(Script_Result* out)
+{
+  memset(out, 0, sizeof(*out));
+  snprintf(out->reason, sizeof(out->reason), "internal");
+  out->httpStatus = 500;
+}
+
+typedef struct {
+  httpd_req_t* req;
+  char* script;
+  uint32_t maxCalls;
+  uint64_t timeoutUs;
+  char lockId[SCRIPT_LOCK_ID_MAX];
+  bool hasLockId;
+  Script_HttpRespondFn respond;
+  void* userCtx;
+} Script_WaiterJob;
+
+static void Script_WaiterTask(void* arg)
+{
+  Script_WaiterJob* job = (Script_WaiterJob*)arg;
+  Script_Result sr;
+  Script_Status st = Script_Run(job->script, job->maxCalls, job->timeoutUs, job->hasLockId ? job->lockId : NULL, &sr);
+  job->respond(job->req, st, &sr, job->userCtx);
+  httpd_req_async_handler_complete(job->req);
+  free(job->script);
+  free(job);
+  vTaskDelete(NULL);
+}
+
+esp_err_t Script_RunAsync(httpd_req_t* req, const char* script, uint32_t maxCalls, uint64_t timeoutUs,
+                          const char* defaultLockId, Script_HttpRespondFn respond, void* userCtx)
+{
+  if (req == NULL || script == NULL || respond == NULL) return ESP_ERR_INVALID_ARG;
+
+  if (Script_IsBusy()) {
+    Script_Result sr;
+    Script_FillBusy(&sr);
+    respond(req, SCRIPT_ERR_BUSY, &sr, userCtx);
+    return ESP_OK;
+  }
+
+  Script_WaiterJob* job = (Script_WaiterJob*)calloc(1, sizeof(*job));
+  if (job == NULL) {
+    Script_Result sr;
+    Script_FillInternal(&sr);
+    respond(req, SCRIPT_ERR_INTERNAL, &sr, userCtx);
+    return ESP_OK;
+  }
+
+  size_t scriptLen = strlen(script);
+  job->script = (char*)malloc(scriptLen + 1);
+  if (job->script == NULL) {
+    free(job);
+    Script_Result sr;
+    Script_FillInternal(&sr);
+    respond(req, SCRIPT_ERR_INTERNAL, &sr, userCtx);
+    return ESP_OK;
+  }
+  memcpy(job->script, script, scriptLen + 1);
+  job->maxCalls = maxCalls;
+  job->timeoutUs = timeoutUs;
+  if (defaultLockId != NULL && defaultLockId[0] != '\0') {
+    snprintf(job->lockId, sizeof(job->lockId), "%s", defaultLockId);
+    job->hasLockId = true;
+  }
+  job->respond = respond;
+  job->userCtx = userCtx;
+
+  httpd_req_t* copy = NULL;
+  if (httpd_req_async_handler_begin(req, &copy) != ESP_OK) {
+    free(job->script);
+    free(job);
+    Script_Result sr;
+    Script_FillInternal(&sr);
+    respond(req, SCRIPT_ERR_INTERNAL, &sr, userCtx);
+    return ESP_OK;
+  }
+  job->req = copy;
+
+  BaseType_t created =
+      xTaskCreate(Script_WaiterTask, "saihub_scwait", CONFIG_SCRIPT_WAITER_STACK_BYTES / sizeof(StackType_t), job, 5,
+                  NULL);
+  if (created != pdPASS) {
+    Script_Result sr;
+    Script_FillInternal(&sr);
+    respond(copy, SCRIPT_ERR_INTERNAL, &sr, userCtx);
+    httpd_req_async_handler_complete(copy);
+    free(job->script);
+    free(job);
+    return ESP_OK;
+  }
   return ESP_OK;
 }
 

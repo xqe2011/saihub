@@ -196,8 +196,43 @@ static cJSON* Route_McpToolsListResult(void)
   return result;
 }
 
-static cJSON* Route_McpCallRunScript(cJSON* args)
+static void Route_McpScriptRespond(httpd_req_t* req, Script_Status st, Script_Result* sr, void* userCtx)
 {
+  cJSON* id = (cJSON*)userCtx;
+  cJSON* toolResult = NULL;
+  if (st != SCRIPT_OK) {
+    toolResult = Route_McpToolResultErr(sr->reason);
+    Script_ResultFree(sr);
+  } else {
+    cJSON* payload = cJSON_CreateObject();
+    if (sr->result != NULL) {
+      cJSON_AddItemToObject(payload, "result", sr->result);
+      sr->result = NULL;
+    } else {
+      cJSON_AddNullToObject(payload, "result");
+    }
+    cJSON_AddStringToObject(payload, "output", sr->output ? sr->output : "");
+    cJSON_AddNumberToObject(payload, "calls", (double)sr->calls);
+    cJSON_AddNumberToObject(payload, "elapsed", (double)sr->elapsedUs);
+    Script_ResultFree(sr);
+    toolResult = Route_McpToolResultOk(payload);
+  }
+  Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, toolResult));
+  cJSON_Delete(id);
+}
+
+/**
+ * Validate run_script args. On failure returns an error tool result (caller owns).
+ * On success returns NULL and fills out params.
+ */
+static cJSON* Route_McpParseRunScriptArgs(cJSON* args, const char** scriptOut, uint32_t* maxCallsOut,
+                                          uint64_t* timeoutUsOut, const char** lockIdOut)
+{
+  *scriptOut = NULL;
+  *maxCallsOut = 0;
+  *timeoutUsOut = 0;
+  *lockIdOut = NULL;
+
   if (args == NULL) return Route_McpToolResultErr("arguments are required.");
   cJSON* scriptItem = cJSON_GetObjectItem(args, "script");
   if (!cJSON_IsString(scriptItem) || scriptItem->valuestring == NULL) {
@@ -239,25 +274,11 @@ static cJSON* Route_McpCallRunScript(cJSON* args)
     lockId = lockIdItem->valuestring;
   }
 
-  Script_Result sr;
-  Script_Status st = Script_Run(script, maxCalls, timeoutUs, lockId, &sr);
-  if (st != SCRIPT_OK) {
-    cJSON* err = Route_McpToolResultErr(sr.reason);
-    Script_ResultFree(&sr);
-    return err;
-  }
-  cJSON* payload = cJSON_CreateObject();
-  if (sr.result != NULL) {
-    cJSON_AddItemToObject(payload, "result", sr.result);
-    sr.result = NULL;
-  } else {
-    cJSON_AddNullToObject(payload, "result");
-  }
-  cJSON_AddStringToObject(payload, "output", sr.output ? sr.output : "");
-  cJSON_AddNumberToObject(payload, "calls", (double)sr.calls);
-  cJSON_AddNumberToObject(payload, "elapsed", (double)sr.elapsedUs);
-  Script_ResultFree(&sr);
-  return Route_McpToolResultOk(payload);
+  *scriptOut = script;
+  *maxCallsOut = maxCalls;
+  *timeoutUsOut = timeoutUs;
+  *lockIdOut = lockId;
+  return NULL;
 }
 
 static cJSON* Route_McpHandleInitialize(cJSON* params)
@@ -307,19 +328,36 @@ static cJSON* Route_McpHandleToolsCall(cJSON* params)
   bool ownedArgs = (cJSON_GetObjectItem(params, "arguments") == NULL);
   const char* name = nameItem->valuestring;
 
-  cJSON* out = NULL;
-  if (strcmp(name, "run_script") == 0) {
-    out = Route_McpCallRunScript(args);
-  } else {
-    ToolCall_Result tr = ToolCall_Invoke(name, args);
-    if (!tr.ok) {
-      out = Route_McpToolResultErr(tr.reason);
-    } else {
-      out = Route_McpToolResultOk(tr.payload);
-    }
-  }
+  ToolCall_Result tr = ToolCall_Invoke(name, args);
+  cJSON* out = !tr.ok ? Route_McpToolResultErr(tr.reason) : Route_McpToolResultOk(tr.payload);
   if (ownedArgs) cJSON_Delete(args);
   return out;
+}
+
+static esp_err_t Route_McpDispatchRunScript(httpd_req_t* req, cJSON* id, cJSON* params)
+{
+  if (!cJSON_IsObject(params)) {
+    return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("params are required.")));
+  }
+  cJSON* args = cJSON_GetObjectItem(params, "arguments");
+  if (args != NULL && !cJSON_IsObject(args)) {
+    return Route_McpSendJsonRpc(req, 200,
+                                Route_McpJsonRpcResult(id, Route_McpToolResultErr("arguments must be an object.")));
+  }
+
+  const char* script = NULL;
+  uint32_t maxCalls = 0;
+  uint64_t timeoutUs = 0;
+  const char* lockId = NULL;
+  cJSON* parseErr = Route_McpParseRunScriptArgs(args, &script, &maxCalls, &timeoutUs, &lockId);
+  if (parseErr != NULL) {
+    return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, parseErr));
+  }
+
+  /* Heap-copy id: respond frees it after the JSON-RPC envelope is sent. */
+  cJSON* idCopy = id != NULL ? cJSON_Duplicate(id, 1) : NULL;
+  /* Script source is copied inside Script_RunAsync before this returns. */
+  return Script_RunAsync(req, script, maxCalls, timeoutUs, lockId, Route_McpScriptRespond, idCopy);
 }
 
 static esp_err_t Route_McpDispatch(httpd_req_t* req, cJSON* msg)
@@ -364,6 +402,12 @@ static esp_err_t Route_McpDispatch(httpd_req_t* req, cJSON* msg)
     return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, Route_McpToolsListResult()));
   }
   if (strcmp(method, "tools/call") == 0) {
+    if (cJSON_IsObject(params)) {
+      cJSON* nameItem = cJSON_GetObjectItem(params, "name");
+      if (cJSON_IsString(nameItem) && nameItem->valuestring != NULL && strcmp(nameItem->valuestring, "run_script") == 0) {
+        return Route_McpDispatchRunScript(req, id, params);
+      }
+    }
     return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, Route_McpHandleToolsCall(params)));
   }
 
