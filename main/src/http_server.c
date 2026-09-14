@@ -530,7 +530,7 @@ static esp_err_t HttpServer_NotFoundHandler(httpd_req_t* req, httpd_err_code_t e
   (void)err;
   HttpServer_LogCall(req);
   if (pairingServer) {
-    return HttpServer_SendError(req, 404, "This URL does not exist. Open / for Wi-Fi setup.");
+    return HttpServer_SendError(req, 404, "This URL does not exist. Open /wifi/page for Wi-Fi setup.");
   }
   return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
 }

@@ -40,7 +40,7 @@ static esp_err_t Portal_SendRedirectHome(httpd_req_t* req)
   HttpServer_LogCall(req);
   HttpServer_SetCors(req);
   httpd_resp_set_status(req, "302 Found");
-  httpd_resp_set_hdr(req, "Location", "/");
+  httpd_resp_set_hdr(req, "Location", "/wifi/page");
   httpd_resp_set_type(req, "text/plain");
   return httpd_resp_send(req, "Redirecting", HTTPD_RESP_USE_STRLEN);
 }
@@ -139,7 +139,7 @@ static esp_err_t Portal_GetStatusHandler(httpd_req_t* req)
 }
 
 static const httpd_uri_t portalUris[] = {
-    {.uri = "/", .method = HTTP_GET, .handler = Portal_GetIndexHandler},
+    {.uri = "/wifi/page", .method = HTTP_GET, .handler = Portal_GetIndexHandler},
     {.uri = "/wifi/networks", .method = HTTP_GET, .handler = Portal_GetNetworksHandler},
     {.uri = "/wifi/connect", .method = HTTP_POST, .handler = Portal_PostConnectHandler},
     {.uri = "/wifi/status", .method = HTTP_GET, .handler = Portal_GetStatusHandler},
