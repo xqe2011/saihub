@@ -14,7 +14,7 @@
 #define CONFIG_WIFI_PORTAL_URL "http://192.168.4.1/wifi/page"
 
 #define CONFIG_NTP_SERVER "pool.ntp.org"
-#define CONFIG_NTP_WAIT_TIMEOUT_MS (60 * 1000)
+#define CONFIG_NTP_TIMEOUT_MS (15 * 1000)
 
 #define CONFIG_LOCK_TTL_US (30ULL * 1000 * 1000)
 #define CONFIG_LOCK_MAX_COUNT 16

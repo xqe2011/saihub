@@ -7,8 +7,10 @@
 
 #include "config.h"
 #include "gpio_ctrl.h"
+#include "ntp.h"
 #include "route.h"
 #include "tool.h"
+#include "wifi.h"
 
 #include <esp_http_server.h>
 #include <esp_log.h>
@@ -540,8 +542,56 @@ static esp_err_t HttpServer_NotFoundHandler(httpd_req_t* req, httpd_err_code_t e
   return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
 }
 
+static void HttpServer_OnNtpSynced(void)
+{
+  if (!Wifi_IsConnected() || Wifi_IsPairing()) return;
+  if (HttpServer_Start() != ESP_OK) {
+    ESP_LOGE(tag, "HTTP start failed");
+  }
+}
+
+static void HttpServer_OnWifiDisconnected(void)
+{
+  if (Wifi_IsPairing()) {
+    ESP_LOGW(tag, "WiFi disconnected during pairing; keeping portal up");
+    return;
+  }
+  ESP_LOGW(tag, "WiFi disconnected; stopping HTTP");
+  HttpServer_Stop();
+}
+
+static void HttpServer_OnPairingStarted(void)
+{
+  ESP_LOGI(tag, "Pairing started; switching to portal HTTP");
+  HttpServer_Stop();
+  if (HttpServer_StartPairing() != ESP_OK) {
+    ESP_LOGE(tag, "Portal HTTP start failed");
+  }
+}
+
+static void HttpServer_OnPairingStopped(void)
+{
+  ESP_LOGI(tag, "Pairing stopped; closing portal HTTP");
+  HttpServer_Stop();
+
+  char ip[16] = {0};
+  char reason[96] = {0};
+  Wifi_PairState state = Wifi_GetPairStatus(ip, sizeof(ip), reason, sizeof(reason));
+  /* Success path fires connected callback next (NTP then API). Cancel-while-online restores API. */
+  if (Wifi_IsConnected() && state != WIFI_PAIR_STATE_CONNECTED) {
+    ESP_LOGI(tag, "Restoring API HTTP after pairing cancel");
+    if (HttpServer_Start() != ESP_OK) {
+      ESP_LOGE(tag, "HTTP start failed after pairing cancel");
+    }
+  }
+}
+
 esp_err_t HttpServer_Init(void)
 {
+  TOOL_CHECK_ESP_OK_OR_RETURN(Ntp_RegisterSyncedCallback(HttpServer_OnNtpSynced));
+  TOOL_CHECK_ESP_OK_OR_RETURN(Wifi_RegisterDisconnectedCallback(HttpServer_OnWifiDisconnected));
+  TOOL_CHECK_ESP_OK_OR_RETURN(Wifi_RegisterPairingStartedCallback(HttpServer_OnPairingStarted));
+  TOOL_CHECK_ESP_OK_OR_RETURN(Wifi_RegisterPairingStoppedCallback(HttpServer_OnPairingStopped));
   return ESP_OK;
 }
 
