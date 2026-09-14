@@ -474,6 +474,45 @@
           }
         }
       }
+    },
+    {
+      "name": "run_script",
+      "description": "Run a sandboxed Lua script on-device. The script can call the same pin/power/lock tools as MCP. Optional maxCalls and timeout (microseconds) must not exceed firmware ceilings. One script at a time.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "script"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "script": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192,
+            "description": "Lua source"
+          },
+          "maxCalls": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 256,
+            "description": "Max tool invocations this run"
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000000,
+            "description": "Wall-clock budget in microseconds"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
     }
   ]
 }

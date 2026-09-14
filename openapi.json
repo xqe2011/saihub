@@ -3,7 +3,7 @@
   "info": {
     "title": "Saihub Pin REST API",
     "version": "1.0.0",
-    "description": "No-TLS JSON REST API for logical pins 0-7, PWM, power rails (3v3/5v), edge tracing, and resource locks. All time fields are microseconds. JSON keys are camelCase."
+    "description": "No-TLS JSON REST API for logical pins 0-7, PWM, power rails (3v3/5v), edge tracing, resource locks, and on-device Lua scripts. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}."
   },
   "servers": [
     {
@@ -24,6 +24,9 @@
     },
     {
       "name": "lock"
+    },
+    {
+      "name": "script"
     },
     {
       "name": "meta"
@@ -1058,6 +1061,84 @@
         }
       }
     },
+    "/script": {
+      "post": {
+        "tags": [
+          "script"
+        ],
+        "summary": "Run a Lua script on-device",
+        "description": "Execute a sandboxed Lua script that can call the same tools as MCP (pin/power/lock). Optional maxCalls and timeout (microseconds) must not exceed firmware ceilings. Default lock for nested tool calls: X-Lock-Id. One script at a time.",
+        "parameters": [
+          {
+            "name": "X-Lock-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Default lockId injected into tool calls that omit lockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "script"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "script": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192,
+                    "description": "Lua source"
+                  },
+                  "maxCalls": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 256,
+                    "description": "Max tool invocations this run (default and ceiling from firmware)"
+                  },
+                  "timeout": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000000,
+                    "description": "Wall-clock budget in microseconds (default and ceiling from firmware)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Script finished",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScriptResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "409": {
+            "$ref": "#/components/responses/ScriptBusy"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          }
+        }
+      }
+    },
     "/lock": {
       "post": {
         "tags": [
@@ -1530,20 +1611,39 @@
       "Error": {
         "type": "object",
         "required": [
-          "error"
+          "reason"
         ],
         "properties": {
-          "error": {
-            "type": "object",
-            "required": [
-              "reason"
-            ],
-            "properties": {
-              "reason": {
-                "type": "string",
-                "description": "Human-readable fix sentence, except invalid_json and internal"
-              }
-            }
+          "reason": {
+            "type": "string",
+            "description": "Human-readable fix sentence, except invalid_json and internal"
+          }
+        }
+      },
+      "ScriptResult": {
+        "type": "object",
+        "required": [
+          "result",
+          "output",
+          "calls",
+          "elapsed"
+        ],
+        "properties": {
+          "result": {
+            "description": "First Lua return value as JSON, or null",
+            "nullable": true
+          },
+          "output": {
+            "type": "string",
+            "description": "Captured print() output"
+          },
+          "calls": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Tool invocations performed"
+          },
+          "elapsed": {
+            "$ref": "#/components/schemas/TimeUs"
           }
         }
       }
@@ -1571,6 +1671,26 @@
       },
       "Conflict": {
         "description": "POST /lock overlaps an existing lock",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "RequestTimeout": {
+        "description": "Script exceeded timeout",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "ScriptBusy": {
+        "description": "Another script is already running",
         "content": {
           "application/json": {
             "schema": {

@@ -82,15 +82,13 @@ esp_err_t HttpServer_SendError(httpd_req_t* req, int status, const char* reason)
   ESP_LOGW(tag, "Resp %s %s -> %d %s", HttpServer_MethodName(req->method), req->uri, status, reason ? reason : "");
   HttpServer_SetCors(req);
   cJSON* root = cJSON_CreateObject();
-  cJSON* err = cJSON_CreateObject();
-  cJSON_AddStringToObject(err, "reason", reason ? reason : "internal");
-  cJSON_AddItemToObject(root, "error", err);
+  cJSON_AddStringToObject(root, "reason", reason ? reason : "internal");
   char* printed = cJSON_PrintUnformatted(root);
   cJSON_Delete(root);
   if (printed == NULL) {
     httpd_resp_set_status(req, "500 Internal Server Error");
     httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, "{\"error\":{\"reason\":\"internal\"}}", HTTPD_RESP_USE_STRLEN);
+    return httpd_resp_send(req, "{\"reason\":\"internal\"}", HTTPD_RESP_USE_STRLEN);
   }
   char statusStr[64];
   snprintf(statusStr, sizeof(statusStr), "%d ", status);
@@ -103,6 +101,9 @@ esp_err_t HttpServer_SendError(httpd_req_t* req, int status, const char* reason)
       break;
     case 405:
       httpd_resp_set_status(req, "405 Method Not Allowed");
+      break;
+    case 408:
+      httpd_resp_set_status(req, "408 Request Timeout");
       break;
     case 409:
       httpd_resp_set_status(req, "409 Conflict");
@@ -556,7 +557,7 @@ esp_err_t HttpServer_Start(void)
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
   config.uri_match_fn = httpd_uri_match_wildcard;
-  config.max_uri_handlers = 40;
+  config.max_uri_handlers = 48;
   config.lru_purge_enable = true;
   config.recv_wait_timeout = 65;
   config.send_wait_timeout = 65;
@@ -566,6 +567,7 @@ esp_err_t HttpServer_Start(void)
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(server), "pin routes failed");
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(server), "lock routes failed");
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PowerRegister(server), "power routes failed");
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ScriptRegister(server), "script routes failed");
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_McpRegister(server), "mcp routes failed");
   static const httpd_uri_t optionsUri = {.uri = "/*", .method = HTTP_OPTIONS, .handler = HttpServer_SendOptions};
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_register_uri_handler(server, &optionsUri), "options cors route failed");
