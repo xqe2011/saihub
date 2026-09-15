@@ -12,6 +12,7 @@
 #include <cJSON.h>
 #include <esp_err.h>
 #include <esp_http_server.h>
+#include <pb.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -29,6 +30,18 @@ esp_err_t HttpServer_SendJson(httpd_req_t* req, int status, cJSON* root);
 esp_err_t HttpServer_SendEmpty(httpd_req_t* req, int status);
 esp_err_t HttpServer_SendOptions(httpd_req_t* req);
 bool HttpServer_HasJsonContentType(httpd_req_t* req);
+bool HttpServer_HasProtobufContentType(httpd_req_t* req);
+/** True when Content-Type is application/json or application/x-protobuf. */
+bool HttpServer_HasApiContentType(httpd_req_t* req);
+/** Encode and send a nanopb message as application/x-protobuf. Does not free msg. */
+esp_err_t HttpServer_SendPb(httpd_req_t* req, int status, const pb_msgdesc_t* fields, const void* msg);
+/**
+ * Read body and pb_decode into msg (caller zero-inits). Empty body is ok (empty message).
+ * Returns ESP_OK, ESP_ERR_INVALID_ARG (bad protobuf), ESP_ERR_INVALID_SIZE, ESP_ERR_NO_MEM, or ESP_FAIL.
+ */
+esp_err_t HttpServer_DecodePb(httpd_req_t* req, const pb_msgdesc_t* fields, void* msg);
+/** 415 reason for REST body endpoints that accept JSON or protobuf. */
+const char* HttpServer_UnsupportedMediaTypeReason(void);
 void HttpServer_GetLockHeader(httpd_req_t* req, char* out, size_t outLen);
 int HttpServer_LockStatusId(const char* lockId, Lock_Kind kind, int pin, uint8_t methods, char* reasonOut,
                             size_t reasonLen);

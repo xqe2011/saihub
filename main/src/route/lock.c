@@ -5,6 +5,8 @@
  */
 #include "route.h"
 
+#include "api.pb.h"
+#include "api_conv.h"
 #include "config.h"
 #include "http_server.h"
 #include "lock.h"
@@ -21,22 +23,35 @@ static esp_err_t Route_LockCreateHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
-  cJSON* resources = cJSON_GetObjectItem(body, "resources");
   Lock_Resource res[CONFIG_LOCK_MAX_RESOURCES];
   size_t count = 0;
   char reason[192];
-  if (HttpServer_ParseLockResources(resources, res, CONFIG_LOCK_MAX_RESOURCES, &count, reason, sizeof(reason)) != ESP_OK) {
+
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_LockCreateBody body = saihub_api_LockCreateBody_init_zero;
+    esp_err_t dr = HttpServer_DecodePb(req, saihub_api_LockCreateBody_fields, &body);
+    if (dr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    if (ApiConv_ParseLockResources(body.resources, body.resources_count, res, CONFIG_LOCK_MAX_RESOURCES, &count, reason,
+                                   sizeof(reason)) != ESP_OK) {
+      return HttpServer_SendError(req, 400, reason);
+    }
+  } else {
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+
+    cJSON* resources = cJSON_GetObjectItem(body, "resources");
+    if (HttpServer_ParseLockResources(resources, res, CONFIG_LOCK_MAX_RESOURCES, &count, reason, sizeof(reason)) !=
+        ESP_OK) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, reason);
+    }
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, reason);
   }
-  cJSON_Delete(body);
 
   Lock_Entry created;
   Lock_Conflict conflict;
@@ -50,9 +65,20 @@ static esp_err_t Route_LockCreateHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 500, "internal");
   }
 
+  int64_t now = Lock_NowUs();
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_Lock msg = saihub_api_Lock_init_zero;
+    snprintf(msg.id, sizeof(msg.id), "%s", created.id);
+    msg.ttl = created.expiresAtUs - now;
+    msg.expiresAt = created.expiresAtUs;
+    if (!ApiConv_SerializeLockResources(created.resources, created.resourceCount, &msg)) {
+      return HttpServer_SendError(req, 500, "internal");
+    }
+    return HttpServer_SendPb(req, 201, saihub_api_Lock_fields, &msg);
+  }
+
   cJSON* root = cJSON_CreateObject();
   cJSON_AddStringToObject(root, "id", created.id);
-  int64_t now = Lock_NowUs();
   cJSON_AddNumberToObject(root, "ttl", (double)(created.expiresAtUs - now));
   cJSON_AddNumberToObject(root, "expiresAt", (double)created.expiresAtUs);
   cJSON_AddItemToObject(root, "resources", HttpServer_SerializeLockResources(created.resources, created.resourceCount));
@@ -79,9 +105,16 @@ static esp_err_t Route_LockRenewHandler(httpd_req_t* req)
              "Lock id %s does not exist. Create a lock with POST /lock (see GET /openapi.json).", id);
     return HttpServer_SendError(req, 404, reason);
   }
+  int64_t now = Lock_NowUs();
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_LockRenewResponse msg = saihub_api_LockRenewResponse_init_zero;
+    snprintf(msg.id, sizeof(msg.id), "%s", entry.id);
+    msg.ttl = entry.expiresAtUs - now;
+    msg.expiresAt = entry.expiresAtUs;
+    return HttpServer_SendPb(req, 200, saihub_api_LockRenewResponse_fields, &msg);
+  }
   cJSON* root = cJSON_CreateObject();
   cJSON_AddStringToObject(root, "id", entry.id);
-  int64_t now = Lock_NowUs();
   cJSON_AddNumberToObject(root, "ttl", (double)(entry.expiresAtUs - now));
   cJSON_AddNumberToObject(root, "expiresAt", (double)entry.expiresAtUs);
   return HttpServer_SendJson(req, 200, root);

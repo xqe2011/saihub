@@ -5,6 +5,7 @@
  */
 #include "route.h"
 
+#include "api.pb.h"
 #include "gpio_ctrl.h"
 #include "http_server.h"
 #include "lock.h"
@@ -59,6 +60,14 @@ static esp_err_t Route_PowerGetHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 500, "internal");
   }
   Lock_Touch(lockId[0] ? lockId : NULL);
+
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_PowerState msg = saihub_api_PowerState_init_zero;
+    msg.enable = enable;
+    msg.time = HttpServer_NowUs();
+    return HttpServer_SendPb(req, 200, saihub_api_PowerState_fields, &msg);
+  }
+
   cJSON* root = cJSON_CreateObject();
   cJSON_AddBoolToObject(root, "enable", enable);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
@@ -75,8 +84,8 @@ static esp_err_t Route_PowerPostHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
   }
 
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
 
   char lockId[64];
@@ -85,17 +94,25 @@ static esp_err_t Route_PowerPostHandler(httpd_req_t* req)
                            sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
 
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+  bool enable;
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_PowerEnable body = saihub_api_PowerEnable_init_zero;
+    esp_err_t dr = HttpServer_DecodePb(req, saihub_api_PowerEnable_fields, &body);
+    if (dr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    enable = body.enable;
+  } else {
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
-  cJSON* enableItem = cJSON_GetObjectItem(body, "enable");
-  if (!cJSON_IsBool(enableItem)) {
+    cJSON* enableItem = cJSON_GetObjectItem(body, "enable");
+    if (!cJSON_IsBool(enableItem)) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, "enable must be boolean.");
+    }
+    enable = cJSON_IsTrue(enableItem);
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "enable must be boolean.");
   }
-  bool enable = cJSON_IsTrue(enableItem);
-  cJSON_Delete(body);
 
   if (GpioCtrl_SetPowerEnable(rail, enable) != ESP_OK) {
     return HttpServer_SendError(req, 500, "internal");

@@ -1,0 +1,274 @@
+syntax = "proto3";
+package saihub.api;
+
+// Saihub REST API — protobuf bodies (served at GET /api.proto).
+//
+// Usage:
+//   Send Content-Type: application/x-protobuf on a REST request to use protobuf
+//   for both the request body (when present) and the response body.
+//   Empty body is an empty message. 204 responses stay empty.
+//   Errors are message Error { reason }. Bad wire data → HTTP 400 invalid_protobuf.
+//   JSON (application/json) remains the default. /mcp is JSON-RPC only (no protobuf).
+//
+// Field names match OpenAPI / JSON camelCase keys. Closed JSON string sets are
+// enums here (0 = *_UNSPECIFIED; treat like a missing required JSON field).
+//
+// Differences from JSON (by design):
+//   - UART data is bytes (JSON uses utf8 string or 0-255 int array).
+//   - ScriptResult.result is optional string holding JSON text of the Lua value
+//     (JSON embeds an untyped value; omit when JSON would be null).
+//   - UartPins rx/tx are optional int32 (omit = JSON null; 0 is a valid pin).
+//   - PowerRail uses POWER_RAIL_3V3 / POWER_RAIL_5V (JSON strings "3v3" / "5v").
+
+// --- Enums (JSON uses the same names as strings; 0 = unspecified) ---
+
+enum Mode {
+  MODE_UNSPECIFIED = 0;
+  disable = 1;
+  digitalInput = 2;
+  digitalOutput = 3;
+  digitalInputOutput = 4;
+  pwmOutput = 5;
+}
+
+enum Edge {
+  EDGE_UNSPECIFIED = 0;
+  raising = 1;
+  falling = 2;
+  both = 3;
+}
+
+enum UartParity {
+  UART_PARITY_UNSPECIFIED = 0;
+  none = 1;
+  even = 2;
+  odd = 3;
+}
+
+enum UartEncoding {
+  UART_ENCODING_UNSPECIFIED = 0;
+  utf8 = 1;
+  byte = 2;
+}
+
+enum LockResourceType {
+  LOCK_RESOURCE_TYPE_UNSPECIFIED = 0;
+  pin = 1;
+  power = 2;
+  uart = 3;
+}
+
+enum LockMethod {
+  LOCK_METHOD_UNSPECIFIED = 0;
+  read = 1;
+  write = 2;
+}
+
+// JSON uses "3v3" / "5v"; identifiers cannot start with a digit.
+enum PowerRail {
+  POWER_RAIL_UNSPECIFIED = 0;
+  POWER_RAIL_3V3 = 1;
+  POWER_RAIL_5V = 2;
+}
+
+// --- Shared ---
+
+message Error {
+  string reason = 1;
+}
+
+message PinConfig {
+  Mode mode = 1;
+  bool openDrain = 2;
+  bool pullUp = 3;
+  bool pullDown = 4;
+}
+
+message PinState {
+  int32 pin = 1;
+  Mode mode = 2;
+  bool openDrain = 3;
+  bool pullUp = 4;
+  bool pullDown = 5;
+  int32 level = 6;
+}
+
+message PinListResponse {
+  repeated PinState pins = 1;
+  int64 time = 2;
+}
+
+message LevelBody {
+  int32 level = 1;
+}
+
+message LevelState {
+  int32 level = 1;
+  int64 time = 2;
+}
+
+message PulseBody {
+  int64 width = 1;
+  int32 level = 2;
+}
+
+message PwmBody {
+  double frequency = 1;
+  double duty = 2;
+}
+
+message PwmState {
+  double frequency = 1;
+  double duty = 2;
+  int64 time = 3;
+}
+
+message TraceEvent {
+  // Event edges are raising|falling only (never both).
+  Edge edge = 1;
+  int32 level = 2;
+  int64 time = 3;
+}
+
+message TraceEventWithPin {
+  int32 pin = 1;
+  // Event edges are raising|falling only (never both).
+  Edge edge = 2;
+  int32 level = 3;
+  int64 time = 4;
+}
+
+message TraceResponse {
+  repeated TraceEvent events = 1;
+}
+
+message TraceWithPinResponse {
+  repeated TraceEventWithPin events = 1;
+}
+
+message PinsBody {
+  repeated int32 pins = 1;
+}
+
+message PinsLevelBody {
+  repeated int32 pins = 1;
+  int32 level = 2;
+}
+
+message PinConfigBatchBody {
+  Mode mode = 1;
+  bool openDrain = 2;
+  bool pullUp = 3;
+  bool pullDown = 4;
+  repeated int32 pins = 5;
+}
+
+message PulseBatchBody {
+  int64 width = 1;
+  int32 level = 2;
+  repeated int32 pins = 3;
+}
+
+message TraceBatchBody {
+  repeated int32 pins = 1;
+  // EDGE_UNSPECIFIED means default both (same as omitted JSON edge).
+  Edge edge = 2;
+  // 0 means default 1000000 us (same as omitted JSON duration).
+  int64 duration = 3;
+}
+
+message LevelsResponse {
+  repeated int32 levels = 1;
+  int64 time = 2;
+}
+
+message PowerEnable {
+  bool enable = 1;
+}
+
+message PowerState {
+  bool enable = 1;
+  int64 time = 2;
+}
+
+message LockResource {
+  LockResourceType type = 1;
+  repeated int32 pins = 2;
+  repeated PowerRail rails = 3;
+  repeated int32 ids = 4;
+  repeated LockMethod method = 5;
+}
+
+message LockCreateBody {
+  repeated LockResource resources = 1;
+}
+
+message Lock {
+  string id = 1;
+  int64 ttl = 2;
+  int64 expiresAt = 3;
+  repeated LockResource resources = 4;
+}
+
+message LockRenewResponse {
+  string id = 1;
+  int64 ttl = 2;
+  int64 expiresAt = 3;
+}
+
+message ScriptBody {
+  string script = 1;
+  optional int32 maxCalls = 2;
+  optional int64 timeout = 3;
+}
+
+message ScriptResult {
+  // JSON embeds an untyped value; protobuf stores cJSON_PrintUnformatted text.
+  // Omitted when JSON result would be null.
+  optional string result = 1;
+  string output = 2;
+  int32 calls = 3;
+  int64 elapsed = 4;
+}
+
+// Omitted optional pin = JSON null. Pin 0 is a valid logical pin.
+message UartPins {
+  optional int32 rx = 1;
+  optional int32 tx = 2;
+}
+
+message UartConfigBody {
+  bool enable = 1;
+  int32 baudRate = 2;
+  int32 dataBits = 3;
+  UartParity parity = 4;
+  int32 stopBits = 5;
+  UartEncoding encoding = 6;
+  UartPins pins = 7;
+}
+
+message UartState {
+  int32 id = 1;
+  bool enable = 2;
+  int32 baudRate = 3;
+  int32 dataBits = 4;
+  UartParity parity = 5;
+  int32 stopBits = 6;
+  UartEncoding encoding = 7;
+  UartPins pins = 8;
+}
+
+message UartListResponse {
+  repeated UartState uarts = 1;
+  int64 time = 2;
+}
+
+// JSON uses string (utf8) or 0-255 int array (byte). Protobuf always uses bytes.
+message UartTransmitBody {
+  bytes data = 1;
+}
+
+message UartReceiveState {
+  bytes data = 1;
+  int64 time = 2;
+}

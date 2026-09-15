@@ -5,6 +5,8 @@
  */
 #include "route.h"
 
+#include "api.pb.h"
+#include "api_conv.h"
 #include "config.h"
 #include "gpio_ctrl.h"
 #include "http_server.h"
@@ -37,14 +39,77 @@ static void Route_PinPwmDenied(int pin, char* reason, size_t reasonLen)
   snprintf(reason, reasonLen, "Pin %d is not in pwmOutput mode. PUT /pin/%d with mode pwmOutput first.", pin, pin);
 }
 
+static esp_err_t Route_PinParseConfigPb(saihub_api_Mode modePb, bool openDrain, bool pullUp, bool pullDown,
+                                        GpioCtrl_Mode* modeOut, bool* openDrainOut, bool* pullUpOut, bool* pullDownOut,
+                                        char* reason, size_t reasonLen)
+{
+  static const char* modeHint = "disable, digitalInput, digitalOutput, digitalInputOutput, pwmOutput";
+  GpioCtrl_Mode mode;
+  if (!ApiConv_ModeFromPb(modePb, &mode)) {
+    snprintf(reason, reasonLen, "mode is invalid. Use one of: %s.", modeHint);
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (openDrain && (mode == GPIO_CTRL_MODE_DISABLE || mode == GPIO_CTRL_MODE_DIGITAL_INPUT)) {
+    snprintf(reason, reasonLen, "openDrain cannot be true when mode is disable or digitalInput.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  *modeOut = mode;
+  *openDrainOut = openDrain;
+  *pullUpOut = pullUp;
+  *pullDownOut = pullDown;
+  return ESP_OK;
+}
+
+static esp_err_t Route_PinParsePinsPb(const int32_t* pinsIn, pb_size_t pinsCount, int* pinsOut, size_t maxPins,
+                                      size_t* countOut, char* reason, size_t reasonLen)
+{
+  char range[32];
+  HttpServer_FormatPinRange(range, sizeof(range));
+  if (pinsCount == 0) {
+    snprintf(reason, reasonLen, "pins must be a non-empty array of integers from %s.", range);
+    return ESP_ERR_INVALID_ARG;
+  }
+  if ((size_t)pinsCount > maxPins) {
+    snprintf(reason, reasonLen, "pins array is too long.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  for (pb_size_t i = 0; i < pinsCount; i++) {
+    int pin = pinsIn[i];
+    if (!GpioCtrl_IsValidLogicalPin(pin)) {
+      snprintf(reason, reasonLen, "pins[%u] (%d) is invalid. Use a pin from %s.", (unsigned)i, pin, range);
+      return ESP_ERR_INVALID_ARG;
+    }
+    pinsOut[i] = pin;
+  }
+  *countOut = (size_t)pinsCount;
+  return ESP_OK;
+}
+
 static esp_err_t Route_PinListHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   TOOL_CALL_LOG("rest %s %s", HttpServer_MethodName(req->method), req->uri);
   Lock_SweepExpired();
+  int count = GpioCtrl_GetLogicalCount();
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_PinListResponse msg = saihub_api_PinListResponse_init_zero;
+    if (count > (int)TOOL_GET_ARRAY_LENGTH(msg.pins)) count = (int)TOOL_GET_ARRAY_LENGTH(msg.pins);
+    for (int i = 0; i < count; i++) {
+      GpioCtrl_State st;
+      GpioCtrl_GetState(i, &st);
+      saihub_api_PinState* item = &msg.pins[msg.pins_count++];
+      item->pin = i;
+      item->mode = ApiConv_ModeToPb(st.mode);
+      item->openDrain = st.openDrain;
+      item->pullUp = st.pullUp;
+      item->pullDown = st.pullDown;
+      item->level = st.level;
+    }
+    msg.time = HttpServer_NowUs();
+    return HttpServer_SendPb(req, 200, saihub_api_PinListResponse_fields, &msg);
+  }
   cJSON* root = cJSON_CreateObject();
   cJSON* pinsArr = cJSON_CreateArray();
-  int count = GpioCtrl_GetLogicalCount();
   for (int i = 0; i < count; i++) {
     GpioCtrl_State st;
     GpioCtrl_GetState(i, &st);
@@ -81,8 +146,8 @@ static esp_err_t Route_PinPutModeHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 404, reason);
   }
 
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
 
   char lockId[64];
@@ -90,21 +155,30 @@ static esp_err_t Route_PinPutModeHandler(httpd_req_t* req)
   int st = HttpServer_LockStatus(req, LOCK_KIND_GPIO, pin, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
 
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) {
-    return HttpServer_SendError(req, 400, "invalid_json");
-  }
-
   GpioCtrl_Mode mode;
   bool openDrain = false;
   bool pullUp = false;
   bool pullDown = false;
-  if (HttpServer_ParsePinConfigBody(body, &mode, &openDrain, &pullUp, &pullDown, reason, sizeof(reason)) != ESP_OK) {
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_PinConfig body = saihub_api_PinConfig_init_zero;
+    esp_err_t dr = HttpServer_DecodePb(req, saihub_api_PinConfig_fields, &body);
+    if (dr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    if (Route_PinParseConfigPb(body.mode, body.openDrain, body.pullUp, body.pullDown, &mode, &openDrain, &pullUp,
+                               &pullDown, reason, sizeof(reason)) != ESP_OK) {
+      return HttpServer_SendError(req, 400, reason);
+    }
+  } else {
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) {
+      return HttpServer_SendError(req, 400, "invalid_json");
+    }
+    if (HttpServer_ParsePinConfigBody(body, &mode, &openDrain, &pullUp, &pullDown, reason, sizeof(reason)) != ESP_OK) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, reason);
+    }
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, reason);
   }
-  cJSON_Delete(body);
 
   esp_err_t cfg = GpioCtrl_SetConfig(pin, mode, openDrain, pullUp, pullDown);
   if (cfg == ESP_ERR_NO_MEM) {
@@ -152,6 +226,12 @@ static esp_err_t Route_PinGetLevelHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 500, "internal");
   }
   Lock_Touch(lockId[0] ? lockId : NULL);
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_LevelState msg = saihub_api_LevelState_init_zero;
+    msg.level = level;
+    msg.time = HttpServer_NowUs();
+    return HttpServer_SendPb(req, 200, saihub_api_LevelState_fields, &msg);
+  }
   cJSON* root = cJSON_CreateObject();
   cJSON_AddNumberToObject(root, "level", level);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
@@ -177,8 +257,8 @@ static esp_err_t Route_PinPostLevelHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 404, reason);
   }
 
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
 
   char lockId[64];
@@ -186,17 +266,28 @@ static esp_err_t Route_PinPostLevelHandler(httpd_req_t* req)
   int st = HttpServer_LockStatus(req, LOCK_KIND_GPIO, pin, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
 
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+  int level;
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_LevelBody body = saihub_api_LevelBody_init_zero;
+    esp_err_t dr = HttpServer_DecodePb(req, saihub_api_LevelBody_fields, &body);
+    if (dr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    if (body.level != 0 && body.level != 1) {
+      return HttpServer_SendError(req, 400, "level must be 0 or 1.");
+    }
+    level = body.level;
+  } else {
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
-  cJSON* levelItem = cJSON_GetObjectItem(body, "level");
-  if (!cJSON_IsNumber(levelItem) || (levelItem->valueint != 0 && levelItem->valueint != 1)) {
+    cJSON* levelItem = cJSON_GetObjectItem(body, "level");
+    if (!cJSON_IsNumber(levelItem) || (levelItem->valueint != 0 && levelItem->valueint != 1)) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, "level must be 0 or 1.");
+    }
+    level = levelItem->valueint;
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "level must be 0 or 1.");
   }
-  int level = levelItem->valueint;
-  cJSON_Delete(body);
 
   if (!GpioCtrl_IsOutputCapable(pin)) {
     Route_PinLevelWriteDenied(pin, reason, sizeof(reason));
@@ -227,8 +318,8 @@ static esp_err_t Route_PinPostPulseHandler(httpd_req_t* req)
     snprintf(reason, sizeof(reason), "Pin %ld does not exist. Use a pin from %s.", raw, range);
     return HttpServer_SendError(req, 404, reason);
   }
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
 
   char lockId[64];
@@ -236,24 +327,40 @@ static esp_err_t Route_PinPostPulseHandler(httpd_req_t* req)
   int st = HttpServer_LockStatus(req, LOCK_KIND_GPIO, pin, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
 
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+  uint64_t width;
+  int level;
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_PulseBody body = saihub_api_PulseBody_init_zero;
+    esp_err_t dr = HttpServer_DecodePb(req, saihub_api_PulseBody_fields, &body);
+    if (dr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    if (body.width < 1 || body.width > (int64_t)CONFIG_GPIO_PULSE_MAX_WIDTH_US) {
+      return HttpServer_SendError(req, 400, "width must be an integer from 1 to 1000000 microseconds.");
+    }
+    if (body.level != 0 && body.level != 1) {
+      return HttpServer_SendError(req, 400, "level must be 0 or 1.");
+    }
+    width = (uint64_t)body.width;
+    level = body.level;
+  } else {
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
-  cJSON* widthItem = cJSON_GetObjectItem(body, "width");
-  cJSON* levelItem = cJSON_GetObjectItem(body, "level");
-  if (!cJSON_IsNumber(widthItem) || widthItem->valuedouble < 1 ||
-      widthItem->valuedouble > (double)CONFIG_GPIO_PULSE_MAX_WIDTH_US) {
+    cJSON* widthItem = cJSON_GetObjectItem(body, "width");
+    cJSON* levelItem = cJSON_GetObjectItem(body, "level");
+    if (!cJSON_IsNumber(widthItem) || widthItem->valuedouble < 1 ||
+        widthItem->valuedouble > (double)CONFIG_GPIO_PULSE_MAX_WIDTH_US) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, "width must be an integer from 1 to 1000000 microseconds.");
+    }
+    if (!cJSON_IsNumber(levelItem) || (levelItem->valueint != 0 && levelItem->valueint != 1)) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, "level must be 0 or 1.");
+    }
+    width = (uint64_t)widthItem->valuedouble;
+    level = levelItem->valueint;
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "width must be an integer from 1 to 1000000 microseconds.");
   }
-  if (!cJSON_IsNumber(levelItem) || (levelItem->valueint != 0 && levelItem->valueint != 1)) {
-    cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "level must be 0 or 1.");
-  }
-  uint64_t width = (uint64_t)widthItem->valuedouble;
-  int level = levelItem->valueint;
-  cJSON_Delete(body);
 
   if (!GpioCtrl_IsOutputCapable(pin)) {
     Route_PinLevelWriteDenied(pin, reason, sizeof(reason));
@@ -303,6 +410,13 @@ static esp_err_t Route_PinGetPwmHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 500, "internal");
   }
   Lock_Touch(lockId[0] ? lockId : NULL);
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_PwmState msg = saihub_api_PwmState_init_zero;
+    msg.frequency = frequency;
+    msg.duty = duty;
+    msg.time = HttpServer_NowUs();
+    return HttpServer_SendPb(req, 200, saihub_api_PwmState_fields, &msg);
+  }
   cJSON* root = cJSON_CreateObject();
   cJSON_AddNumberToObject(root, "frequency", frequency);
   cJSON_AddNumberToObject(root, "duty", duty);
@@ -329,8 +443,8 @@ static esp_err_t Route_PinPostPwmHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 404, reason);
   }
 
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
 
   char lockId[64];
@@ -338,24 +452,40 @@ static esp_err_t Route_PinPostPwmHandler(httpd_req_t* req)
   int st = HttpServer_LockStatus(req, LOCK_KIND_GPIO, pin, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
 
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+  double frequency;
+  double duty;
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_PwmBody body = saihub_api_PwmBody_init_zero;
+    esp_err_t dr = HttpServer_DecodePb(req, saihub_api_PwmBody_fields, &body);
+    if (dr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    if (body.frequency < 1.0 || body.frequency > (double)CONFIG_GPIO_PWM_MAX_FREQ_HZ) {
+      return HttpServer_SendError(req, 400, "frequency must be a number from 1 to 50000 Hz.");
+    }
+    if (body.duty < 0.0 || body.duty > 100.0) {
+      return HttpServer_SendError(req, 400, "duty must be a number from 0 to 100.");
+    }
+    frequency = body.frequency;
+    duty = body.duty;
+  } else {
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
-  cJSON* freqItem = cJSON_GetObjectItem(body, "frequency");
-  cJSON* dutyItem = cJSON_GetObjectItem(body, "duty");
-  if (!cJSON_IsNumber(freqItem) || freqItem->valuedouble < 1.0 ||
-      freqItem->valuedouble > (double)CONFIG_GPIO_PWM_MAX_FREQ_HZ) {
+    cJSON* freqItem = cJSON_GetObjectItem(body, "frequency");
+    cJSON* dutyItem = cJSON_GetObjectItem(body, "duty");
+    if (!cJSON_IsNumber(freqItem) || freqItem->valuedouble < 1.0 ||
+        freqItem->valuedouble > (double)CONFIG_GPIO_PWM_MAX_FREQ_HZ) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, "frequency must be a number from 1 to 50000 Hz.");
+    }
+    if (!cJSON_IsNumber(dutyItem) || dutyItem->valuedouble < 0.0 || dutyItem->valuedouble > 100.0) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, "duty must be a number from 0 to 100.");
+    }
+    frequency = freqItem->valuedouble;
+    duty = dutyItem->valuedouble;
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "frequency must be a number from 1 to 50000 Hz.");
   }
-  if (!cJSON_IsNumber(dutyItem) || dutyItem->valuedouble < 0.0 || dutyItem->valuedouble > 100.0) {
-    cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "duty must be a number from 0 to 100.");
-  }
-  double frequency = freqItem->valuedouble;
-  double duty = dutyItem->valuedouble;
-  cJSON_Delete(body);
 
   if (!GpioCtrl_IsPwmMode(pin)) {
     Route_PinPwmDenied(pin, reason, sizeof(reason));
@@ -441,6 +571,30 @@ static esp_err_t Route_PinGetTraceHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 500, "internal");
   }
 
+  Lock_Touch(lockId[0] ? lockId : NULL);
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_TraceResponse msg = saihub_api_TraceResponse_init_zero;
+    saihub_api_TraceEvent* pbEvents = NULL;
+    if (count > 0) {
+      pbEvents = calloc(count, sizeof(saihub_api_TraceEvent));
+      if (pbEvents == NULL) {
+        free(events);
+        return HttpServer_SendError(req, 500, "internal");
+      }
+      for (size_t i = 0; i < count; i++) {
+        pbEvents[i].edge = ApiConv_TraceEdgeToPb(events[i].edge);
+        pbEvents[i].level = events[i].level;
+        pbEvents[i].time = (int64_t)events[i].time;
+      }
+    }
+    free(events);
+    msg.events = pbEvents;
+    msg.events_count = (pb_size_t)count;
+    esp_err_t ret = HttpServer_SendPb(req, 200, saihub_api_TraceResponse_fields, &msg);
+    free(pbEvents);
+    return ret;
+  }
+
   cJSON* root = cJSON_CreateObject();
   cJSON* arr = cJSON_CreateArray();
   for (size_t i = 0; i < count; i++) {
@@ -452,7 +606,6 @@ static esp_err_t Route_PinGetTraceHandler(httpd_req_t* req)
   }
   cJSON_AddItemToObject(root, "events", arr);
   free(events);
-  Lock_Touch(lockId[0] ? lockId : NULL);
   return HttpServer_SendJson(req, 200, root);
 }
 
@@ -460,29 +613,52 @@ static esp_err_t Route_PinBatchGetLevelHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
   int maxPins = GpioCtrl_GetLogicalCount();
   int pins[TOOL_GET_ARRAY_LENGTH(pinLogicalToHw)];
   if (maxPins > (int)TOOL_GET_ARRAY_LENGTH(pins)) maxPins = (int)TOOL_GET_ARRAY_LENGTH(pins);
   size_t count = 0;
   char reason[192];
-  if (HttpServer_ParsePinsArray(body, pins, (size_t)maxPins, &count, reason, sizeof(reason)) != ESP_OK) {
+
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_PinsBody body = saihub_api_PinsBody_init_zero;
+    esp_err_t dr = HttpServer_DecodePb(req, saihub_api_PinsBody_fields, &body);
+    if (dr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    if (Route_PinParsePinsPb(body.pins, body.pins_count, pins, (size_t)maxPins, &count, reason, sizeof(reason)) !=
+        ESP_OK) {
+      return HttpServer_SendError(req, 400, reason);
+    }
+  } else {
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+    if (HttpServer_ParsePinsArray(body, pins, (size_t)maxPins, &count, reason, sizeof(reason)) != ESP_OK) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, reason);
+    }
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, reason);
   }
-  cJSON_Delete(body);
 
   char lockId[64];
   for (size_t i = 0; i < count; i++) {
     int st =
         HttpServer_LockStatus(req, LOCK_KIND_GPIO, pins[i], LOCK_METHOD_READ, lockId, sizeof(lockId), reason, sizeof(reason));
     if (st) return HttpServer_SendError(req, st, reason);
+  }
+
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_LevelsResponse msg = saihub_api_LevelsResponse_init_zero;
+    for (size_t i = 0; i < count; i++) {
+      int level = 0;
+      GpioCtrl_GetLevel(pins[i], &level);
+      msg.levels[msg.levels_count++] = level;
+    }
+    msg.time = HttpServer_NowUs();
+    Lock_Touch(lockId[0] ? lockId : NULL);
+    return HttpServer_SendPb(req, 200, saihub_api_LevelsResponse_fields, &msg);
   }
 
   cJSON* root = cJSON_CreateObject();
@@ -502,29 +678,45 @@ static esp_err_t Route_PinBatchPostLevelHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
   int maxPins = GpioCtrl_GetLogicalCount();
   int pins[TOOL_GET_ARRAY_LENGTH(pinLogicalToHw)];
   if (maxPins > (int)TOOL_GET_ARRAY_LENGTH(pins)) maxPins = (int)TOOL_GET_ARRAY_LENGTH(pins);
   size_t count = 0;
   char reason[256];
-  if (HttpServer_ParsePinsArray(body, pins, (size_t)maxPins, &count, reason, sizeof(reason)) != ESP_OK) {
+  int level;
+
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_PinsLevelBody body = saihub_api_PinsLevelBody_init_zero;
+    esp_err_t dr = HttpServer_DecodePb(req, saihub_api_PinsLevelBody_fields, &body);
+    if (dr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    if (Route_PinParsePinsPb(body.pins, body.pins_count, pins, (size_t)maxPins, &count, reason, sizeof(reason)) !=
+        ESP_OK) {
+      return HttpServer_SendError(req, 400, reason);
+    }
+    if (body.level != 0 && body.level != 1) {
+      return HttpServer_SendError(req, 400, "level must be 0 or 1.");
+    }
+    level = body.level;
+  } else {
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+    if (HttpServer_ParsePinsArray(body, pins, (size_t)maxPins, &count, reason, sizeof(reason)) != ESP_OK) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, reason);
+    }
+    cJSON* levelItem = cJSON_GetObjectItem(body, "level");
+    if (!cJSON_IsNumber(levelItem) || (levelItem->valueint != 0 && levelItem->valueint != 1)) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, "level must be 0 or 1.");
+    }
+    level = levelItem->valueint;
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, reason);
   }
-  cJSON* levelItem = cJSON_GetObjectItem(body, "level");
-  if (!cJSON_IsNumber(levelItem) || (levelItem->valueint != 0 && levelItem->valueint != 1)) {
-    cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "level must be 0 or 1.");
-  }
-  int level = levelItem->valueint;
-  cJSON_Delete(body);
 
   char lockId[64];
   for (size_t i = 0; i < count; i++) {
@@ -549,31 +741,46 @@ static esp_err_t Route_PinBatchPutConfigHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
   int maxPins = GpioCtrl_GetLogicalCount();
   int pins[TOOL_GET_ARRAY_LENGTH(pinLogicalToHw)];
   if (maxPins > (int)TOOL_GET_ARRAY_LENGTH(pins)) maxPins = (int)TOOL_GET_ARRAY_LENGTH(pins);
   size_t count = 0;
   char reason[256];
-  if (HttpServer_ParsePinsArray(body, pins, (size_t)maxPins, &count, reason, sizeof(reason)) != ESP_OK) {
-    cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, reason);
-  }
   GpioCtrl_Mode mode;
   bool openDrain = false;
   bool pullUp = false;
   bool pullDown = false;
-  if (HttpServer_ParsePinConfigBody(body, &mode, &openDrain, &pullUp, &pullDown, reason, sizeof(reason)) != ESP_OK) {
+
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_PinConfigBatchBody body = saihub_api_PinConfigBatchBody_init_zero;
+    esp_err_t dr = HttpServer_DecodePb(req, saihub_api_PinConfigBatchBody_fields, &body);
+    if (dr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    if (Route_PinParsePinsPb(body.pins, body.pins_count, pins, (size_t)maxPins, &count, reason, sizeof(reason)) !=
+        ESP_OK) {
+      return HttpServer_SendError(req, 400, reason);
+    }
+    if (Route_PinParseConfigPb(body.mode, body.openDrain, body.pullUp, body.pullDown, &mode, &openDrain, &pullUp,
+                               &pullDown, reason, sizeof(reason)) != ESP_OK) {
+      return HttpServer_SendError(req, 400, reason);
+    }
+  } else {
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+    if (HttpServer_ParsePinsArray(body, pins, (size_t)maxPins, &count, reason, sizeof(reason)) != ESP_OK) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, reason);
+    }
+    if (HttpServer_ParsePinConfigBody(body, &mode, &openDrain, &pullUp, &pullDown, reason, sizeof(reason)) != ESP_OK) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, reason);
+    }
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, reason);
   }
-  cJSON_Delete(body);
 
   char lockId[64];
   for (size_t i = 0; i < count; i++) {
@@ -603,36 +810,57 @@ static esp_err_t Route_PinBatchPostPulseHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
   int maxPins = GpioCtrl_GetLogicalCount();
   int pins[TOOL_GET_ARRAY_LENGTH(pinLogicalToHw)];
   if (maxPins > (int)TOOL_GET_ARRAY_LENGTH(pins)) maxPins = (int)TOOL_GET_ARRAY_LENGTH(pins);
   size_t count = 0;
   char reason[256];
-  if (HttpServer_ParsePinsArray(body, pins, (size_t)maxPins, &count, reason, sizeof(reason)) != ESP_OK) {
+  uint64_t width;
+  int level;
+
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_PulseBatchBody body = saihub_api_PulseBatchBody_init_zero;
+    esp_err_t dr = HttpServer_DecodePb(req, saihub_api_PulseBatchBody_fields, &body);
+    if (dr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    if (Route_PinParsePinsPb(body.pins, body.pins_count, pins, (size_t)maxPins, &count, reason, sizeof(reason)) !=
+        ESP_OK) {
+      return HttpServer_SendError(req, 400, reason);
+    }
+    if (body.width < 1 || body.width > (int64_t)CONFIG_GPIO_PULSE_MAX_WIDTH_US) {
+      return HttpServer_SendError(req, 400, "width must be an integer from 1 to 1000000 microseconds.");
+    }
+    if (body.level != 0 && body.level != 1) {
+      return HttpServer_SendError(req, 400, "level must be 0 or 1.");
+    }
+    width = (uint64_t)body.width;
+    level = body.level;
+  } else {
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+    if (HttpServer_ParsePinsArray(body, pins, (size_t)maxPins, &count, reason, sizeof(reason)) != ESP_OK) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, reason);
+    }
+    cJSON* widthItem = cJSON_GetObjectItem(body, "width");
+    cJSON* levelItem = cJSON_GetObjectItem(body, "level");
+    if (!cJSON_IsNumber(widthItem) || widthItem->valuedouble < 1 ||
+        widthItem->valuedouble > (double)CONFIG_GPIO_PULSE_MAX_WIDTH_US) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, "width must be an integer from 1 to 1000000 microseconds.");
+    }
+    if (!cJSON_IsNumber(levelItem) || (levelItem->valueint != 0 && levelItem->valueint != 1)) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, "level must be 0 or 1.");
+    }
+    width = (uint64_t)widthItem->valuedouble;
+    level = levelItem->valueint;
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, reason);
   }
-  cJSON* widthItem = cJSON_GetObjectItem(body, "width");
-  cJSON* levelItem = cJSON_GetObjectItem(body, "level");
-  if (!cJSON_IsNumber(widthItem) || widthItem->valuedouble < 1 ||
-      widthItem->valuedouble > (double)CONFIG_GPIO_PULSE_MAX_WIDTH_US) {
-    cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "width must be an integer from 1 to 1000000 microseconds.");
-  }
-  if (!cJSON_IsNumber(levelItem) || (levelItem->valueint != 0 && levelItem->valueint != 1)) {
-    cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, "level must be 0 or 1.");
-  }
-  uint64_t width = (uint64_t)widthItem->valuedouble;
-  int level = levelItem->valueint;
-  cJSON_Delete(body);
 
   char lockId[64];
   for (size_t i = 0; i < count; i++) {
@@ -657,36 +885,55 @@ static esp_err_t Route_PinBatchGetTraceHandler(httpd_req_t* req)
 {
   HttpServer_LogCall(req);
   Lock_SweepExpired();
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
   int maxPins = GpioCtrl_GetLogicalCount();
   int pins[TOOL_GET_ARRAY_LENGTH(pinLogicalToHw)];
   if (maxPins > (int)TOOL_GET_ARRAY_LENGTH(pins)) maxPins = (int)TOOL_GET_ARRAY_LENGTH(pins);
   size_t count = 0;
   char reason[256];
-  if (HttpServer_ParsePinsArray(body, pins, (size_t)maxPins, &count, reason, sizeof(reason)) != ESP_OK) {
-    cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, reason);
-  }
-  cJSON* edgeItem = cJSON_GetObjectItem(body, "edge");
-  cJSON* durationItem = cJSON_GetObjectItem(body, "duration");
   GpioCtrl_Edge edge = GPIO_CTRL_EDGE_BOTH;
-  if (cJSON_IsString(edgeItem)) {
-    if (!GpioCtrl_EdgeFromString(edgeItem->valuestring, &edge)) {
-      cJSON_Delete(body);
-      return HttpServer_SendError(req, 400, "edge is invalid. Use one of: raising, falling, both.");
-    }
-  }
   uint64_t duration = TRACE_DEFAULT_DURATION_US;
-  if (cJSON_IsNumber(durationItem)) {
-    duration = (uint64_t)durationItem->valuedouble;
+
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_TraceBatchBody body = saihub_api_TraceBatchBody_init_zero;
+    esp_err_t dr = HttpServer_DecodePb(req, saihub_api_TraceBatchBody_fields, &body);
+    if (dr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    if (Route_PinParsePinsPb(body.pins, body.pins_count, pins, (size_t)maxPins, &count, reason, sizeof(reason)) !=
+        ESP_OK) {
+      return HttpServer_SendError(req, 400, reason);
+    }
+    if (body.edge != saihub_api_Edge_EDGE_UNSPECIFIED) {
+      if (!ApiConv_EdgeFromPb(body.edge, &edge)) {
+        return HttpServer_SendError(req, 400, "edge is invalid. Use one of: raising, falling, both.");
+      }
+    }
+    if (body.duration != 0) {
+      duration = (uint64_t)body.duration;
+    }
+  } else {
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+    if (HttpServer_ParsePinsArray(body, pins, (size_t)maxPins, &count, reason, sizeof(reason)) != ESP_OK) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, reason);
+    }
+    cJSON* edgeItem = cJSON_GetObjectItem(body, "edge");
+    cJSON* durationItem = cJSON_GetObjectItem(body, "duration");
+    if (cJSON_IsString(edgeItem)) {
+      if (!GpioCtrl_EdgeFromString(edgeItem->valuestring, &edge)) {
+        cJSON_Delete(body);
+        return HttpServer_SendError(req, 400, "edge is invalid. Use one of: raising, falling, both.");
+      }
+    }
+    if (cJSON_IsNumber(durationItem)) {
+      duration = (uint64_t)durationItem->valuedouble;
+    }
+    cJSON_Delete(body);
   }
-  cJSON_Delete(body);
   if (duration < 1 || duration > CONFIG_GPIO_TRACE_MAX_DURATION_US) {
     return HttpServer_SendError(req, 400, "duration must be an integer from 1 to 60000000 microseconds (max 60 seconds).");
   }
@@ -705,6 +952,32 @@ static esp_err_t Route_PinBatchGetTraceHandler(httpd_req_t* req)
     free(events);
     return HttpServer_SendError(req, 500, "internal");
   }
+
+  Lock_Touch(lockId[0] ? lockId : NULL);
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_TraceWithPinResponse msg = saihub_api_TraceWithPinResponse_init_zero;
+    saihub_api_TraceEventWithPin* pbEvents = NULL;
+    if (eventCount > 0) {
+      pbEvents = calloc(eventCount, sizeof(saihub_api_TraceEventWithPin));
+      if (pbEvents == NULL) {
+        free(events);
+        return HttpServer_SendError(req, 500, "internal");
+      }
+      for (size_t i = 0; i < eventCount; i++) {
+        pbEvents[i].pin = events[i].pin;
+        pbEvents[i].edge = ApiConv_TraceEdgeToPb(events[i].edge);
+        pbEvents[i].level = events[i].level;
+        pbEvents[i].time = (int64_t)events[i].time;
+      }
+    }
+    free(events);
+    msg.events = pbEvents;
+    msg.events_count = (pb_size_t)eventCount;
+    esp_err_t ret = HttpServer_SendPb(req, 200, saihub_api_TraceWithPinResponse_fields, &msg);
+    free(pbEvents);
+    return ret;
+  }
+
   cJSON* root = cJSON_CreateObject();
   cJSON* arr = cJSON_CreateArray();
   for (size_t i = 0; i < eventCount; i++) {
@@ -717,7 +990,6 @@ static esp_err_t Route_PinBatchGetTraceHandler(httpd_req_t* req)
   }
   cJSON_AddItemToObject(root, "events", arr);
   free(events);
-  Lock_Touch(lockId[0] ? lockId : NULL);
   return HttpServer_SendJson(req, 200, root);
 }
 

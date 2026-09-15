@@ -1,0 +1,35 @@
+# Nanopb max sizes aligned with main/include/config.h
+# Field paths use package prefix saihub.api.*
+
+saihub.api.Error.reason max_length:256
+
+saihub.api.PinListResponse.pins max_count:8
+saihub.api.PinsBody.pins max_count:8
+saihub.api.PinsLevelBody.pins max_count:8
+saihub.api.PinConfigBatchBody.pins max_count:8
+saihub.api.PulseBatchBody.pins max_count:8
+saihub.api.TraceBatchBody.pins max_count:8
+saihub.api.LevelsResponse.levels max_count:8
+saihub.api.LockResource.pins max_count:8
+saihub.api.LockResource.rails max_count:2
+saihub.api.LockResource.ids max_count:4
+saihub.api.LockResource.method max_count:2
+saihub.api.LockCreateBody.resources max_count:16
+saihub.api.Lock.resources max_count:16
+saihub.api.UartListResponse.uarts max_count:4
+
+# Large event arrays: pointer + malloc (PB_ENABLE_MALLOC) keeps structs small.
+saihub.api.TraceResponse.events max_count:1024
+saihub.api.TraceResponse.events type:FT_POINTER
+saihub.api.TraceWithPinResponse.events max_count:1024
+saihub.api.TraceWithPinResponse.events type:FT_POINTER
+
+saihub.api.Lock.id max_length:32
+saihub.api.LockRenewResponse.id max_length:32
+
+saihub.api.ScriptBody.script max_length:8192
+saihub.api.ScriptResult.result max_length:4096
+saihub.api.ScriptResult.output max_length:4096
+
+saihub.api.UartTransmitBody.data max_size:2048
+saihub.api.UartReceiveState.data max_size:2048

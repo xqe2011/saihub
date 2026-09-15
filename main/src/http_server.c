@@ -5,6 +5,7 @@
  */
 #include "http_server.h"
 
+#include "api.pb.h"
 #include "config.h"
 #include "gpio_ctrl.h"
 #include "ntp.h"
@@ -14,6 +15,8 @@
 
 #include <esp_http_server.h>
 #include <esp_log.h>
+#include <pb_decode.h>
+#include <pb_encode.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,15 +87,6 @@ esp_err_t HttpServer_SendError(httpd_req_t* req, int status, const char* reason)
 {
   ESP_LOGW(tag, "Resp %s %s -> %d %s", HttpServer_MethodName(req->method), req->uri, status, reason ? reason : "");
   HttpServer_SetCors(req);
-  cJSON* root = cJSON_CreateObject();
-  cJSON_AddStringToObject(root, "reason", reason ? reason : "internal");
-  char* printed = cJSON_PrintUnformatted(root);
-  cJSON_Delete(root);
-  if (printed == NULL) {
-    httpd_resp_set_status(req, "500 Internal Server Error");
-    httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, "{\"reason\":\"internal\"}", HTTPD_RESP_USE_STRLEN);
-  }
   char statusStr[64];
   snprintf(statusStr, sizeof(statusStr), "%d ", status);
   switch (status) {
@@ -126,6 +120,28 @@ esp_err_t HttpServer_SendError(httpd_req_t* req, int status, const char* reason)
     default:
       httpd_resp_set_status(req, statusStr);
       break;
+  }
+
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_Error err = saihub_api_Error_init_zero;
+    snprintf(err.reason, sizeof(err.reason), "%s", reason ? reason : "internal");
+    uint8_t buf[320];
+    pb_ostream_t stream = pb_ostream_from_buffer(buf, sizeof(buf));
+    if (!pb_encode(&stream, saihub_api_Error_fields, &err)) {
+      httpd_resp_set_type(req, "application/x-protobuf");
+      return httpd_resp_send(req, NULL, 0);
+    }
+    httpd_resp_set_type(req, "application/x-protobuf");
+    return httpd_resp_send(req, (const char*)buf, stream.bytes_written);
+  }
+
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddStringToObject(root, "reason", reason ? reason : "internal");
+  char* printed = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+  if (printed == NULL) {
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"reason\":\"internal\"}", HTTPD_RESP_USE_STRLEN);
   }
   httpd_resp_set_type(req, "application/json");
   esp_err_t ret = httpd_resp_send(req, printed, strlen(printed));
@@ -168,7 +184,11 @@ esp_err_t HttpServer_SendEmpty(httpd_req_t* req, int status)
   } else {
     httpd_resp_set_status(req, "200 OK");
   }
-  httpd_resp_set_type(req, "application/json");
+  if (HttpServer_HasProtobufContentType(req)) {
+    httpd_resp_set_type(req, "application/x-protobuf");
+  } else {
+    httpd_resp_set_type(req, "application/json");
+  }
   return httpd_resp_send(req, NULL, 0);
 }
 
@@ -179,6 +199,85 @@ bool HttpServer_HasJsonContentType(httpd_req_t* req)
     return false;
   }
   return strstr(type, "application/json") != NULL;
+}
+
+bool HttpServer_HasProtobufContentType(httpd_req_t* req)
+{
+  char type[64] = {0};
+  if (httpd_req_get_hdr_value_str(req, "Content-Type", type, sizeof(type)) != ESP_OK) {
+    return false;
+  }
+  return strstr(type, "application/x-protobuf") != NULL;
+}
+
+bool HttpServer_HasApiContentType(httpd_req_t* req)
+{
+  return HttpServer_HasJsonContentType(req) || HttpServer_HasProtobufContentType(req);
+}
+
+const char* HttpServer_UnsupportedMediaTypeReason(void)
+{
+  return "Content-Type must be application/json or application/x-protobuf.";
+}
+
+esp_err_t HttpServer_SendPb(httpd_req_t* req, int status, const pb_msgdesc_t* fields, const void* msg)
+{
+  ESP_LOGI(tag, "Resp %s %s -> %d (protobuf)", HttpServer_MethodName(req->method), req->uri, status);
+  HttpServer_SetCors(req);
+  switch (status) {
+    case 200:
+      httpd_resp_set_status(req, "200 OK");
+      break;
+    case 201:
+      httpd_resp_set_status(req, "201 Created");
+      break;
+    default: {
+      char statusStr[64];
+      snprintf(statusStr, sizeof(statusStr), "%d ", status);
+      httpd_resp_set_status(req, statusStr);
+      break;
+    }
+  }
+
+  size_t size = 0;
+  if (!pb_get_encoded_size(&size, fields, msg)) {
+    return HttpServer_SendError(req, 500, "internal");
+  }
+  uint8_t* buf = NULL;
+  if (size > 0) {
+    buf = malloc(size);
+    if (buf == NULL) return HttpServer_SendError(req, 500, "internal");
+    pb_ostream_t stream = pb_ostream_from_buffer(buf, size);
+    if (!pb_encode(&stream, fields, msg)) {
+      free(buf);
+      return HttpServer_SendError(req, 500, "internal");
+    }
+    size = stream.bytes_written;
+  }
+  httpd_resp_set_type(req, "application/x-protobuf");
+  esp_err_t ret = httpd_resp_send(req, (const char*)buf, size);
+  free(buf);
+  return ret;
+}
+
+esp_err_t HttpServer_DecodePb(httpd_req_t* req, const pb_msgdesc_t* fields, void* msg)
+{
+  char* buf = NULL;
+  size_t len = 0;
+  esp_err_t ret = HttpServer_ReadBody(req, &buf, &len);
+  if (ret != ESP_OK) return ret;
+
+  if (len > 0) {
+    TOOL_CALL_LOG("rest %s %s protobuf_bytes=%d", HttpServer_MethodName(req->method), req->uri, (int)len);
+  } else {
+    TOOL_CALL_LOG("rest %s %s protobuf_bytes=0", HttpServer_MethodName(req->method), req->uri);
+  }
+
+  pb_istream_t stream = pb_istream_from_buffer((const pb_byte_t*)buf, len);
+  bool ok = pb_decode(&stream, fields, msg);
+  free(buf);
+  if (!ok) return ESP_ERR_INVALID_ARG;
+  return ESP_OK;
 }
 
 void HttpServer_GetLockHeader(httpd_req_t* req, char* out, size_t outLen)

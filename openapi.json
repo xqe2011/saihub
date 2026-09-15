@@ -3,7 +3,7 @@
   "info": {
     "title": "Saihub REST API",
     "version": "1.0.0",
-    "description": "No-TLS JSON REST API for logical pins 0-7, PWM, UART, power rails (3v3/5v), edge tracing, resource locks, and on-device Lua 5.4 scripts. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}."
+    "description": "JSON REST API for logical pins 0-7, PWM, UART, power rails (3v3/5v), edge tracing, resource locks, and on-device Lua 5.4 scripts. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}. Optional protobuf bodies: see GET /api.proto."
   },
   "servers": [
     {
@@ -71,6 +71,27 @@
               "application/json": {
                 "schema": {
                   "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api.proto": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Protobuf schema (api.proto)",
+        "description": "REST protobuf schema source. See file comments for Content-Type rules.",
+        "responses": {
+          "200": {
+            "description": "api.proto text",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }

@@ -5,6 +5,8 @@
  */
 #include "route.h"
 
+#include "api.pb.h"
+#include "api_conv.h"
 #include "config.h"
 #include "http_server.h"
 #include "lock.h"
@@ -144,6 +146,27 @@ static esp_err_t Route_ParseUartConfigBody(cJSON* body, UartCtrl_Config* cfg, ch
   return ESP_OK;
 }
 
+static esp_err_t Route_ParseUartConfigPb(const saihub_api_UartConfigBody* body, UartCtrl_Config* cfg, char* reason,
+                                        size_t reasonLen)
+{
+  UartCtrl_Parity parity;
+  UartCtrl_Encoding encoding;
+  if (!ApiConv_ParityFromPb(body->parity, &parity)) {
+    snprintf(reason, reasonLen, "parity must be one of: none, even, odd.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!ApiConv_EncodingFromPb(body->encoding, &encoding)) {
+    snprintf(reason, reasonLen, "encoding must be one of: utf8, byte.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!body->has_pins) {
+    snprintf(reason, reasonLen, "pins must be an object with optional rx and tx.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  ApiConv_UartConfigFromPb(body, cfg);
+  return ESP_OK;
+}
+
 static esp_err_t Route_ParseTransmitData(cJSON* body, UartCtrl_Encoding encoding, uint8_t** dataOut, size_t* lenOut,
                                          char* reason, size_t reasonLen)
 {
@@ -218,6 +241,23 @@ static esp_err_t Route_UartListHandler(httpd_req_t* req)
   HttpServer_LogCall(req);
   TOOL_CALL_LOG("rest %s %s", HttpServer_MethodName(req->method), req->uri);
   Lock_SweepExpired();
+
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_UartListResponse resp = saihub_api_UartListResponse_init_zero;
+    int count = UartCtrl_GetCount();
+    if (count > (int)(sizeof(resp.uarts) / sizeof(resp.uarts[0]))) {
+      count = (int)(sizeof(resp.uarts) / sizeof(resp.uarts[0]));
+    }
+    for (int i = 0; i < count; i++) {
+      UartCtrl_Config cfg;
+      UartCtrl_GetConfig(i, &cfg);
+      ApiConv_UartStateToPb(i, &cfg, &resp.uarts[i]);
+    }
+    resp.uarts_count = (pb_size_t)count;
+    resp.time = HttpServer_NowUs();
+    return HttpServer_SendPb(req, 200, saihub_api_UartListResponse_fields, &resp);
+  }
+
   cJSON* root = cJSON_CreateObject();
   cJSON* arr = cJSON_CreateArray();
   int count = UartCtrl_GetCount();
@@ -239,8 +279,8 @@ static esp_err_t Route_UartPostConfigHandler(httpd_req_t* req)
   int pr = Route_ParseUartPathId(req->uri, "/config", &id);
   if (pr != 0) return Route_UartIdError(req, pr);
 
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
 
   char lockId[64];
@@ -248,17 +288,28 @@ static esp_err_t Route_UartPostConfigHandler(httpd_req_t* req)
   int st = HttpServer_LockStatus(req, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
 
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
-
   UartCtrl_Config cfg;
   memset(&cfg, 0, sizeof(cfg));
-  if (Route_ParseUartConfigBody(body, &cfg, reason, sizeof(reason)) != ESP_OK) {
+
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_UartConfigBody body = saihub_api_UartConfigBody_init_zero;
+    esp_err_t perr = HttpServer_DecodePb(req, saihub_api_UartConfigBody_fields, &body);
+    if (perr == ESP_ERR_NO_MEM) return HttpServer_SendError(req, 500, "internal");
+    if (perr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    if (Route_ParseUartConfigPb(&body, &cfg, reason, sizeof(reason)) != ESP_OK) {
+      return HttpServer_SendError(req, 400, reason);
+    }
+  } else {
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+
+    if (Route_ParseUartConfigBody(body, &cfg, reason, sizeof(reason)) != ESP_OK) {
+      cJSON_Delete(body);
+      return HttpServer_SendError(req, 400, reason);
+    }
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, reason);
   }
-  cJSON_Delete(body);
 
   esp_err_t ret = UartCtrl_SetConfig(id, &cfg, reason, sizeof(reason));
   if (ret == ESP_ERR_INVALID_ARG) return HttpServer_SendError(req, 400, reason);
@@ -277,8 +328,8 @@ static esp_err_t Route_UartPostTransmitHandler(httpd_req_t* req)
   int pr = Route_ParseUartPathId(req->uri, "/transmit", &id);
   if (pr != 0) return Route_UartIdError(req, pr);
 
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasApiContentType(req)) {
+    return HttpServer_SendError(req, 415, HttpServer_UnsupportedMediaTypeReason());
   }
 
   char lockId[64];
@@ -286,22 +337,37 @@ static esp_err_t Route_UartPostTransmitHandler(httpd_req_t* req)
   int st = HttpServer_LockStatus(req, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
 
-  UartCtrl_Config cfg;
-  UartCtrl_GetConfig(id, &cfg);
+  esp_err_t ret;
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_UartTransmitBody body = saihub_api_UartTransmitBody_init_zero;
+    esp_err_t perr = HttpServer_DecodePb(req, saihub_api_UartTransmitBody_fields, &body);
+    if (perr == ESP_ERR_NO_MEM) return HttpServer_SendError(req, 500, "internal");
+    if (perr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
+    if (body.data.size > CONFIG_UART_MAX_PAYLOAD_BYTES) {
+      snprintf(reason, sizeof(reason), "data is too large. Send at most %u bytes per request.",
+               (unsigned)CONFIG_UART_MAX_PAYLOAD_BYTES);
+      return HttpServer_SendError(req, 400, reason);
+    }
+    ret = UartCtrl_Transmit(id, body.data.bytes, body.data.size, reason, sizeof(reason));
+  } else {
+    UartCtrl_Config cfg;
+    UartCtrl_GetConfig(id, &cfg);
 
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+    esp_err_t perr = ESP_OK;
+    cJSON* body = HttpServer_ParseBody(req, &perr);
+    if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
 
-  uint8_t* data = NULL;
-  size_t len = 0;
-  esp_err_t parseRet = Route_ParseTransmitData(body, cfg.encoding, &data, &len, reason, sizeof(reason));
-  cJSON_Delete(body);
-  if (parseRet == ESP_ERR_INVALID_SIZE) return HttpServer_SendError(req, 400, reason);
-  if (parseRet != ESP_OK) return HttpServer_SendError(req, 400, reason);
+    uint8_t* data = NULL;
+    size_t len = 0;
+    esp_err_t parseRet = Route_ParseTransmitData(body, cfg.encoding, &data, &len, reason, sizeof(reason));
+    cJSON_Delete(body);
+    if (parseRet == ESP_ERR_INVALID_SIZE) return HttpServer_SendError(req, 400, reason);
+    if (parseRet != ESP_OK) return HttpServer_SendError(req, 400, reason);
 
-  esp_err_t ret = UartCtrl_Transmit(id, data, len, reason, sizeof(reason));
-  free(data);
+    ret = UartCtrl_Transmit(id, data, len, reason, sizeof(reason));
+    free(data);
+  }
+
   if (ret == ESP_ERR_INVALID_STATE) return HttpServer_SendError(req, 422, reason);
   if (ret == ESP_ERR_INVALID_SIZE) return HttpServer_SendError(req, 400, reason);
   if (ret != ESP_OK) return HttpServer_SendError(req, 500, reason[0] ? reason : "internal");
@@ -323,9 +389,6 @@ static esp_err_t Route_UartGetReceiveHandler(httpd_req_t* req)
   int st = HttpServer_LockStatus(req, LOCK_KIND_UART, id, LOCK_METHOD_READ, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
 
-  UartCtrl_Config cfg;
-  UartCtrl_GetConfig(id, &cfg);
-
   uint8_t* buf = malloc(CONFIG_UART_MAX_PAYLOAD_BYTES);
   if (buf == NULL) return HttpServer_SendError(req, 500, "internal");
   size_t n = 0;
@@ -338,6 +401,20 @@ static esp_err_t Route_UartGetReceiveHandler(httpd_req_t* req)
     free(buf);
     return HttpServer_SendError(req, 500, reason[0] ? reason : "internal");
   }
+
+  if (HttpServer_HasProtobufContentType(req)) {
+    saihub_api_UartReceiveState resp = saihub_api_UartReceiveState_init_zero;
+    if (n > sizeof(resp.data.bytes)) n = sizeof(resp.data.bytes);
+    if (n > 0) memcpy(resp.data.bytes, buf, n);
+    resp.data.size = (pb_size_t)n;
+    resp.time = HttpServer_NowUs();
+    free(buf);
+    Lock_Touch(lockId);
+    return HttpServer_SendPb(req, 200, saihub_api_UartReceiveState_fields, &resp);
+  }
+
+  UartCtrl_Config cfg;
+  UartCtrl_GetConfig(id, &cfg);
 
   cJSON* root = cJSON_CreateObject();
   cJSON* data = Route_EncodeReceiveData(cfg.encoding, buf, n);
