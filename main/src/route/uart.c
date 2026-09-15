@@ -66,6 +66,16 @@ static void Route_AddOptionalPin(cJSON* pins, const char* key, int pin)
   }
 }
 
+static bool Route_UartIsEnabled(int id, char* reason, size_t reasonLen)
+{
+  UartCtrl_Config cfg;
+  if (UartCtrl_GetConfig(id, &cfg) != ESP_OK || !cfg.enable) {
+    snprintf(reason, reasonLen, "UART %d is not enabled. POST /uart/%d/config with enable true first.", id, id);
+    return false;
+  }
+  return true;
+}
+
 static cJSON* Route_UartConfigToJson(int id, const UartCtrl_Config* cfg)
 {
   cJSON* item = cJSON_CreateObject();
@@ -336,19 +346,30 @@ static esp_err_t Route_UartPostTransmitHandler(httpd_req_t* req)
   char reason[256];
   int st = HttpServer_LockStatus(req, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
+  if (!Route_UartIsEnabled(id, reason, sizeof(reason))) return HttpServer_SendError(req, 422, reason);
 
   esp_err_t ret;
   if (HttpServer_HasProtobufContentType(req)) {
-    saihub_api_UartTransmitBody body = saihub_api_UartTransmitBody_init_zero;
-    esp_err_t perr = HttpServer_DecodePb(req, saihub_api_UartTransmitBody_fields, &body);
-    if (perr == ESP_ERR_NO_MEM) return HttpServer_SendError(req, 500, "internal");
-    if (perr != ESP_OK) return HttpServer_SendError(req, 400, "invalid_protobuf");
-    if (body.data.size > CONFIG_UART_MAX_PAYLOAD_BYTES) {
+    saihub_api_UartTransmitBody* body = calloc(1, sizeof(*body));
+    if (body == NULL) return HttpServer_SendError(req, 500, "internal");
+
+    esp_err_t perr = HttpServer_DecodePb(req, saihub_api_UartTransmitBody_fields, body);
+    if (perr == ESP_ERR_NO_MEM) {
+      free(body);
+      return HttpServer_SendError(req, 500, "internal");
+    }
+    if (perr != ESP_OK) {
+      free(body);
+      return HttpServer_SendError(req, 400, "invalid_protobuf");
+    }
+    if (body->data.size > CONFIG_UART_MAX_PAYLOAD_BYTES) {
       snprintf(reason, sizeof(reason), "data is too large. Send at most %u bytes per request.",
                (unsigned)CONFIG_UART_MAX_PAYLOAD_BYTES);
+      free(body);
       return HttpServer_SendError(req, 400, reason);
     }
-    ret = UartCtrl_Transmit(id, body.data.bytes, body.data.size, reason, sizeof(reason));
+    ret = UartCtrl_Transmit(id, body->data.bytes, body->data.size, reason, sizeof(reason));
+    free(body);
   } else {
     UartCtrl_Config cfg;
     UartCtrl_GetConfig(id, &cfg);
@@ -388,6 +409,7 @@ static esp_err_t Route_UartGetReceiveHandler(httpd_req_t* req)
   char reason[256];
   int st = HttpServer_LockStatus(req, LOCK_KIND_UART, id, LOCK_METHOD_READ, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
+  if (!Route_UartIsEnabled(id, reason, sizeof(reason))) return HttpServer_SendError(req, 422, reason);
 
   uint8_t* buf = malloc(CONFIG_UART_MAX_PAYLOAD_BYTES);
   if (buf == NULL) return HttpServer_SendError(req, 500, "internal");

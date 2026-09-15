@@ -21,7 +21,7 @@
   },
   "idf.currentSetup": "/Users/xqe2011/.espressif/v6.0.2/esp-idf",
   "idf.customExtraVars": {
-    "IDF_TARGET": "esp32c5"
+    "IDF_TARGET": "esp32s3"
   },
   "clangd.path": "/Users/xqe2011/.espressif/tools/esp-clang/esp-20.1.1_20250829/esp-clang/bin/clangd",
   "clangd.arguments": [
@@ -30,7 +30,8 @@
     "--compile-commands-dir=/Users/xqe2011/Documents/Code/saihub/build"
   ],
   "idf.openOcdConfigs": [
-    "board/esp32c5-builtin.cfg"
+    "board/esp32s3-builtin.cfg"
   ],
-  "idf.flashType": "JTAG"
+  "idf.flashType": "UART",
+  "idf.port": "/dev/tty.usbmodem5C372149461"
 }

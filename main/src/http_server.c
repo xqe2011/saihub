@@ -841,6 +841,7 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
   }
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  config.stack_size = 8192;
   config.server_port = 80;
   config.uri_match_fn = HttpServer_UriMatch;
   config.max_uri_handlers = 48;
