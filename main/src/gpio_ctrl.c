@@ -80,6 +80,11 @@ static int GpioCtrl_Hw(int logicalPin)
   return logicalToHw[logicalPin];
 }
 
+int GpioCtrl_GetHwPin(int logicalPin)
+{
+  return GpioCtrl_Hw(logicalPin);
+}
+
 static int GpioCtrl_PowerHw(GpioCtrl_PowerRail rail)
 {
   if (rail == GPIO_CTRL_POWER_3V3) return CONFIG_GPIO_POWER_3V3_PIN;

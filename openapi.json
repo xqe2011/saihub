@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Saihub Pin REST API",
+    "title": "Saihub REST API",
     "version": "1.0.0",
-    "description": "No-TLS JSON REST API for logical pins 0-7, PWM, power rails (3v3/5v), edge tracing, resource locks, and on-device Lua 5.4 scripts. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}."
+    "description": "No-TLS JSON REST API for logical pins 0-7, PWM, UART, power rails (3v3/5v), edge tracing, resource locks, and on-device Lua 5.4 scripts. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}."
   },
   "servers": [
     {
@@ -23,6 +23,9 @@
       "name": "power"
     },
     {
+      "name": "uart"
+    },
+    {
       "name": "lock"
     },
     {
@@ -40,7 +43,7 @@
           "meta"
         ],
         "summary": "Human control UI (HTML)",
-        "description": "Browser page for humans to control pins and power rails. Agents should use GET /openapi.json and call the JSON APIs instead of scraping this page.",
+        "description": "Browser page for humans to control pins, power rails, and UART. Agents should use GET /openapi.json and call the JSON APIs instead of scraping this page.",
         "responses": {
           "200": {
             "description": "HTML control page",
@@ -81,7 +84,7 @@
           "meta"
         ],
         "summary": "MCP Streamable HTTP endpoint (JSON-RPC 2.0)",
-        "description": "Stateless MCP Streamable HTTP transport. POST a single JSON-RPC request or notification. Responses are application/json (no SSE). Notifications and client responses return 202. Pin tools are plural and take pins arrays; create_lock resources use type pin+pins or type power+rails. See tools/list.",
+        "description": "Stateless MCP Streamable HTTP transport. POST a single JSON-RPC request or notification. Responses are application/json (no SSE). Notifications and client responses return 202. Pin tools are plural and take pins arrays; create_lock resources use type pin+pins, type power+rails, or type uart+ids. See tools/list.",
         "parameters": [
           {
             "name": "Accept",
@@ -1191,6 +1194,212 @@
         }
       }
     },
+    "/uart/": {
+      "get": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "List all UART ids",
+        "responses": {
+          "200": {
+            "description": "UART inventory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "uarts",
+                    "time"
+                  ],
+                  "properties": {
+                    "uarts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/UartState"
+                      }
+                    },
+                    "time": {
+                      "$ref": "#/components/schemas/TimeUs"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/uart/{id}/config": {
+      "post": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "Configure a UART",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UartConfigBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Configured"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/uart/{id}/transmit": {
+      "post": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "Transmit bytes on a UART",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UartTransmitBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Sent"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/uart/{id}/receive": {
+      "get": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "Drain the UART receive buffer",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Drained bytes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UartReceiveState"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/uart/{id}/flush": {
+      "post": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "Flush the UART receive buffer",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Flushed"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
     "/lock": {
       "post": {
         "tags": [
@@ -1332,7 +1541,18 @@
         "schema": {
           "type": "string"
         },
-        "description": "Required when another lock holds the resource+method (pin or power rail). Missing or unknown yields 412; a different live holder yields 423."
+        "description": "Required when another lock holds the resource+method (pin, power rail, or UART). Missing or unknown yields 412; a different live holder or peripheral reservation yields 423."
+      },
+      "UartPath": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 0
+        },
+        "description": "UART id from GET /uart/"
       }
     },
     "schemas": {
@@ -1631,6 +1851,33 @@
               }
             },
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "ids",
+              "method"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "uart"
+              },
+              "ids": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 0
+                }
+              },
+              "method": {
+                "$ref": "#/components/schemas/LockMethod"
+              }
+            },
+            "additionalProperties": false
           }
         ]
       },
@@ -1698,6 +1945,165 @@
             "$ref": "#/components/schemas/TimeUs"
           }
         }
+      },
+      "UartEncoding": {
+        "type": "string",
+        "enum": [
+          "utf8",
+          "byte"
+        ]
+      },
+      "UartParity": {
+        "type": "string",
+        "enum": [
+          "none",
+          "even",
+          "odd"
+        ]
+      },
+      "UartPins": {
+        "type": "object",
+        "required": [
+          "rx",
+          "tx"
+        ],
+        "properties": {
+          "rx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 7
+          },
+          "tx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 7
+          }
+        },
+        "additionalProperties": false
+      },
+      "UartConfigBody": {
+        "type": "object",
+        "required": [
+          "enable",
+          "baudRate",
+          "dataBits",
+          "parity",
+          "stopBits",
+          "encoding",
+          "pins"
+        ],
+        "properties": {
+          "enable": {
+            "type": "boolean"
+          },
+          "baudRate": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "dataBits": {
+            "type": "integer",
+            "enum": [
+              5,
+              6,
+              7,
+              8
+            ]
+          },
+          "parity": {
+            "$ref": "#/components/schemas/UartParity"
+          },
+          "stopBits": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "encoding": {
+            "$ref": "#/components/schemas/UartEncoding"
+          },
+          "pins": {
+            "$ref": "#/components/schemas/UartPins"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UartState": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/UartConfigBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        ]
+      },
+      "UartTransmitBody": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "description": "UTF-8 string when encoding is utf8; array of 0-255 integers when encoding is byte.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255
+                }
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "UartReceiveState": {
+        "type": "object",
+        "required": [
+          "data",
+          "time"
+        ],
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255
+                }
+              }
+            ]
+          },
+          "time": {
+            "$ref": "#/components/schemas/TimeUs"
+          }
+        }
       }
     },
     "responses": {
@@ -1712,7 +2118,7 @@
         }
       },
       "NotFound": {
-        "description": "Unknown URL, pin in path out of 0-7, or lock id missing on PUT",
+        "description": "Unknown URL, pin in path out of 0-7, UART id missing from GET /uart/, or lock id missing on PUT",
         "content": {
           "application/json": {
             "schema": {
@@ -1722,7 +2128,7 @@
         }
       },
       "Conflict": {
-        "description": "POST /lock overlaps an existing lock",
+        "description": "POST /lock overlaps an existing lock or peripheral hold; or UART enable conflicts with a held pin",
         "content": {
           "application/json": {
             "schema": {
@@ -1762,7 +2168,7 @@
         }
       },
       "Unprocessable": {
-        "description": "Pin mode cannot perform the operation, or PWM resources exhausted",
+        "description": "Pin mode cannot perform the operation, PWM resources exhausted, or UART not enabled / missing direction pin",
         "content": {
           "application/json": {
             "schema": {
@@ -1772,7 +2178,7 @@
         }
       },
       "Locked": {
-        "description": "Resource+method held by a different live lock",
+        "description": "Resource+method held by a different live lock, or reserved by a peripheral such as UART",
         "content": {
           "application/json": {
             "schema": {

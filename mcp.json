@@ -72,6 +72,56 @@
           "write"
         ]
       }
+    },
+    "uartId": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 0
+    },
+    "uartEncoding": {
+      "type": "string",
+      "enum": [
+        "utf8",
+        "byte"
+      ]
+    },
+    "uartParity": {
+      "type": "string",
+      "enum": [
+        "none",
+        "even",
+        "odd"
+      ]
+    },
+    "uartPins": {
+      "type": "object",
+      "required": [
+        "rx",
+        "tx"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "rx": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tx": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     }
   },
   "tools": [
@@ -362,8 +412,172 @@
       }
     },
     {
+      "name": "list_uarts",
+      "description": "List UART ids with enable, baud, framing, encoding, and pins.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "configure_uart",
+      "description": "Configure one UART by id. When enable is true, at least one of pins.rx or pins.tx is required.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "enable",
+          "baudRate",
+          "dataBits",
+          "parity",
+          "stopBits",
+          "encoding",
+          "pins"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          },
+          "enable": {
+            "type": "boolean"
+          },
+          "baudRate": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "dataBits": {
+            "type": "integer",
+            "enum": [
+              5,
+              6,
+              7,
+              8
+            ]
+          },
+          "parity": {
+            "$ref": "#/$defs/uartParity"
+          },
+          "stopBits": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "encoding": {
+            "$ref": "#/$defs/uartEncoding"
+          },
+          "pins": {
+            "$ref": "#/$defs/uartPins"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
+      "name": "uart_transmit",
+      "description": "Transmit data on a UART. data is a UTF-8 string when encoding is utf8, or an array of 0-255 bytes when encoding is byte.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "data"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          },
+          "data": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255
+                }
+              }
+            ]
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
+      "name": "uart_receive",
+      "description": "Drain the UART receive buffer and return data using the configured encoding.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
+      "name": "uart_flush",
+      "description": "Discard the UART receive buffer without returning it.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        }
+      }
+    },
+    {
       "name": "create_lock",
-      "description": "Create a lock. Each resource is type pin with pins, or type power with rails.",
+      "description": "Create a lock. Each resource is type pin with pins, type power with rails, or type uart with ids.",
       "annotations": {
         "readOnlyHint": false,
         "idempotentHint": false,
@@ -418,6 +632,32 @@
                     },
                     "rails": {
                       "$ref": "#/$defs/rails"
+                    },
+                    "method": {
+                      "$ref": "#/$defs/lockMethod"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "ids",
+                    "method"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "uart"
+                    },
+                    "ids": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 1,
+                      "items": {
+                        "$ref": "#/$defs/uartId"
+                      }
                     },
                     "method": {
                       "$ref": "#/$defs/lockMethod"

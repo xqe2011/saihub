@@ -11,6 +11,7 @@
 
 esp_err_t Route_OpenApiRegister(httpd_handle_t server);
 esp_err_t Route_PinRegister(httpd_handle_t server);
+esp_err_t Route_UartRegister(httpd_handle_t server);
 esp_err_t Route_LockRegister(httpd_handle_t server);
 esp_err_t Route_PowerRegister(httpd_handle_t server);
 esp_err_t Route_McpRegister(httpd_handle_t server);

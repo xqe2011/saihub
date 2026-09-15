@@ -39,27 +39,11 @@ static esp_err_t Route_LockCreateHandler(httpd_req_t* req)
   cJSON_Delete(body);
 
   Lock_Entry created;
-  esp_err_t cret = Lock_Create(res, count, &created);
+  Lock_Conflict conflict;
+  memset(&conflict, 0, sizeof(conflict));
+  esp_err_t cret = Lock_Create(res, count, &created, &conflict);
   if (cret == ESP_ERR_INVALID_STATE) {
-    if (res[0].kind == LOCK_KIND_GPIO) {
-      snprintf(reason, sizeof(reason),
-               "Cannot create lock: pin %d is already held. DELETE that lock or wait until it expires.", res[0].pin);
-    } else {
-      snprintf(reason, sizeof(reason),
-               "Cannot create lock: power %s is already held. DELETE that lock or wait until it expires.",
-               Lock_KindToString(res[0].kind));
-    }
-    for (size_t i = 0; i < count; i++) {
-      if (res[i].kind == LOCK_KIND_GPIO) {
-        snprintf(reason, sizeof(reason),
-                 "Cannot create lock: pin %d is already held. DELETE that lock or wait until it expires.", res[i].pin);
-      } else {
-        snprintf(reason, sizeof(reason),
-                 "Cannot create lock: power %s is already held. DELETE that lock or wait until it expires.",
-                 Lock_KindToString(res[i].kind));
-      }
-      break;
-    }
+    HttpServer_FormatLockConflict(&conflict, reason, sizeof(reason));
     return HttpServer_SendError(req, 409, reason);
   }
   if (cret != ESP_OK) {

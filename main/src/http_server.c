@@ -198,18 +198,39 @@ int HttpServer_LockStatusId(const char* lockId, Lock_Kind kind, int pin, uint8_t
                             size_t reasonLen)
 {
   const char* hdr = (lockId && lockId[0]) ? lockId : NULL;
-  esp_err_t ret = Lock_CheckAccess(kind, pin, methods, hdr);
+  char peripheralLabel[48];
+  esp_err_t ret = Lock_CheckAccess(kind, pin, methods, hdr, peripheralLabel, sizeof(peripheralLabel));
   if (ret == ESP_ERR_NOT_FOUND) {
     snprintf(reasonOut, reasonLen,
              "X-Lock-Id is missing or is not a known lock. Send a current lock id from POST /lock, or omit the "
              "header only if the resource is unlocked.");
     return 412;
   }
+  if (ret == ESP_ERR_NOT_ALLOWED) {
+    const char* methodName = (methods & LOCK_METHOD_WRITE) ? "write" : "read";
+    const char* label = peripheralLabel[0] ? peripheralLabel : "a peripheral";
+    if (kind == LOCK_KIND_GPIO) {
+      snprintf(reasonOut, reasonLen, "Pin %d %s is reserved by %s. Disable %s or use other pins.", pin, methodName,
+               label, label);
+    } else if (kind == LOCK_KIND_UART) {
+      snprintf(reasonOut, reasonLen, "UART %d %s is reserved by %s. Disable %s or use another UART.", pin, methodName,
+               label, label);
+    } else {
+      snprintf(reasonOut, reasonLen, "Power %s %s is reserved by %s. Disable %s or use another resource.",
+               Lock_KindToString(kind), methodName, label, label);
+    }
+    return 423;
+  }
   if (ret == ESP_ERR_INVALID_STATE) {
     const char* methodName = (methods & LOCK_METHOD_WRITE) ? "write" : "read";
     if (kind == LOCK_KIND_GPIO) {
       snprintf(reasonOut, reasonLen,
                "Pin %d %s is locked by another lock. Send header X-Lock-Id with the holding lock's id, DELETE that "
+               "lock, or wait until it expires.",
+               pin, methodName);
+    } else if (kind == LOCK_KIND_UART) {
+      snprintf(reasonOut, reasonLen,
+               "UART %d %s is locked by another lock. Send header X-Lock-Id with the holding lock's id, DELETE that "
                "lock, or wait until it expires.",
                pin, methodName);
     } else {
@@ -228,6 +249,40 @@ int HttpServer_LockStatus(httpd_req_t* req, Lock_Kind kind, int pin, uint8_t met
 {
   HttpServer_GetLockHeader(req, lockIdBuf, lockIdLen);
   return HttpServer_LockStatusId(lockIdBuf, kind, pin, methods, reasonOut, reasonLen);
+}
+
+void HttpServer_FormatLockConflict(const Lock_Conflict* conflict, char* reason, size_t reasonLen)
+{
+  if (reason == NULL || reasonLen == 0) return;
+  if (conflict == NULL) {
+    snprintf(reason, reasonLen, "Cannot create lock: a resource is already held. DELETE that lock or wait until it expires.");
+    return;
+  }
+  if (conflict->isPeripheral) {
+    const char* label = conflict->peripheralLabel[0] ? conflict->peripheralLabel : "a peripheral";
+    if (conflict->kind == LOCK_KIND_GPIO) {
+      snprintf(reason, reasonLen, "Cannot create lock: pin %d is reserved by %s. Disable %s or use other pins.",
+               conflict->pin, label, label);
+    } else if (conflict->kind == LOCK_KIND_UART) {
+      snprintf(reason, reasonLen, "Cannot create lock: UART %d is reserved by %s. Disable %s or use another UART.",
+               conflict->pin, label, label);
+    } else {
+      snprintf(reason, reasonLen, "Cannot create lock: power %s is reserved by %s. Disable %s or use another resource.",
+               Lock_KindToString(conflict->kind), label, label);
+    }
+    return;
+  }
+  if (conflict->kind == LOCK_KIND_GPIO) {
+    snprintf(reason, reasonLen, "Cannot create lock: pin %d is already held. DELETE that lock or wait until it expires.",
+             conflict->pin);
+  } else if (conflict->kind == LOCK_KIND_UART) {
+    snprintf(reason, reasonLen,
+             "Cannot create lock: UART %d is already held. DELETE that lock or wait until it expires.", conflict->pin);
+  } else {
+    snprintf(reason, reasonLen,
+             "Cannot create lock: power %s is already held. DELETE that lock or wait until it expires.",
+             Lock_KindToString(conflict->kind));
+  }
 }
 
 esp_err_t HttpServer_ParsePinConfigBody(cJSON* body, GpioCtrl_Mode* modeOut, bool* openDrainOut, bool* pullUpOut,
@@ -372,17 +427,18 @@ esp_err_t HttpServer_ParseLockResources(cJSON* resourcesArr, Lock_Resource* out,
     cJSON* typeItem = cJSON_GetObjectItem(item, "type");
     cJSON* pinsItem = cJSON_GetObjectItem(item, "pins");
     cJSON* railsItem = cJSON_GetObjectItem(item, "rails");
+    cJSON* idsItem = cJSON_GetObjectItem(item, "ids");
     cJSON* methodsItem = cJSON_GetObjectItem(item, "method");
     if (!cJSON_IsString(typeItem) || typeItem->valuestring == NULL) {
-      snprintf(reason, reasonLen, "resources[%d].type must be pin or power.", g);
+      snprintf(reason, reasonLen, "resources[%d].type must be pin, power, or uart.", g);
       return ESP_ERR_INVALID_ARG;
     }
     uint8_t bits = 0;
     if (HttpServer_ParseLockMethods(methodsItem, &bits, reason, reasonLen) != ESP_OK) return ESP_ERR_INVALID_ARG;
 
     if (strcmp(typeItem->valuestring, "pin") == 0) {
-      if (railsItem != NULL) {
-        snprintf(reason, reasonLen, "resources[%d] with type pin must not include rails.", g);
+      if (railsItem != NULL || idsItem != NULL) {
+        snprintf(reason, reasonLen, "resources[%d] with type pin must not include rails or ids.", g);
         return ESP_ERR_INVALID_ARG;
       }
       if (!cJSON_IsArray(pinsItem) || cJSON_GetArraySize(pinsItem) == 0) {
@@ -406,8 +462,8 @@ esp_err_t HttpServer_ParseLockResources(cJSON* resourcesArr, Lock_Resource* out,
         count++;
       }
     } else if (strcmp(typeItem->valuestring, "power") == 0) {
-      if (pinsItem != NULL) {
-        snprintf(reason, reasonLen, "resources[%d] with type power must not include pins.", g);
+      if (pinsItem != NULL || idsItem != NULL) {
+        snprintf(reason, reasonLen, "resources[%d] with type power must not include pins or ids.", g);
         return ESP_ERR_INVALID_ARG;
       }
       if (!cJSON_IsArray(railsItem) || cJSON_GetArraySize(railsItem) == 0) {
@@ -431,8 +487,33 @@ esp_err_t HttpServer_ParseLockResources(cJSON* resourcesArr, Lock_Resource* out,
         out[count].methods = bits;
         count++;
       }
+    } else if (strcmp(typeItem->valuestring, "uart") == 0) {
+      if (pinsItem != NULL || railsItem != NULL) {
+        snprintf(reason, reasonLen, "resources[%d] with type uart must not include pins or rails.", g);
+        return ESP_ERR_INVALID_ARG;
+      }
+      if (!cJSON_IsArray(idsItem) || cJSON_GetArraySize(idsItem) == 0) {
+        snprintf(reason, reasonLen, "resources[%d].ids must be a non-empty array of UART ids from GET /uart/.", g);
+        return ESP_ERR_INVALID_ARG;
+      }
+      int idN = cJSON_GetArraySize(idsItem);
+      for (int u = 0; u < idN; u++) {
+        if (count >= maxOut) {
+          snprintf(reason, reasonLen, "resources expand to too many lock entries (max %u).", (unsigned)maxOut);
+          return ESP_ERR_INVALID_ARG;
+        }
+        cJSON* idVal = cJSON_GetArrayItem(idsItem, u);
+        if (!cJSON_IsNumber(idVal) || !Lock_IsValidUartId(idVal->valueint)) {
+          snprintf(reason, reasonLen, "resources[%d].ids[%d] is invalid. Use an id from GET /uart/.", g, u);
+          return ESP_ERR_INVALID_ARG;
+        }
+        out[count].kind = LOCK_KIND_UART;
+        out[count].pin = idVal->valueint;
+        out[count].methods = bits;
+        count++;
+      }
     } else {
-      snprintf(reason, reasonLen, "resources[%d].type must be pin or power.", g);
+      snprintf(reason, reasonLen, "resources[%d].type must be pin, power, or uart.", g);
       return ESP_ERR_INVALID_ARG;
     }
   }
@@ -464,12 +545,24 @@ cJSON* HttpServer_SerializeLockResources(const Lock_Resource* resources, size_t 
         used[j] = true;
       }
       cJSON_AddItemToObject(r, "pins", pins);
+    } else if (resources[i].kind == LOCK_KIND_UART) {
+      cJSON_AddStringToObject(r, "type", "uart");
+      cJSON* ids = cJSON_CreateArray();
+      for (size_t j = i; j < count; j++) {
+        if (used[j]) continue;
+        if (resources[j].kind != LOCK_KIND_UART || resources[j].methods != methods) continue;
+        cJSON_AddItemToArray(ids, cJSON_CreateNumber(resources[j].pin));
+        used[j] = true;
+      }
+      cJSON_AddItemToObject(r, "ids", ids);
     } else {
       cJSON_AddStringToObject(r, "type", "power");
       cJSON* rails = cJSON_CreateArray();
       for (size_t j = i; j < count; j++) {
         if (used[j]) continue;
-        if (resources[j].kind == LOCK_KIND_GPIO || resources[j].methods != methods) continue;
+        if (resources[j].kind == LOCK_KIND_GPIO || resources[j].kind == LOCK_KIND_UART ||
+            resources[j].methods != methods)
+          continue;
         cJSON_AddItemToArray(rails, cJSON_CreateString(Lock_KindToString(resources[j].kind)));
         used[j] = true;
       }
@@ -666,6 +759,7 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ControlRegister(server), "control ui route failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_OpenApiRegister(server), "openapi routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(server), "pin routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_UartRegister(server), "uart routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(server), "lock routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PowerRegister(server), "power routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ScriptRegister(server), "script routes failed");

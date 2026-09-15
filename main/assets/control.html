@@ -110,6 +110,35 @@ body{
   overflow:hidden;
 }
 .sheet:nth-of-type(2){animation-delay:.1s}
+.tabs{
+  display:flex;
+  gap:.35rem;
+  margin-bottom:1rem;
+  padding:.35rem;
+  border-radius:var(--md-sys-shape-corner-extra-large);
+  background:var(--md-sys-color-surface-container);
+  animation:enter .45s .02s cubic-bezier(.2,0,0,1) both;
+}
+.tab{
+  flex:1;
+  border:0;
+  border-radius:var(--md-sys-shape-corner-large);
+  padding:.7rem .5rem;
+  font:inherit;
+  font-weight:650;
+  font-size:.9rem;
+  color:var(--md-sys-color-on-surface-variant);
+  background:transparent;
+  cursor:pointer;
+  transition:background .15s, color .15s, box-shadow .15s;
+}
+.tab.active{
+  background:var(--md-sys-color-surface-container-lowest);
+  color:var(--md-sys-color-primary);
+  box-shadow:var(--md-sys-elevation-1);
+}
+.panel{display:none}
+.panel.active{display:block}
 .section-label{
   margin:0 0 .65rem .35rem;
   font-size:.72rem;
@@ -411,6 +440,77 @@ body{
   box-shadow:none;
   transform:none;
 }
+.btn-tonal{
+  background:var(--md-sys-color-secondary-container);
+  color:var(--md-sys-color-on-secondary-container);
+}
+.uart-card{
+  padding:1rem;
+  border-radius:var(--md-sys-shape-corner-large);
+  background:var(--md-sys-color-surface-container);
+  display:flex;
+  flex-direction:column;
+  gap:.85rem;
+}
+.uart-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:.75rem;
+}
+@media (min-width:560px){
+  .uart-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+.field select,
+.field textarea{
+  width:100%;
+  border:0;
+  border-radius:var(--md-sys-shape-corner-medium);
+  background:var(--md-sys-color-surface-container-highest);
+  color:var(--md-sys-color-on-surface);
+  font:inherit;
+  padding:1.15rem .95rem .45rem;
+  outline:none;
+}
+.field textarea{
+  min-height:5.5rem;
+  resize:vertical;
+  line-height:1.4;
+}
+.field select:focus,
+.field textarea:focus{
+  background:var(--md-sys-color-surface-container-high);
+}
+.field select + label,
+.field textarea + label,
+.field select:focus + label,
+.field textarea:focus + label,
+.field textarea:not(:placeholder-shown) + label{
+  top:.55rem;
+  transform:none;
+  font-size:.72rem;
+  font-weight:600;
+  color:var(--md-sys-color-primary);
+}
+.rx-log{
+  min-height:10rem;
+  max-height:18rem;
+  overflow:auto;
+  white-space:pre-wrap;
+  word-break:break-word;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:.82rem;
+  line-height:1.45;
+  padding:.9rem 1rem;
+  border-radius:var(--md-sys-shape-corner-medium);
+  background:var(--md-sys-color-surface-container-highest);
+  color:var(--md-sys-color-on-surface);
+}
+.row-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.55rem;
+}
+.row-actions .btn{width:auto;flex:1;min-width:7rem}
 .snack{
   position:fixed;
   left:50%;
@@ -463,21 +563,32 @@ body{
   <header class="top">
     <div class="brand-block">
       <h1 class="brand">SAIHUB</h1>
-      <p class="subtitle">Control pins and power.</p>
+      <p class="subtitle">Control pins, power, and UART.</p>
     </div>
     <button class="icon-btn" type="button" id="refresh" aria-label="Refresh" title="Refresh">
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
     </button>
   </header>
 
-  <section class="sheet" aria-label="Power">
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" type="button" role="tab" data-tab="power" aria-selected="false">Power</button>
+    <button class="tab active" type="button" role="tab" data-tab="pins" aria-selected="true">Pins</button>
+    <button class="tab" type="button" role="tab" data-tab="uart" aria-selected="false">UART</button>
+  </nav>
+
+  <section class="sheet panel" id="panel-power" aria-label="Power" role="tabpanel">
     <h2 class="section-label">Power</h2>
     <div class="card-grid" id="rails"></div>
   </section>
 
-  <section class="sheet" aria-label="Pins">
+  <section class="sheet panel active" id="panel-pins" aria-label="Pins" role="tabpanel">
     <h2 class="section-label">Pins</h2>
     <div class="card-grid" id="pins"></div>
+  </section>
+
+  <section class="sheet panel" id="panel-uart" aria-label="UART" role="tabpanel">
+    <h2 class="section-label">UART</h2>
+    <div id="uarts"></div>
   </section>
 
   <p class="footer">API for agents: <a href="/openapi.json">/openapi.json</a></p>
@@ -494,10 +605,14 @@ const MODES=[
 const snackEl=document.getElementById('snack');
 const railsEl=document.getElementById('rails');
 const pinsEl=document.getElementById('pins');
+const uartsEl=document.getElementById('uarts');
 const editing=new Set();
+let uartEditing=false;
+let activeTab='pins';
 let pollTimer=null;
 let busy=false;
 let snackTimer=null;
+let uartLog='';
 
 function showError(text){
   clearTimeout(snackTimer);
@@ -755,10 +870,11 @@ async function refresh(force){
   if(busy&&!force) return;
   busy=true;
   try{
-    const [pinRes,p3,p5]=await Promise.all([
+    const [pinRes,p3,p5,uartRes]=await Promise.all([
       api('GET','/pin/'),
       api('GET','/power/3v3'),
-      api('GET','/power/5v')
+      api('GET','/power/5v'),
+      api('GET','/uart/')
     ]);
     const pins=pinRes.pins||[];
     await loadPwm(pins);
@@ -772,12 +888,169 @@ async function refresh(force){
       if(r3&&document.activeElement!==r3) r3.checked=!!p3.enable;
       if(r5&&document.activeElement!==r5) r5.checked=!!p5.enable;
     }
+    if(force||!uartEditing||!uartsEl.children.length){
+      renderUarts(uartRes.uarts||[]);
+    }
+    if(activeTab==='uart') await pollUartReceive();
   }catch(e){
     showError(e.message||'Could not load device state.');
   }finally{
     busy=false;
   }
 }
+
+function pinOptions(selected){
+  let html='<option value="">None</option>';
+  for(let i=0;i<=7;i++){
+    html+='<option value="'+i+'"'+(selected===i?' selected':'')+'>Pin '+i+'</option>';
+  }
+  return html;
+}
+
+function renderUarts(uarts){
+  const u=(uarts&&uarts[0])||{
+    id:0,enable:false,baudRate:115200,dataBits:8,parity:'none',stopBits:1,encoding:'utf8',pins:{rx:null,tx:null}
+  };
+  const rx=u.pins&&u.pins.rx!=null?u.pins.rx:'';
+  const tx=u.pins&&u.pins.tx!=null?u.pins.tx:'';
+  uartsEl.innerHTML=
+    '<article class="uart-card" data-uart="'+u.id+'">'+
+      '<div class="rail">'+
+        '<div class="rail-text"><span class="rail-name">UART '+u.id+'</span><span class="rail-sub">Serial port</span></div>'+
+        switchHtml('uart-enable',!!u.enable,false)+
+      '</div>'+
+      '<div class="uart-grid">'+
+        '<div class="field"><input type="number" id="uart-baud" min="1" step="1" placeholder=" " value="'+(u.baudRate||115200)+'"/><label>Baud rate</label></div>'+
+        '<div class="field"><select id="uart-dataBits">'+[5,6,7,8].map(v=>'<option value="'+v+'"'+(u.dataBits===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>Data bits</label></div>'+
+        '<div class="field"><select id="uart-parity">'+['none','even','odd'].map(v=>'<option value="'+v+'"'+(u.parity===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>Parity</label></div>'+
+        '<div class="field"><select id="uart-stopBits">'+[1,2].map(v=>'<option value="'+v+'"'+(u.stopBits===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>Stop bits</label></div>'+
+        '<div class="field"><select id="uart-encoding">'+['utf8','byte'].map(v=>'<option value="'+v+'"'+(u.encoding===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>Encoding</label></div>'+
+        '<div class="field"><select id="uart-rx">'+pinOptions(rx===''?null:Number(rx))+'</select><label>RX pin</label></div>'+
+        '<div class="field"><select id="uart-tx">'+pinOptions(tx===''?null:Number(tx))+'</select><label>TX pin</label></div>'+
+      '</div>'+
+      '<button type="button" class="btn btn-filled" id="uart-apply">Apply config</button>'+
+      '<div class="field"><textarea id="uart-tx-data" placeholder=" "></textarea><label>Transmit</label></div>'+
+      '<div class="row-actions">'+
+        '<button type="button" class="btn btn-filled" id="uart-send">Send</button>'+
+        '<button type="button" class="btn btn-tonal" id="uart-flush">Flush RX</button>'+
+        '<button type="button" class="btn btn-tonal" id="uart-clear-log">Clear log</button>'+
+      '</div>'+
+      '<div><div class="section-label" style="margin-left:0">Receive log</div><div class="rx-log" id="uart-rx-log"></div></div>'+
+    '</article>';
+  const logEl=document.getElementById('uart-rx-log');
+  if(logEl) logEl.textContent=uartLog;
+  bindUartCard(u.id);
+}
+
+function markUartEdit(){uartEditing=true}
+function clearUartEdit(){setTimeout(()=>{uartEditing=false},400)}
+
+function readUartConfig(id){
+  const rx=document.getElementById('uart-rx').value;
+  const tx=document.getElementById('uart-tx').value;
+  return {
+    enable:document.getElementById('uart-enable').checked,
+    baudRate:Number(document.getElementById('uart-baud').value),
+    dataBits:Number(document.getElementById('uart-dataBits').value),
+    parity:document.getElementById('uart-parity').value,
+    stopBits:Number(document.getElementById('uart-stopBits').value),
+    encoding:document.getElementById('uart-encoding').value,
+    pins:{rx:rx===''?null:Number(rx),tx:tx===''?null:Number(tx)}
+  };
+}
+
+function parseBytePayload(text){
+  const parts=text.trim().split(/[\s,]+/).filter(Boolean);
+  if(!parts.length) return [];
+  const out=[];
+  for(const p of parts){
+    const n=Number(p);
+    if(!Number.isInteger(n)||n<0||n>255) throw new Error('Byte data must be integers from 0 to 255.');
+    out.push(n);
+  }
+  return out;
+}
+
+function bindUartCard(id){
+  ['uart-baud','uart-dataBits','uart-parity','uart-stopBits','uart-encoding','uart-rx','uart-tx','uart-tx-data'].forEach(nid=>{
+    const el=document.getElementById(nid);
+    if(!el) return;
+    el.onfocus=markUartEdit;
+    el.onblur=clearUartEdit;
+    el.onchange=markUartEdit;
+  });
+  const en=document.getElementById('uart-enable');
+  if(en){en.onchange=markUartEdit}
+  document.getElementById('uart-apply').onclick=async()=>{
+    markUartEdit();
+    try{
+      await api('POST','/uart/'+id+'/config',readUartConfig(id));
+      await refresh(true);
+    }catch(e){showError(e.message)}
+    finally{uartEditing=false}
+  };
+  document.getElementById('uart-send').onclick=async()=>{
+    const encoding=document.getElementById('uart-encoding').value;
+    const raw=document.getElementById('uart-tx-data').value;
+    let data;
+    try{
+      data=encoding==='byte'?parseBytePayload(raw):raw;
+    }catch(e){showError(e.message);return}
+    try{
+      await api('POST','/uart/'+id+'/transmit',{data});
+    }catch(e){showError(e.message)}
+  };
+  document.getElementById('uart-flush').onclick=async()=>{
+    try{await api('POST','/uart/'+id+'/flush')}catch(e){showError(e.message)}
+  };
+  document.getElementById('uart-clear-log').onclick=()=>{
+    uartLog='';
+    const logEl=document.getElementById('uart-rx-log');
+    if(logEl) logEl.textContent='';
+  };
+}
+
+async function pollUartReceive(){
+  const card=uartsEl.querySelector('[data-uart]');
+  if(!card) return;
+  const id=Number(card.dataset.uart);
+  const encoding=document.getElementById('uart-encoding')?document.getElementById('uart-encoding').value:'utf8';
+  try{
+    const j=await api('GET','/uart/'+id+'/receive');
+    let chunk='';
+    if(encoding==='byte'){
+      const arr=Array.isArray(j.data)?j.data:[];
+      if(!arr.length) return;
+      chunk=arr.join(' ')+' ';
+    }else{
+      if(!j.data) return;
+      chunk=String(j.data);
+    }
+    uartLog+=chunk;
+    if(uartLog.length>20000) uartLog=uartLog.slice(-16000);
+    const logEl=document.getElementById('uart-rx-log');
+    if(logEl){
+      logEl.textContent=uartLog;
+      logEl.scrollTop=logEl.scrollHeight;
+    }
+  }catch(_){}
+}
+
+function setTab(name){
+  activeTab=name;
+  document.querySelectorAll('.tab').forEach(btn=>{
+    const on=btn.dataset.tab===name;
+    btn.classList.toggle('active',on);
+    btn.setAttribute('aria-selected',on?'true':'false');
+  });
+  document.querySelectorAll('.panel').forEach(panel=>{
+    panel.classList.toggle('active',panel.id==='panel-'+name);
+  });
+}
+
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.onclick=()=>setTab(btn.dataset.tab);
+});
 
 function schedulePoll(){
   clearTimeout(pollTimer);
@@ -792,6 +1065,7 @@ document.getElementById('refresh').onclick=async()=>{
 };
 
 (async()=>{
+  setTab('pins');
   await refresh(true);
   schedulePoll();
 })();

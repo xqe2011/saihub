@@ -10,6 +10,7 @@
 #include "http_server.h"
 #include "lock.h"
 #include "tool.h"
+#include "uart_ctrl.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -426,19 +427,11 @@ static ToolCall_Result ToolCall_CreateLock(cJSON* args)
   }
 
   Lock_Entry created;
-  esp_err_t cret = Lock_Create(res, count, &created);
+  Lock_Conflict conflict;
+  memset(&conflict, 0, sizeof(conflict));
+  esp_err_t cret = Lock_Create(res, count, &created, &conflict);
   if (cret == ESP_ERR_INVALID_STATE) {
-    for (size_t i = 0; i < count; i++) {
-      if (res[i].kind == LOCK_KIND_GPIO) {
-        snprintf(reason, sizeof(reason),
-                 "Cannot create lock: pin %d is already held. DELETE that lock or wait until it expires.", res[i].pin);
-      } else {
-        snprintf(reason, sizeof(reason),
-                 "Cannot create lock: power %s is already held. DELETE that lock or wait until it expires.",
-                 Lock_KindToString(res[i].kind));
-      }
-      break;
-    }
+    HttpServer_FormatLockConflict(&conflict, reason, sizeof(reason));
     return ToolCall_Fail(409, reason);
   }
   if (cret != ESP_OK) return ToolCall_Fail(500, "internal");
@@ -480,6 +473,260 @@ static ToolCall_Result ToolCall_DeleteLock(cJSON* args)
     return ToolCall_Err("id is required.");
   }
   Lock_Delete(idItem->valuestring);
+  return ToolCall_OkEmpty();
+}
+
+static void ToolCall_AddOptionalPin(cJSON* pins, const char* key, int pin)
+{
+  if (pin < 0) {
+    cJSON_AddNullToObject(pins, key);
+  } else {
+    cJSON_AddNumberToObject(pins, key, pin);
+  }
+}
+
+static cJSON* ToolCall_UartStateJson(int id, const UartCtrl_Config* cfg)
+{
+  cJSON* item = cJSON_CreateObject();
+  cJSON_AddNumberToObject(item, "id", id);
+  cJSON_AddBoolToObject(item, "enable", cfg->enable);
+  cJSON_AddNumberToObject(item, "baudRate", cfg->baudRate);
+  cJSON_AddNumberToObject(item, "dataBits", cfg->dataBits);
+  cJSON_AddStringToObject(item, "parity", UartCtrl_ParityToString(cfg->parity));
+  cJSON_AddNumberToObject(item, "stopBits", cfg->stopBits);
+  cJSON_AddStringToObject(item, "encoding", UartCtrl_EncodingToString(cfg->encoding));
+  cJSON* pins = cJSON_CreateObject();
+  ToolCall_AddOptionalPin(pins, "rx", cfg->rxPin);
+  ToolCall_AddOptionalPin(pins, "tx", cfg->txPin);
+  cJSON_AddItemToObject(item, "pins", pins);
+  return item;
+}
+
+static bool ToolCall_ParseUartId(cJSON* args, int* idOut, char* reason, size_t reasonLen)
+{
+  cJSON* idItem = cJSON_GetObjectItem(args, "id");
+  if (!cJSON_IsNumber(idItem) || !UartCtrl_IsValidId(idItem->valueint)) {
+    snprintf(reason, reasonLen, "id is invalid. Use an id from list_uarts.");
+    return false;
+  }
+  *idOut = idItem->valueint;
+  return true;
+}
+
+static int ToolCall_ParseOptionalUartPin(cJSON* pinsObj, const char* key, int* pinOut, char* reason, size_t reasonLen)
+{
+  cJSON* item = cJSON_GetObjectItem(pinsObj, key);
+  if (item == NULL || cJSON_IsNull(item)) {
+    *pinOut = -1;
+    return 0;
+  }
+  if (!cJSON_IsNumber(item)) {
+    snprintf(reason, reasonLen, "pins.%s must be an integer pin, null, or omitted.", key);
+    return -1;
+  }
+  *pinOut = item->valueint;
+  return 0;
+}
+
+static ToolCall_Result ToolCall_ListUarts(void)
+{
+  cJSON* root = cJSON_CreateObject();
+  cJSON* arr = cJSON_CreateArray();
+  int count = UartCtrl_GetCount();
+  for (int i = 0; i < count; i++) {
+    UartCtrl_Config cfg;
+    UartCtrl_GetConfig(i, &cfg);
+    cJSON_AddItemToArray(arr, ToolCall_UartStateJson(i, &cfg));
+  }
+  cJSON_AddItemToObject(root, "uarts", arr);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_ConfigureUart(cJSON* args)
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseUartId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+
+  UartCtrl_Config cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cJSON* enableItem = cJSON_GetObjectItem(args, "enable");
+  cJSON* baudItem = cJSON_GetObjectItem(args, "baudRate");
+  cJSON* dataBitsItem = cJSON_GetObjectItem(args, "dataBits");
+  cJSON* parityItem = cJSON_GetObjectItem(args, "parity");
+  cJSON* stopBitsItem = cJSON_GetObjectItem(args, "stopBits");
+  cJSON* encodingItem = cJSON_GetObjectItem(args, "encoding");
+  cJSON* pinsItem = cJSON_GetObjectItem(args, "pins");
+
+  if (!cJSON_IsBool(enableItem)) return ToolCall_Err("enable must be boolean.");
+  if (!cJSON_IsNumber(baudItem)) return ToolCall_Err("baudRate must be a positive integer.");
+  if (!cJSON_IsNumber(dataBitsItem)) return ToolCall_Err("dataBits must be 5, 6, 7, or 8.");
+  if (!cJSON_IsString(parityItem) || !UartCtrl_ParityFromString(parityItem->valuestring, &cfg.parity)) {
+    return ToolCall_Err("parity must be one of: none, even, odd.");
+  }
+  if (!cJSON_IsNumber(stopBitsItem)) return ToolCall_Err("stopBits must be 1 or 2.");
+  if (!cJSON_IsString(encodingItem) || !UartCtrl_EncodingFromString(encodingItem->valuestring, &cfg.encoding)) {
+    return ToolCall_Err("encoding must be one of: utf8, byte.");
+  }
+  if (!cJSON_IsObject(pinsItem)) return ToolCall_Err("pins must be an object with optional rx and tx.");
+  if (ToolCall_ParseOptionalUartPin(pinsItem, "rx", &cfg.rxPin, reason, sizeof(reason)) != 0) {
+    return ToolCall_Err(reason);
+  }
+  if (ToolCall_ParseOptionalUartPin(pinsItem, "tx", &cfg.txPin, reason, sizeof(reason)) != 0) {
+    return ToolCall_Err(reason);
+  }
+  cfg.enable = cJSON_IsTrue(enableItem);
+  cfg.baudRate = baudItem->valueint;
+  cfg.dataBits = dataBitsItem->valueint;
+  cfg.stopBits = stopBitsItem->valueint;
+
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+
+  esp_err_t ret = UartCtrl_SetConfig(id, &cfg, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_ARG) return ToolCall_Err(reason);
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(409, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  Lock_Touch(lockId);
+  return ToolCall_OkEmpty();
+}
+
+static esp_err_t ToolCall_FillTransmitData(cJSON* args, UartCtrl_Encoding encoding, uint8_t** dataOut, size_t* lenOut,
+                                           char* reason, size_t reasonLen)
+{
+  *dataOut = NULL;
+  *lenOut = 0;
+  cJSON* dataItem = cJSON_GetObjectItem(args, "data");
+  if (encoding == UART_CTRL_ENCODING_UTF8) {
+    if (!cJSON_IsString(dataItem) || dataItem->valuestring == NULL) {
+      snprintf(reason, reasonLen, "data must be a UTF-8 string when encoding is utf8.");
+      return ESP_ERR_INVALID_ARG;
+    }
+    size_t len = strlen(dataItem->valuestring);
+    if (len > CONFIG_UART_MAX_PAYLOAD_BYTES) {
+      snprintf(reason, reasonLen, "data is too large. Send at most %u bytes per request.",
+               (unsigned)CONFIG_UART_MAX_PAYLOAD_BYTES);
+      return ESP_ERR_INVALID_ARG;
+    }
+    uint8_t* buf = malloc(len ? len : 1);
+    if (buf == NULL) return ESP_ERR_NO_MEM;
+    if (len > 0) memcpy(buf, dataItem->valuestring, len);
+    *dataOut = buf;
+    *lenOut = len;
+    return ESP_OK;
+  }
+  if (!cJSON_IsArray(dataItem)) {
+    snprintf(reason, reasonLen, "data must be an array of integers 0-255 when encoding is byte.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  int n = cJSON_GetArraySize(dataItem);
+  if (n > (int)CONFIG_UART_MAX_PAYLOAD_BYTES) {
+    snprintf(reason, reasonLen, "data is too large. Send at most %u bytes per request.",
+             (unsigned)CONFIG_UART_MAX_PAYLOAD_BYTES);
+    return ESP_ERR_INVALID_ARG;
+  }
+  uint8_t* buf = malloc(n > 0 ? (size_t)n : 1);
+  if (buf == NULL) return ESP_ERR_NO_MEM;
+  for (int i = 0; i < n; i++) {
+    cJSON* v = cJSON_GetArrayItem(dataItem, i);
+    if (!cJSON_IsNumber(v) || v->valueint < 0 || v->valueint > 255) {
+      free(buf);
+      snprintf(reason, reasonLen, "data[%d] must be an integer from 0 to 255.", i);
+      return ESP_ERR_INVALID_ARG;
+    }
+    buf[i] = (uint8_t)v->valueint;
+  }
+  *dataOut = buf;
+  *lenOut = (size_t)n;
+  return ESP_OK;
+}
+
+static ToolCall_Result ToolCall_UartTransmit(cJSON* args)
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseUartId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+
+  UartCtrl_Config cfg;
+  UartCtrl_GetConfig(id, &cfg);
+  uint8_t* data = NULL;
+  size_t len = 0;
+  esp_err_t parse = ToolCall_FillTransmitData(args, cfg.encoding, &data, &len, reason, sizeof(reason));
+  if (parse == ESP_ERR_NO_MEM) return ToolCall_Fail(500, "internal");
+  if (parse != ESP_OK) return ToolCall_Err(reason);
+
+  esp_err_t ret = UartCtrl_Transmit(id, data, len, reason, sizeof(reason));
+  free(data);
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  Lock_Touch(lockId);
+  return ToolCall_OkEmpty();
+}
+
+static ToolCall_Result ToolCall_UartReceive(cJSON* args)
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseUartId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_UART, id, LOCK_METHOD_READ, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+
+  UartCtrl_Config cfg;
+  UartCtrl_GetConfig(id, &cfg);
+  uint8_t* buf = malloc(CONFIG_UART_MAX_PAYLOAD_BYTES);
+  if (buf == NULL) return ToolCall_Fail(500, "internal");
+  size_t n = 0;
+  esp_err_t ret = UartCtrl_Receive(id, buf, CONFIG_UART_MAX_PAYLOAD_BYTES, &n, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_STATE) {
+    free(buf);
+    return ToolCall_Fail(422, reason);
+  }
+  if (ret != ESP_OK) {
+    free(buf);
+    return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  }
+
+  cJSON* root = cJSON_CreateObject();
+  if (cfg.encoding == UART_CTRL_ENCODING_UTF8) {
+    char* s = malloc(n + 1);
+    if (s == NULL) {
+      free(buf);
+      cJSON_Delete(root);
+      return ToolCall_Fail(500, "internal");
+    }
+    if (n > 0) memcpy(s, buf, n);
+    s[n] = '\0';
+    cJSON_AddStringToObject(root, "data", s);
+    free(s);
+  } else {
+    cJSON* arr = cJSON_CreateArray();
+    for (size_t i = 0; i < n; i++) cJSON_AddItemToArray(arr, cJSON_CreateNumber(buf[i]));
+    cJSON_AddItemToObject(root, "data", arr);
+  }
+  free(buf);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  Lock_Touch(lockId);
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_UartFlush(cJSON* args)
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseUartId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  esp_err_t ret = UartCtrl_Flush(id, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  Lock_Touch(lockId);
   return ToolCall_OkEmpty();
 }
 
@@ -572,6 +819,21 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
     TOOL_CALL_LOG("%s renew_lock(id=%s)", via, ToolCall_ArgStr(args, "id"));
   } else if (strcmp(name, "delete_lock") == 0) {
     TOOL_CALL_LOG("%s delete_lock(id=%s)", via, ToolCall_ArgStr(args, "id"));
+  } else if (strcmp(name, "list_uarts") == 0) {
+    TOOL_CALL_LOG("%s list_uarts()", via);
+  } else if (strcmp(name, "configure_uart") == 0) {
+    TOOL_CALL_LOG("%s configure_uart(id=%d, enable=%s, baudRate=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgBool(args, "enable"), ToolCall_ArgInt(args, "baudRate", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "uart_transmit") == 0) {
+    TOOL_CALL_LOG("%s uart_transmit(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "uart_receive") == 0) {
+    TOOL_CALL_LOG("%s uart_receive(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "uart_flush") == 0) {
+    TOOL_CALL_LOG("%s uart_flush(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
   } else {
     TOOL_CALL_LOG("%s %s(...)", via, name);
   }
@@ -614,6 +876,16 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
     r = ToolCall_RenewLock(args);
   else if (strcmp(name, "delete_lock") == 0)
     r = ToolCall_DeleteLock(args);
+  else if (strcmp(name, "list_uarts") == 0)
+    r = ToolCall_ListUarts();
+  else if (strcmp(name, "configure_uart") == 0)
+    r = ToolCall_ConfigureUart(args);
+  else if (strcmp(name, "uart_transmit") == 0)
+    r = ToolCall_UartTransmit(args);
+  else if (strcmp(name, "uart_receive") == 0)
+    r = ToolCall_UartReceive(args);
+  else if (strcmp(name, "uart_flush") == 0)
+    r = ToolCall_UartFlush(args);
   else {
     char reason[96];
     snprintf(reason, sizeof(reason), "Unknown tool: %s", name);

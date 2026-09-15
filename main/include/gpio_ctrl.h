@@ -47,6 +47,8 @@ typedef struct {
 
 bool GpioCtrl_IsValidLogicalPin(int pin);
 int GpioCtrl_GetLogicalCount(void);
+/** Hardware pad for a logical pin. Undefined if pin is invalid. */
+int GpioCtrl_GetHwPin(int logicalPin);
 esp_err_t GpioCtrl_Init(void);
 esp_err_t GpioCtrl_GetState(int logicalPin, GpioCtrl_State* out);
 esp_err_t GpioCtrl_SetConfig(int logicalPin, GpioCtrl_Mode mode, bool openDrain, bool pullUp, bool pullDown);

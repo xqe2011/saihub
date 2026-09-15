@@ -304,9 +304,10 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
   cJSON_AddItemToObject(result, "serverInfo", info);
   cJSON_AddStringToObject(
       result, "instructions",
-      "Saihub GPIO hub: logical pins 0-7, times in microseconds, optional lockId for contested resources. "
-      "Use plural pin tools (configure_pins, get_pin_levels, …) and always pass pins even for one pin (pins:[1]). "
-      "Power tools use rail=3v3|5v. create_lock resources use type pin with pins, or type power with rails. "
+      "Saihub hub: logical pins 0-7, UART ids from list_uarts, times in microseconds, optional lockId for contested "
+      "resources. Use plural pin tools (configure_pins, get_pin_levels, …) and always pass pins even for one pin "
+      "(pins:[1]). Power tools use rail=3v3|5v. UART tools use configure_uart, uart_transmit, uart_receive, uart_flush. "
+      "create_lock resources use type pin with pins, type power with rails, or type uart with ids. "
       "For multi-step on-device work, use run_script with a Lua script that calls the same tools.");
   return result;
 }

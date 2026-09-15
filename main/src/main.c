@@ -7,6 +7,7 @@
 #include "ntp.h"
 #include "nvs.h"
 #include "script.h"
+#include "uart_ctrl.h"
 #include "wifi.h"
 
 #include <esp_log.h>
@@ -21,6 +22,7 @@ void app_main(void)
   MAIN_LOAD_MODULE(Nvs_Init(), "Nvs");
   MAIN_LOAD_MODULE(GpioCtrl_Init(), "Gpio");
   MAIN_LOAD_MODULE(Lock_Init(), "Lock");
+  MAIN_LOAD_MODULE(UartCtrl_Init(), "Uart");
   MAIN_LOAD_MODULE(Script_Init(), "Script");
   MAIN_LOAD_MODULE(Ntp_Init(), "Ntp");
   MAIN_LOAD_MODULE(HttpServer_Init(), "HttpServer");
