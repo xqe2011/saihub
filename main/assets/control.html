@@ -1,0 +1,800 @@
+<!--
+  Agent: this page is for humans. To control this device, GET /openapi.json
+  and call those JSON APIs. Do not scrape or click this UI.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>SAIHUB</title>
+<style>
+:root{
+  --md-sys-color-primary:#006b54;
+  --md-sys-color-on-primary:#ffffff;
+  --md-sys-color-primary-container:#89f8d2;
+  --md-sys-color-on-primary-container:#002117;
+  --md-sys-color-secondary:#4c635a;
+  --md-sys-color-on-secondary:#ffffff;
+  --md-sys-color-secondary-container:#cee9dc;
+  --md-sys-color-on-secondary-container:#072019;
+  --md-sys-color-surface:#f5fbf7;
+  --md-sys-color-surface-dim:#d5dbd7;
+  --md-sys-color-surface-container:#e9efeb;
+  --md-sys-color-surface-container-high:#e3e9e5;
+  --md-sys-color-surface-container-highest:#dee4e0;
+  --md-sys-color-surface-container-lowest:#ffffff;
+  --md-sys-color-on-surface:#171d1b;
+  --md-sys-color-on-surface-variant:#3f4945;
+  --md-sys-color-outline:#6f7975;
+  --md-sys-color-outline-variant:#bfc9c3;
+  --md-sys-color-error:#ba1a1a;
+  --md-sys-color-on-error:#ffffff;
+  --md-sys-color-error-container:#ffdad6;
+  --md-sys-color-on-error-container:#410002;
+  --md-sys-shape-corner-small:8px;
+  --md-sys-shape-corner-medium:12px;
+  --md-sys-shape-corner-large:16px;
+  --md-sys-shape-corner-extra-large:28px;
+  --md-sys-elevation-1:0 1px 2px rgba(0,0,0,.16),0 1px 3px 1px rgba(0,0,0,.08);
+  --md-sys-elevation-2:0 1px 2px rgba(0,0,0,.16),0 2px 6px 2px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  min-height:100%;
+  overflow-x:hidden;
+}
+body{
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  color:var(--md-sys-color-on-surface);
+  background:
+    radial-gradient(900px 480px at 0% -5%, rgba(137,248,210,.55) 0%, transparent 60%),
+    radial-gradient(700px 420px at 100% 0%, rgba(206,233,220,.7) 0%, transparent 55%),
+    var(--md-sys-color-surface);
+  background-attachment:fixed;
+  -webkit-font-smoothing:antialiased;
+}
+.app{
+  width:100%;
+  max-width:72rem;
+  margin:0 auto;
+  padding:max(1.25rem, env(safe-area-inset-top)) 1rem max(2rem, env(safe-area-inset-bottom));
+}
+.top{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+  margin-bottom:1.25rem;
+  animation:enter .45s cubic-bezier(.2,0,0,1) both;
+}
+.brand-block{min-width:0;flex:1}
+.brand{
+  margin:0;
+  font-size:clamp(2rem,8vw,2.5rem);
+  font-weight:700;
+  letter-spacing:-.02em;
+  line-height:1.1;
+  color:var(--md-sys-color-primary);
+}
+.subtitle{
+  margin:.4rem 0 0;
+  font-size:.95rem;
+  line-height:1.4;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.icon-btn{
+  flex:none;
+  width:2.75rem;
+  height:2.75rem;
+  border:0;
+  border-radius:999px;
+  background:var(--md-sys-color-secondary-container);
+  color:var(--md-sys-color-on-secondary-container);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+  transition:background .15s, box-shadow .15s, transform .15s;
+}
+.icon-btn:active{transform:scale(.96)}
+.icon-btn:hover{box-shadow:var(--md-sys-elevation-1)}
+.icon-btn svg{width:1.35rem;height:1.35rem}
+.sheet{
+  background:var(--md-sys-color-surface-container-lowest);
+  border-radius:var(--md-sys-shape-corner-extra-large);
+  box-shadow:var(--md-sys-elevation-1);
+  padding:1.25rem 1rem 1.25rem;
+  margin-bottom:1rem;
+  animation:enter .5s .05s cubic-bezier(.2,0,0,1) both;
+  overflow:hidden;
+}
+.sheet:nth-of-type(2){animation-delay:.1s}
+.section-label{
+  margin:0 0 .65rem .35rem;
+  font-size:.72rem;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.card-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:.65rem;
+}
+@media (min-width:560px){
+  .card-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}
+}
+@media (min-width:900px){
+  .card-grid{grid-template-columns:repeat(3, minmax(0, 1fr))}
+}
+@media (min-width:1200px){
+  .card-grid{grid-template-columns:repeat(4, minmax(0, 1fr))}
+}
+.rail{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:1rem;
+  padding:1rem;
+  border-radius:var(--md-sys-shape-corner-large);
+  background:var(--md-sys-color-surface-container);
+  min-width:0;
+}
+.rail-text{min-width:0}
+.rail-name{
+  display:block;
+  font-weight:650;
+  font-size:1rem;
+}
+.rail-sub{
+  display:block;
+  margin-top:.15rem;
+  font-size:.78rem;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.switch{
+  position:relative;
+  width:3.25rem;
+  height:1.9rem;
+  flex:none;
+}
+.switch input{
+  position:absolute;
+  opacity:0;
+  width:100%;
+  height:100%;
+  margin:0;
+  cursor:pointer;
+  z-index:1;
+}
+.switch .track{
+  display:block;
+  width:100%;
+  height:100%;
+  border-radius:999px;
+  background:var(--md-sys-color-surface-container-highest);
+  border:2px solid var(--md-sys-color-outline);
+  transition:background .15s, border-color .15s;
+}
+.switch .thumb{
+  position:absolute;
+  top:50%;
+  left:.2rem;
+  width:1.25rem;
+  height:1.25rem;
+  border-radius:999px;
+  background:var(--md-sys-color-outline);
+  transform:translateY(-50%);
+  transition:left .15s, background .15s, width .15s;
+  pointer-events:none;
+}
+.switch input:checked + .track{
+  background:var(--md-sys-color-primary);
+  border-color:var(--md-sys-color-primary);
+}
+.switch input:checked + .track + .thumb{
+  left:1.55rem;
+  background:var(--md-sys-color-on-primary);
+}
+.switch input:disabled{cursor:not-allowed}
+.switch input:disabled + .track{opacity:.45}
+.pin-card{
+  padding:1rem;
+  border-radius:var(--md-sys-shape-corner-large);
+  background:var(--md-sys-color-surface-container);
+  display:flex;
+  flex-direction:column;
+  gap:.7rem;
+  min-width:0;
+}
+.pin-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+}
+.pin-title{
+  margin:0;
+  font-size:1.05rem;
+  font-weight:700;
+  letter-spacing:-.01em;
+}
+.level-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:.35rem;
+  padding:.25rem .65rem;
+  border-radius:999px;
+  font-size:.72rem;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  background:var(--md-sys-color-surface-container-highest);
+  color:var(--md-sys-color-on-surface-variant);
+}
+.level-pill.high{
+  background:var(--md-sys-color-primary-container);
+  color:var(--md-sys-color-on-primary-container);
+}
+.level-pill .dot{
+  width:.45rem;
+  height:.45rem;
+  border-radius:999px;
+  background:currentColor;
+}
+.modes{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.35rem;
+}
+.chip{
+  border:0;
+  border-radius:999px;
+  padding:.4rem .7rem;
+  font:inherit;
+  font-size:.78rem;
+  font-weight:600;
+  background:var(--md-sys-color-surface-container-lowest);
+  color:var(--md-sys-color-on-surface-variant);
+  cursor:pointer;
+  transition:background .15s, color .15s, box-shadow .15s;
+}
+.chip:hover{box-shadow:var(--md-sys-elevation-1)}
+.chip.active{
+  background:var(--md-sys-color-primary);
+  color:var(--md-sys-color-on-primary);
+}
+.chip:disabled{opacity:.42;cursor:not-allowed;box-shadow:none}
+.toggles{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.45rem .75rem;
+}
+.toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:.4rem;
+  font-size:.82rem;
+  color:var(--md-sys-color-on-surface-variant);
+  cursor:pointer;
+  user-select:none;
+}
+.toggle input{
+  appearance:none;
+  width:1.05rem;
+  height:1.05rem;
+  margin:0;
+  border:2px solid var(--md-sys-color-outline);
+  border-radius:4px;
+  background:var(--md-sys-color-surface-container-lowest);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+  transition:background .12s, border-color .12s;
+}
+.toggle input:checked{
+  background:var(--md-sys-color-primary);
+  border-color:var(--md-sys-color-primary);
+}
+.toggle input:checked::after{
+  content:"";
+  width:.35rem;
+  height:.6rem;
+  border:solid var(--md-sys-color-on-primary);
+  border-width:0 2px 2px 0;
+  transform:rotate(45deg) translate(-1px,-1px);
+}
+.toggle input:disabled{opacity:.4;cursor:not-allowed}
+.toggle.hidden{display:none}
+.digital-row,.pwm-row{
+  display:none;
+  flex-direction:column;
+  gap:.55rem;
+}
+.digital-row.show,.pwm-row.show{display:flex}
+.level-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+  padding:.55rem .75rem;
+  border-radius:var(--md-sys-shape-corner-medium);
+  background:var(--md-sys-color-surface-container-lowest);
+}
+.level-label{
+  font-size:.88rem;
+  font-weight:600;
+}
+.field{
+  position:relative;
+  width:100%;
+  min-width:0;
+}
+.field input[type=number]{
+  width:100%;
+  appearance:none;
+  border:1px solid var(--md-sys-color-outline);
+  border-radius:var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-small) 0 0;
+  border-bottom-width:2px;
+  background:var(--md-sys-color-surface-container-highest);
+  color:var(--md-sys-color-on-surface);
+  padding:1.35rem 1rem .55rem;
+  font:inherit;
+  font-size:1rem;
+  outline:none;
+  transition:border-color .15s, background .15s;
+}
+.field input[type=number]:focus{
+  border-color:var(--md-sys-color-primary);
+  background:var(--md-sys-color-surface-container-high);
+}
+.field label{
+  position:absolute;
+  left:1rem;
+  top:50%;
+  transform:translateY(-50%);
+  font-size:1rem;
+  color:var(--md-sys-color-on-surface-variant);
+  pointer-events:none;
+  transition:top .15s, font-size .15s, color .15s;
+}
+.field input:focus + label,
+.field input:not(:placeholder-shown) + label{
+  top:.55rem;
+  transform:none;
+  font-size:.72rem;
+  font-weight:600;
+  color:var(--md-sys-color-primary);
+}
+.slider-wrap{
+  display:flex;
+  flex-direction:column;
+  gap:.35rem;
+}
+.slider-meta{
+  display:flex;
+  justify-content:space-between;
+  font-size:.78rem;
+  font-weight:600;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.slider-wrap input[type=range]{
+  width:100%;
+  accent-color:var(--md-sys-color-primary);
+  cursor:pointer;
+}
+.btn{
+  width:100%;
+  min-height:2.6rem;
+  border:0;
+  border-radius:999px;
+  padding:.7rem 1.25rem;
+  font:inherit;
+  font-size:.92rem;
+  font-weight:650;
+  letter-spacing:.02em;
+  cursor:pointer;
+  transition:box-shadow .15s, opacity .15s, transform .12s;
+}
+.btn:active{transform:scale(.985)}
+.btn-filled{
+  background:var(--md-sys-color-primary);
+  color:var(--md-sys-color-on-primary);
+  box-shadow:var(--md-sys-elevation-1);
+}
+.btn-filled:hover{box-shadow:var(--md-sys-elevation-2)}
+.btn-filled:disabled{
+  opacity:.42;
+  cursor:not-allowed;
+  box-shadow:none;
+  transform:none;
+}
+.snack{
+  position:fixed;
+  left:50%;
+  bottom:max(1.25rem, env(safe-area-inset-bottom));
+  z-index:40;
+  width:min(24rem, calc(100% - 2rem));
+  transform:translate(-50%, calc(100% + 1.5rem));
+  opacity:0;
+  pointer-events:none;
+  padding:1rem 1.15rem;
+  border-radius:var(--md-sys-shape-corner-medium);
+  background:var(--md-sys-color-error-container);
+  color:var(--md-sys-color-on-error-container);
+  box-shadow:var(--md-sys-elevation-2);
+  font-size:.92rem;
+  font-weight:600;
+  line-height:1.35;
+  transition:transform .28s cubic-bezier(.2,0,0,1), opacity .28s cubic-bezier(.2,0,0,1);
+}
+.snack.show{
+  transform:translate(-50%, 0);
+  opacity:1;
+  pointer-events:auto;
+}
+.footer{
+  text-align:center;
+  margin-top:.5rem;
+  font-size:.8rem;
+  color:var(--md-sys-color-on-surface-variant);
+  animation:enter .45s .15s cubic-bezier(.2,0,0,1) both;
+}
+.footer a{
+  color:var(--md-sys-color-primary);
+  font-weight:600;
+  text-decoration:none;
+}
+.footer a:hover{text-decoration:underline}
+@keyframes enter{
+  from{opacity:0;transform:translateY(10px)}
+  to{opacity:1;transform:none}
+}
+@media (max-width:360px){
+  .app{padding-left:.75rem;padding-right:.75rem}
+  .sheet{padding:1rem .75rem 1.1rem}
+}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="top">
+    <div class="brand-block">
+      <h1 class="brand">SAIHUB</h1>
+      <p class="subtitle">Control pins and power.</p>
+    </div>
+    <button class="icon-btn" type="button" id="refresh" aria-label="Refresh" title="Refresh">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+    </button>
+  </header>
+
+  <section class="sheet" aria-label="Power">
+    <h2 class="section-label">Power</h2>
+    <div class="card-grid" id="rails"></div>
+  </section>
+
+  <section class="sheet" aria-label="Pins">
+    <h2 class="section-label">Pins</h2>
+    <div class="card-grid" id="pins"></div>
+  </section>
+
+  <p class="footer">API for agents: <a href="/openapi.json">/openapi.json</a></p>
+</main>
+<div class="snack" id="snack" role="alert" aria-live="assertive"></div>
+<script>
+const MODES=[
+  {id:'disable',label:'Off'},
+  {id:'digitalInput',label:'Input'},
+  {id:'digitalOutput',label:'Output'},
+  {id:'digitalInputOutput',label:'In-Out'},
+  {id:'pwmOutput',label:'PWM'}
+];
+const snackEl=document.getElementById('snack');
+const railsEl=document.getElementById('rails');
+const pinsEl=document.getElementById('pins');
+const editing=new Set();
+let pollTimer=null;
+let busy=false;
+let snackTimer=null;
+
+function showError(text){
+  clearTimeout(snackTimer);
+  snackEl.textContent=text||'Something went wrong.';
+  snackEl.classList.add('show');
+  snackTimer=setTimeout(()=>snackEl.classList.remove('show'),4200);
+}
+
+async function api(method,path,body){
+  const opts={method,headers:{}};
+  if(body!==undefined){
+    opts.headers['Content-Type']='application/json';
+    opts.body=JSON.stringify(body);
+  }
+  const r=await fetch(path,opts);
+  if(r.status===204) return null;
+  let j=null;
+  try{j=await r.json()}catch(_){}
+  if(!r.ok){
+    const err=new Error((j&&j.reason)||('Request failed ('+r.status+')'));
+    err.status=r.status;
+    throw err;
+  }
+  return j;
+}
+
+function canOpenDrain(mode){
+  return mode==='digitalOutput'||mode==='digitalInputOutput'||mode==='pwmOutput';
+}
+function canWriteLevel(mode){
+  return mode==='digitalOutput'||mode==='digitalInputOutput';
+}
+function isInputMode(mode){
+  return mode==='digitalInput'||mode==='digitalInputOutput';
+}
+
+function switchHtml(id,checked,disabled){
+  return '<label class="switch">'+
+    '<input type="checkbox" id="'+id+'"'+(checked?' checked':'')+(disabled?' disabled':'')+'/>'+
+    '<span class="track"></span><span class="thumb"></span></label>';
+}
+
+function renderRails(power){
+  const items=[
+    {key:'3v3',label:'3V3',sub:'Logic rail'},
+    {key:'5v',label:'5V',sub:'Peripheral rail'}
+  ];
+  railsEl.innerHTML=items.map(r=>{
+    const on=!!(power[r.key]&&power[r.key].enable);
+    return '<div class="rail">'+
+      '<div class="rail-text"><span class="rail-name">'+r.label+'</span><span class="rail-sub">'+r.sub+'</span></div>'+
+      switchHtml('rail-'+r.key,on,false)+
+      '</div>';
+  }).join('');
+  items.forEach(r=>{
+    const el=document.getElementById('rail-'+r.key);
+    el.onchange=async()=>{
+      try{
+        await api('POST','/power/'+r.key,{enable:el.checked});
+      }catch(e){
+        el.checked=!el.checked;
+        showError(e.message);
+      }
+    };
+  });
+}
+
+function pinCardHtml(p){
+  const mode=p.mode||'disable';
+  const levelHigh=!!p.level;
+  const modes=MODES.map(m=>
+    '<button type="button" class="chip'+(m.id===mode?' active':'')+'" data-mode="'+m.id+'">'+m.label+'</button>'
+  ).join('');
+  const odAllowed=canOpenDrain(mode);
+  const write=canWriteLevel(mode);
+  const pwm=mode==='pwmOutput';
+  const showLevel=write||isInputMode(mode)||mode==='disable';
+  return '<article class="pin-card" data-pin="'+p.pin+'">'+
+    '<div class="pin-head">'+
+      '<h3 class="pin-title">Pin '+p.pin+'</h3>'+
+      '<span class="level-pill'+(levelHigh?' high':'')+'" data-role="pill"><span class="dot"></span><span data-role="pill-text">'+(levelHigh?'High':'Low')+'</span></span>'+
+    '</div>'+
+    '<div class="modes" data-role="modes">'+modes+'</div>'+
+    '<div class="toggles">'+
+      '<label class="toggle"><input type="checkbox" data-role="pullUp"'+(p.pullUp?' checked':'')+'/>Pull-up</label>'+
+      '<label class="toggle"><input type="checkbox" data-role="pullDown"'+(p.pullDown?' checked':'')+'/>Pull-down</label>'+
+      '<label class="toggle'+(odAllowed?'':' hidden')+'" data-role="od-wrap"><input type="checkbox" data-role="openDrain"'+(p.openDrain?' checked':'')+(odAllowed?'':' disabled')+'/>Open-drain</label>'+
+    '</div>'+
+    '<div class="digital-row'+(showLevel&&!pwm?' show':'')+'" data-role="digital">'+
+      '<div class="level-row">'+
+        '<span class="level-label">'+(write?'Output level':'Live level')+'</span>'+
+        (write?switchHtml('lvl-'+p.pin,levelHigh,false):'<span class="level-pill'+(levelHigh?' high':'')+'"><span class="dot"></span>'+(levelHigh?'High':'Low')+'</span>')+
+      '</div>'+
+    '</div>'+
+    '<div class="pwm-row'+(pwm?' show':'')+'" data-role="pwm">'+
+      '<div class="field">'+
+        '<input type="number" data-role="freq" min="1" max="50000" step="1" placeholder=" " value="'+(p.frequency!=null?p.frequency:1000)+'"/>'+
+        '<label>Frequency (Hz)</label>'+
+      '</div>'+
+      '<div class="slider-wrap">'+
+        '<div class="slider-meta"><span>Duty</span><span data-role="duty-label">'+(p.duty!=null?Number(p.duty).toFixed(1):'50.0')+'%</span></div>'+
+        '<input type="range" data-role="duty" min="0" max="100" step="0.1" value="'+(p.duty!=null?p.duty:50)+'"/>'+
+      '</div>'+
+      '<button type="button" class="btn btn-filled" data-role="pwm-apply">Apply PWM</button>'+
+    '</div>'+
+  '</article>';
+}
+
+function bindPinCard(card,state){
+  const pin=Number(card.dataset.pin);
+  const markEdit=()=>editing.add(pin);
+  const clearEdit=()=>editing.delete(pin);
+
+  card.querySelectorAll('[data-mode]').forEach(btn=>{
+    btn.onclick=async()=>{
+      const mode=btn.dataset.mode;
+      const pullUp=card.querySelector('[data-role=pullUp]').checked;
+      const pullDown=card.querySelector('[data-role=pullDown]').checked;
+      const openDrain=card.querySelector('[data-role=openDrain]').checked;
+      markEdit();
+      try{
+        await api('PUT','/pin/'+pin,{mode,pullUp,pullDown,openDrain:canOpenDrain(mode)?openDrain:false});
+        await refresh(true);
+      }catch(e){
+        showError(e.message);
+      }finally{
+        clearEdit();
+      }
+    };
+  });
+
+  ['pullUp','pullDown','openDrain'].forEach(role=>{
+    const el=card.querySelector('[data-role='+role+']');
+    if(!el) return;
+    el.onchange=async()=>{
+      const mode=state.mode||'disable';
+      const body={
+        mode,
+        pullUp:card.querySelector('[data-role=pullUp]').checked,
+        pullDown:card.querySelector('[data-role=pullDown]').checked,
+        openDrain:canOpenDrain(mode)?card.querySelector('[data-role=openDrain]').checked:false
+      };
+      markEdit();
+      try{
+        await api('PUT','/pin/'+pin,body);
+        await refresh(true);
+      }catch(e){
+        el.checked=!el.checked;
+        showError(e.message);
+      }finally{
+        clearEdit();
+      }
+    };
+  });
+
+  const lvl=document.getElementById('lvl-'+pin);
+  if(lvl){
+    lvl.onchange=async()=>{
+      markEdit();
+      try{
+        await api('POST','/pin/'+pin+'/level',{level:lvl.checked?1:0});
+        await refresh(true);
+      }catch(e){
+        lvl.checked=!lvl.checked;
+        showError(e.message);
+      }finally{
+        clearEdit();
+      }
+    };
+  }
+
+  const duty=card.querySelector('[data-role=duty]');
+  const dutyLabel=card.querySelector('[data-role=duty-label]');
+  if(duty&&dutyLabel){
+    duty.oninput=()=>{dutyLabel.textContent=Number(duty.value).toFixed(1)+'%';};
+    duty.onfocus=markEdit;
+    duty.onblur=()=>setTimeout(clearEdit,400);
+  }
+  const freq=card.querySelector('[data-role=freq]');
+  if(freq){
+    freq.onfocus=markEdit;
+    freq.onblur=()=>setTimeout(clearEdit,400);
+  }
+  const apply=card.querySelector('[data-role=pwm-apply]');
+  if(apply){
+    apply.onclick=async()=>{
+      const frequency=Number(freq.value);
+      const dutyVal=Number(duty.value);
+      markEdit();
+      try{
+        await api('POST','/pin/'+pin+'/pwm',{frequency,duty:dutyVal});
+        await refresh(true);
+      }catch(e){
+        showError(e.message);
+      }finally{
+        clearEdit();
+      }
+    };
+  }
+}
+
+function renderPins(pins){
+  const keep={};
+  pins.forEach(p=>{
+    if(editing.has(p.pin)){
+      const card=pinsEl.querySelector('[data-pin="'+p.pin+'"]');
+      if(card){
+        const freq=card.querySelector('[data-role=freq]');
+        const duty=card.querySelector('[data-role=duty]');
+        keep[p.pin]={
+          frequency:freq?Number(freq.value):p.frequency,
+          duty:duty?Number(duty.value):p.duty
+        };
+      }
+    }
+  });
+  pinsEl.innerHTML=pins.map(p=>{
+    const merged=Object.assign({},p,keep[p.pin]||{});
+    return pinCardHtml(merged);
+  }).join('');
+  pins.forEach(p=>{
+    const card=pinsEl.querySelector('[data-pin="'+p.pin+'"]');
+    if(card) bindPinCard(card,p);
+  });
+}
+
+async function loadPwm(pins){
+  await Promise.all(pins.filter(p=>p.mode==='pwmOutput').map(async p=>{
+    try{
+      const j=await api('GET','/pin/'+p.pin+'/pwm');
+      p.frequency=j.frequency;
+      p.duty=j.duty;
+    }catch(_){}
+  }));
+}
+
+function updateLiveLevels(pins){
+  pins.forEach(p=>{
+    if(editing.has(p.pin)) return;
+    const card=pinsEl.querySelector('[data-pin="'+p.pin+'"]');
+    if(!card) return;
+    const pill=card.querySelector('[data-role=pill]');
+    const pillText=card.querySelector('[data-role=pill-text]');
+    if(pill&&pillText){
+      const high=!!p.level;
+      pill.classList.toggle('high',high);
+      pillText.textContent=high?'High':'Low';
+    }
+    const lvl=document.getElementById('lvl-'+p.pin);
+    if(lvl&&document.activeElement!==lvl) lvl.checked=!!p.level;
+  });
+}
+
+async function refresh(force){
+  if(busy&&!force) return;
+  busy=true;
+  try{
+    const [pinRes,p3,p5]=await Promise.all([
+      api('GET','/pin/'),
+      api('GET','/power/3v3'),
+      api('GET','/power/5v')
+    ]);
+    const pins=pinRes.pins||[];
+    await loadPwm(pins);
+    if(force||editing.size===0||!pinsEl.children.length){
+      renderRails({'3v3':p3,'5v':p5});
+      renderPins(pins);
+    }else{
+      updateLiveLevels(pins);
+      const r3=document.getElementById('rail-3v3');
+      const r5=document.getElementById('rail-5v');
+      if(r3&&document.activeElement!==r3) r3.checked=!!p3.enable;
+      if(r5&&document.activeElement!==r5) r5.checked=!!p5.enable;
+    }
+  }catch(e){
+    showError(e.message||'Could not load device state.');
+  }finally{
+    busy=false;
+  }
+}
+
+function schedulePoll(){
+  clearTimeout(pollTimer);
+  pollTimer=setTimeout(async()=>{
+    await refresh(false);
+    schedulePoll();
+  },1500);
+}
+
+document.getElementById('refresh').onclick=async()=>{
+  await refresh(true);
+};
+
+(async()=>{
+  await refresh(true);
+  schedulePoll();
+})();
+</script>
+</body>
+</html>

@@ -274,7 +274,30 @@ body{
 }
 .status.busy{color:var(--md-sys-color-primary);font-weight:600}
 .status.ok{color:var(--md-sys-color-primary);font-weight:600}
-.status.err{color:var(--md-sys-color-error);font-weight:600}
+.snack{
+  position:fixed;
+  left:50%;
+  bottom:max(1.25rem, env(safe-area-inset-bottom));
+  z-index:40;
+  width:min(24rem, calc(100% - 2rem));
+  transform:translate(-50%, calc(100% + 1.5rem));
+  opacity:0;
+  pointer-events:none;
+  padding:1rem 1.15rem;
+  border-radius:var(--md-sys-shape-corner-medium);
+  background:var(--md-sys-color-error-container);
+  color:var(--md-sys-color-on-error-container);
+  box-shadow:var(--md-sys-elevation-2);
+  font-size:.92rem;
+  font-weight:600;
+  line-height:1.35;
+  transition:transform .28s cubic-bezier(.2,0,0,1), opacity .28s cubic-bezier(.2,0,0,1);
+}
+.snack.show{
+  transform:translate(-50%, 0);
+  opacity:1;
+  pointer-events:auto;
+}
 .ip-card{
   display:none;
   margin-top:.35rem;
@@ -346,14 +369,23 @@ body{
     </div>
   </section>
 </main>
+<div class="snack" id="snack" role="alert" aria-live="assertive"></div>
 <script>
 const listEl=document.getElementById('list');
 const statusEl=document.getElementById('status');
+const snackEl=document.getElementById('snack');
 const ipEl=document.getElementById('ip');
 const ipValueEl=document.getElementById('ipValue');
 const passEl=document.getElementById('password');
 const connectBtn=document.getElementById('connect');
-let selected=null, pollTimer=null;
+let selected=null, pollTimer=null, snackTimer=null;
+
+function showError(text){
+  clearTimeout(snackTimer);
+  snackEl.textContent=text||'Something went wrong.';
+  snackEl.classList.add('show');
+  snackTimer=setTimeout(()=>snackEl.classList.remove('show'),4200);
+}
 
 const iconWifi='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 18.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm-4.24-2.12 1.41 1.41A5.95 5.95 0 0 1 12 16.5c1.1 0 2.1.3 2.83.79l1.41-1.41A7.93 7.93 0 0 0 12 14.5c-1.66 0-3.18.51-4.24 1.38zM4.93 12.9l1.41 1.41A9.94 9.94 0 0 1 12 12.5c2.12 0 4.07.66 5.66 1.81l1.41-1.41A11.93 11.93 0 0 0 12 10.5c-2.76 0-5.26.93-7.07 2.4zM1.42 9.4l1.41 1.41C5.55 8.45 8.61 7.5 12 7.5s6.45.95 9.17 3.31l1.41-1.41C19.27 6.52 15.84 5.5 12 5.5S4.73 6.52 1.42 9.4z"/></svg>';
 const iconLock='<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M18 8h-1V6a5 5 0 0 0-10 0v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6a3 3 0 0 1 6 0v2H9V6zm9 14H6V10h12v10z"/></svg>';
@@ -415,8 +447,9 @@ async function loadNetworks(){
     statusEl.textContent='';
   }catch(e){
     listEl.innerHTML='<div class="empty">Could not scan. Tap refresh to try again.</div>';
-    statusEl.className='status err';
-    statusEl.textContent='Scan failed.';
+    statusEl.className='status';
+    statusEl.textContent='';
+    showError('Scan failed.');
   }
 }
 
@@ -438,8 +471,9 @@ async function connect(){
     }
     pollStatus();
   }catch(e){
-    statusEl.className='status err';
-    statusEl.textContent=e.message||'Could not start connection.';
+    statusEl.className='status';
+    statusEl.textContent='';
+    showError(e.message||'Could not start connection.');
     connectBtn.disabled=false;
   }
 }
@@ -459,8 +493,9 @@ async function pollStatus(){
       return;
     }
     if(j.state==='failed'){
-      statusEl.className='status err';
-      statusEl.textContent=j.reason||'Connection failed.';
+      statusEl.className='status';
+      statusEl.textContent='';
+      showError(j.reason||'Connection failed.');
       connectBtn.disabled=false;
       return;
     }

@@ -17,5 +17,6 @@ esp_err_t Route_McpRegister(httpd_handle_t server);
 esp_err_t Route_ScriptRegister(httpd_handle_t server);
 esp_err_t Route_PortalRegister(httpd_handle_t server);
 esp_err_t Route_PortalSendRedirect(httpd_req_t* req);
+esp_err_t Route_ControlRegister(httpd_handle_t server);
 
 #endif

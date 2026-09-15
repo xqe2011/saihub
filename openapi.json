@@ -34,6 +34,27 @@
     }
   ],
   "paths": {
+    "/": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Human control UI (HTML)",
+        "description": "Browser page for humans to control pins and power rails. Agents should use GET /openapi.json and call the JSON APIs instead of scraping this page.",
+        "responses": {
+          "200": {
+            "description": "HTML control page",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/openapi.json": {
       "get": {
         "tags": [

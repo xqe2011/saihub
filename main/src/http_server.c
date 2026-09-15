@@ -606,6 +606,41 @@ esp_err_t HttpServer_Stop(void)
   return ESP_OK;
 }
 
+/* URI matcher for templates like "/pin/<id>/pwm" written with a mid-path '*'.
+ * Stock httpd_uri_match_wildcard only treats a trailing star; a mid-path star is
+ * literal, so those handlers never match and trailing "/pin/" + star (PUT) yields
+ * 405 on GET/POST. Here: mid-path '*' = one non-empty path segment; trailing '*' =
+ * remainder.
+ */
+static bool HttpServer_UriMatch(const char* tpl, const char* uri, size_t match_upto)
+{
+  const char* t = tpl;
+  const char* u = uri;
+  const char* u_end = uri + match_upto;
+
+  while (*t) {
+    if (*t == '*') {
+      t++;
+      if (*t == '\0') {
+        return true;
+      }
+      if (u >= u_end || *u == '/') {
+        return false;
+      }
+      while (u < u_end && *u != '/') {
+        u++;
+      }
+      continue;
+    }
+    if (u >= u_end || *u != *t) {
+      return false;
+    }
+    t++;
+    u++;
+  }
+  return u == u_end;
+}
+
 static esp_err_t HttpServer_StartWithConfig(bool pairing)
 {
   if (server) {
@@ -615,7 +650,7 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
-  config.uri_match_fn = httpd_uri_match_wildcard;
+  config.uri_match_fn = HttpServer_UriMatch;
   config.max_uri_handlers = 48;
   config.lru_purge_enable = true;
   config.recv_wait_timeout = 65;
@@ -628,6 +663,7 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
   if (pairing) {
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PortalRegister(server), "portal routes failed");
   } else {
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ControlRegister(server), "control ui route failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_OpenApiRegister(server), "openapi routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(server), "pin routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(server), "lock routes failed");
