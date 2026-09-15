@@ -25,6 +25,7 @@ extern const uint8_t mcp_json_start[] asm("_binary_mcp_json_start");
 extern const uint8_t mcp_json_end[] asm("_binary_mcp_json_end");
 
 #define MCP_PROTOCOL_VERSION "2025-06-18"
+#define MCP_DEFS_REF_PREFIX "#/$defs/"
 
 static bool Route_McpOriginOk(httpd_req_t* req)
 {
@@ -154,19 +155,36 @@ static cJSON* Route_McpToolResultErr(const char* reason)
   return result;
 }
 
-static bool Route_McpJsonHasRef(const cJSON* node)
+static bool Route_McpCollectDefs(const cJSON* node, const cJSON* allDefs, cJSON* selectedDefs)
 {
-  if (node == NULL) return false;
-  if (cJSON_IsObject(node) && cJSON_GetObjectItemCaseSensitive((cJSON*)node, "$ref") != NULL) {
-    return true;
+  if (node == NULL) return true;
+
+  if (cJSON_IsObject(node)) {
+    const cJSON* ref = cJSON_GetObjectItemCaseSensitive((cJSON*)node, "$ref");
+    if (cJSON_IsString(ref) && ref->valuestring != NULL &&
+        strncmp(ref->valuestring, MCP_DEFS_REF_PREFIX, strlen(MCP_DEFS_REF_PREFIX)) == 0) {
+      const char* name = ref->valuestring + strlen(MCP_DEFS_REF_PREFIX);
+      if (name[0] == '\0' || strchr(name, '/') != NULL) return false;
+      if (cJSON_GetObjectItemCaseSensitive(selectedDefs, name) == NULL) {
+        const cJSON* definition = cJSON_GetObjectItemCaseSensitive((cJSON*)allDefs, name);
+        if (definition == NULL) return false;
+        cJSON* copy = cJSON_Duplicate(definition, 1);
+        if (copy == NULL || !cJSON_AddItemToObject(selectedDefs, name, copy)) {
+          cJSON_Delete(copy);
+          return false;
+        }
+        if (!Route_McpCollectDefs(definition, allDefs, selectedDefs)) return false;
+      }
+    }
   }
+
   if (cJSON_IsObject(node) || cJSON_IsArray(node)) {
     const cJSON* child = NULL;
     cJSON_ArrayForEach(child, node) {
-      if (Route_McpJsonHasRef(child)) return true;
+      if (!Route_McpCollectDefs(child, allDefs, selectedDefs)) return false;
     }
   }
-  return false;
+  return true;
 }
 
 static cJSON* Route_McpToolsListResult(void)
@@ -180,16 +198,30 @@ static cJSON* Route_McpToolsListResult(void)
     return result;
   }
 
-  /* MCP clients treat each tool inputSchema as its own JSON Schema document. */
+  /* Each inputSchema is standalone, so include only definitions reachable from that tool. */
   cJSON* defs = cJSON_DetachItemFromObjectCaseSensitive(result, "$defs");
   cJSON* tools = cJSON_GetObjectItemCaseSensitive(result, "tools");
   if (defs != NULL && cJSON_IsArray(tools)) {
     cJSON* tool = NULL;
     cJSON_ArrayForEach(tool, tools) {
       cJSON* schema = cJSON_GetObjectItemCaseSensitive(tool, "inputSchema");
-      if (!cJSON_IsObject(schema) || !Route_McpJsonHasRef(schema)) continue;
-      cJSON* copy = cJSON_Duplicate(defs, 1);
-      if (copy != NULL) cJSON_AddItemToObject(schema, "$defs", copy);
+      if (!cJSON_IsObject(schema)) continue;
+      cJSON* selectedDefs = cJSON_CreateObject();
+      if (selectedDefs == NULL || !Route_McpCollectDefs(schema, defs, selectedDefs)) {
+        ESP_LOGE(tag, "tool schema definition expansion failed");
+        cJSON_Delete(selectedDefs);
+        cJSON_Delete(defs);
+        cJSON_Delete(result);
+        return NULL;
+      }
+      if (selectedDefs->child == NULL) {
+        cJSON_Delete(selectedDefs);
+      } else if (!cJSON_AddItemToObject(schema, "$defs", selectedDefs)) {
+        cJSON_Delete(selectedDefs);
+        cJSON_Delete(defs);
+        cJSON_Delete(result);
+        return NULL;
+      }
     }
   }
   cJSON_Delete(defs);

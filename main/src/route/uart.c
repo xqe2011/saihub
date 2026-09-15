@@ -64,6 +64,16 @@ static void Route_AddOptionalPin(cJSON* pins, const char* key, int pin)
   }
 }
 
+static bool Route_UartIsEnabled(int id, char* reason, size_t reasonLen)
+{
+  UartCtrl_Config cfg;
+  if (UartCtrl_GetConfig(id, &cfg) != ESP_OK || !cfg.enable) {
+    snprintf(reason, reasonLen, "UART %d is not enabled. POST /uart/%d/config with enable true first.", id, id);
+    return false;
+  }
+  return true;
+}
+
 static cJSON* Route_UartConfigToJson(int id, const UartCtrl_Config* cfg)
 {
   cJSON* item = cJSON_CreateObject();
@@ -285,6 +295,7 @@ static esp_err_t Route_UartPostTransmitHandler(httpd_req_t* req)
   char reason[256];
   int st = HttpServer_LockStatus(req, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
+  if (!Route_UartIsEnabled(id, reason, sizeof(reason))) return HttpServer_SendError(req, 422, reason);
 
   UartCtrl_Config cfg;
   UartCtrl_GetConfig(id, &cfg);
@@ -322,6 +333,7 @@ static esp_err_t Route_UartGetReceiveHandler(httpd_req_t* req)
   char reason[256];
   int st = HttpServer_LockStatus(req, LOCK_KIND_UART, id, LOCK_METHOD_READ, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(req, st, reason);
+  if (!Route_UartIsEnabled(id, reason, sizeof(reason))) return HttpServer_SendError(req, 422, reason);
 
   UartCtrl_Config cfg;
   UartCtrl_GetConfig(id, &cfg);
