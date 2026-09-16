@@ -333,25 +333,21 @@ static ToolCall_Result ToolCall_SetPinPwms(cJSON* args)
   return ToolCall_OkEmpty();
 }
 
-static ToolCall_Result ToolCall_TracePins(cJSON* args)
+ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsOut, size_t* eventCountOut)
 {
+  *eventsOut = NULL;
+  *eventCountOut = 0;
   char reason[256];
   ToolCall_PinSelection sel;
-  if (!ToolCall_ParsePinSelection(args, &sel, reason, sizeof(reason))) {
-    return ToolCall_Err(reason);
-  }
+  if (!ToolCall_ParsePinSelection(args, &sel, reason, sizeof(reason))) return ToolCall_Err(reason);
   GpioCtrl_Edge edge = GPIO_CTRL_EDGE_BOTH;
   cJSON* edgeItem = cJSON_GetObjectItem(args, "edge");
-  if (cJSON_IsString(edgeItem)) {
-    if (!GpioCtrl_EdgeFromString(edgeItem->valuestring, &edge)) {
-      return ToolCall_Err("edge is invalid. Use one of: raising, falling, both.");
-    }
+  if (cJSON_IsString(edgeItem) && !GpioCtrl_EdgeFromString(edgeItem->valuestring, &edge)) {
+    return ToolCall_Err("edge is invalid. Use one of: raising, falling, both.");
   }
   uint64_t duration = TRACE_DEFAULT_DURATION_US;
   cJSON* durationItem = cJSON_GetObjectItem(args, "duration");
-  if (cJSON_IsNumber(durationItem)) {
-    duration = (uint64_t)durationItem->valuedouble;
-  }
+  if (cJSON_IsNumber(durationItem)) duration = (uint64_t)durationItem->valuedouble;
   if (duration < 1 || duration > CONFIG_GPIO_TRACE_MAX_DURATION_US) {
     return ToolCall_Err("duration must be an integer from 1 to 60000000 microseconds (max 60 seconds).");
   }
@@ -361,11 +357,26 @@ static ToolCall_Result ToolCall_TracePins(cJSON* args)
   GpioCtrl_TraceEvent* events = calloc(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(GpioCtrl_TraceEvent));
   if (events == NULL) return ToolCall_Fail(500, "internal");
   size_t eventCount = 0;
-  if (GpioCtrl_Trace(sel.pins, sel.count, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &eventCount, true) !=
-      ESP_OK) {
+  esp_err_t tr = GpioCtrl_Trace(sel.pins, sel.count, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &eventCount, true);
+  if (tr != ESP_OK) {
     free(events);
+    if (tr == GPIO_CTRL_ERR_TRACE_BUSY) {
+      return ToolCall_Fail(409, "One or more pins already have an active trace request.");
+    }
     return ToolCall_Fail(500, "internal");
   }
+  Lock_Touch(lockId);
+  *eventsOut = events;
+  *eventCountOut = eventCount;
+  return ToolCall_Ok(NULL);
+}
+
+static ToolCall_Result ToolCall_TracePins(cJSON* args)
+{
+  GpioCtrl_TraceEvent* events = NULL;
+  size_t eventCount = 0;
+  ToolCall_Result result = ToolCall_TraceCapture(args, &events, &eventCount);
+  if (!result.ok) return result;
   cJSON* root = cJSON_CreateObject();
   cJSON* arr = cJSON_CreateArray();
   for (size_t i = 0; i < eventCount; i++) {
@@ -378,7 +389,6 @@ static ToolCall_Result ToolCall_TracePins(cJSON* args)
   }
   cJSON_AddItemToObject(root, "events", arr);
   free(events);
-  Lock_Touch(lockId);
   return ToolCall_Ok(root);
 }
 

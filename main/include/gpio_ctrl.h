@@ -11,6 +11,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define GPIO_CTRL_ERR_TRACE_BUSY ((esp_err_t)0x7101)
+
 typedef enum {
   GPIO_CTRL_MODE_DISABLE = 0,
   GPIO_CTRL_MODE_DIGITAL_INPUT,

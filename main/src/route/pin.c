@@ -24,6 +24,32 @@ static const char* tag = "SAIHUB-Http";
 
 static const int pinLogicalToHw[] = CONFIG_GPIO_LOGICAL_TO_HW;
 
+static esp_err_t Route_PinSendTraceEvents(httpd_req_t* req, const GpioCtrl_TraceEvent* events, size_t count, bool includePin)
+{
+  HttpServer_SetCors(req);
+  httpd_resp_set_status(req, "200 OK");
+  httpd_resp_set_type(req, "application/json");
+  esp_err_t ret = httpd_resp_send_chunk(req, "{\"events\":[", HTTPD_RESP_USE_STRLEN);
+  char item[128];
+  for (size_t i = 0; ret == ESP_OK && i < count; i++) {
+    int len = includePin
+                  ? snprintf(item, sizeof(item), "%s{\"pin\":%d,\"edge\":\"%s\",\"level\":%d,\"time\":%lld}",
+                             i == 0 ? "" : ",", events[i].pin, events[i].edge, events[i].level,
+                             (long long)events[i].time)
+                  : snprintf(item, sizeof(item), "%s{\"edge\":\"%s\",\"level\":%d,\"time\":%lld}",
+                             i == 0 ? "" : ",", events[i].edge, events[i].level, (long long)events[i].time);
+    if (len < 0 || (size_t)len >= sizeof(item)) {
+      ret = ESP_ERR_INVALID_SIZE;
+      break;
+    }
+    ret = httpd_resp_send_chunk(req, item, (size_t)len);
+  }
+  if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, "]}", 2);
+  esp_err_t endRet = httpd_resp_send_chunk(req, NULL, 0);
+  ESP_LOGI(tag, "Resp %s %s -> 200 trace_events=%u", HttpServer_MethodName(req->method), req->uri, (unsigned)count);
+  return ret == ESP_OK ? endRet : ret;
+}
+
 static void Route_PinLevelWriteDenied(int pin, char* reason, size_t reasonLen)
 {
   snprintf(reason, reasonLen,
@@ -438,22 +464,16 @@ static esp_err_t Route_PinGetTraceHandler(httpd_req_t* req)
   esp_err_t tr = GpioCtrl_Trace(&pin, 1, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &count, false);
   if (tr != ESP_OK) {
     free(events);
+    if (tr == GPIO_CTRL_ERR_TRACE_BUSY) {
+      return HttpServer_SendError(req, 409, "One or more pins already have an active trace request.");
+    }
     return HttpServer_SendError(req, 500, "internal");
   }
 
-  cJSON* root = cJSON_CreateObject();
-  cJSON* arr = cJSON_CreateArray();
-  for (size_t i = 0; i < count; i++) {
-    cJSON* ev = cJSON_CreateObject();
-    cJSON_AddStringToObject(ev, "edge", events[i].edge);
-    cJSON_AddNumberToObject(ev, "level", events[i].level);
-    cJSON_AddNumberToObject(ev, "time", (double)events[i].time);
-    cJSON_AddItemToArray(arr, ev);
-  }
-  cJSON_AddItemToObject(root, "events", arr);
-  free(events);
   Lock_Touch(lockId[0] ? lockId : NULL);
-  return HttpServer_SendJson(req, 200, root);
+  esp_err_t ret = Route_PinSendTraceEvents(req, events, count, false);
+  free(events);
+  return ret;
 }
 
 static esp_err_t Route_PinBatchGetLevelHandler(httpd_req_t* req)
@@ -701,24 +721,18 @@ static esp_err_t Route_PinBatchGetTraceHandler(httpd_req_t* req)
   GpioCtrl_TraceEvent* events = calloc(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(GpioCtrl_TraceEvent));
   if (events == NULL) return HttpServer_SendError(req, 500, "internal");
   size_t eventCount = 0;
-  if (GpioCtrl_Trace(pins, count, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &eventCount, true) != ESP_OK) {
+  esp_err_t tr = GpioCtrl_Trace(pins, count, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &eventCount, true);
+  if (tr != ESP_OK) {
     free(events);
+    if (tr == GPIO_CTRL_ERR_TRACE_BUSY) {
+      return HttpServer_SendError(req, 409, "One or more pins already have an active trace request.");
+    }
     return HttpServer_SendError(req, 500, "internal");
   }
-  cJSON* root = cJSON_CreateObject();
-  cJSON* arr = cJSON_CreateArray();
-  for (size_t i = 0; i < eventCount; i++) {
-    cJSON* ev = cJSON_CreateObject();
-    cJSON_AddNumberToObject(ev, "pin", events[i].pin);
-    cJSON_AddStringToObject(ev, "edge", events[i].edge);
-    cJSON_AddNumberToObject(ev, "level", events[i].level);
-    cJSON_AddNumberToObject(ev, "time", (double)events[i].time);
-    cJSON_AddItemToArray(arr, ev);
-  }
-  cJSON_AddItemToObject(root, "events", arr);
-  free(events);
   Lock_Touch(lockId[0] ? lockId : NULL);
-  return HttpServer_SendJson(req, 200, root);
+  esp_err_t ret = Route_PinSendTraceEvents(req, events, eventCount, true);
+  free(events);
+  return ret;
 }
 
 /* Exact /pin/config before /pin/<pin> so wildcard does not swallow "config". */

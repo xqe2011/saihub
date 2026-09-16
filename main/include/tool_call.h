@@ -6,8 +6,11 @@
 #ifndef TOOL_CALL_H__
 #define TOOL_CALL_H__
 
+#include "gpio_ctrl.h"
+
 #include <cJSON.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 typedef struct {
   bool ok;
@@ -23,5 +26,8 @@ typedef struct {
  * via is logged as the call source (mcp|lua).
  */
 ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args);
+
+/** Capture trace events without constructing a JSON response. Caller frees events on success. */
+ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsOut, size_t* eventCountOut);
 
 #endif

@@ -187,45 +187,76 @@ static bool Route_McpCollectDefs(const cJSON* node, const cJSON* allDefs, cJSON*
   return true;
 }
 
-static cJSON* Route_McpToolsListResult(void)
+static esp_err_t Route_McpSendToolsList(httpd_req_t* req, cJSON* id)
 {
   size_t len = (size_t)(mcp_json_end - mcp_json_start);
-  cJSON* result = cJSON_ParseWithLength((const char*)mcp_json_start, len);
-  if (result == NULL) {
+  cJSON* inventory = cJSON_ParseWithLength((const char*)mcp_json_start, len);
+  if (inventory == NULL) {
     ESP_LOGE(tag, "mcp.json parse failed");
-    result = cJSON_CreateObject();
-    cJSON_AddItemToObject(result, "tools", cJSON_CreateArray());
-    return result;
+    return Route_McpSendJsonRpc(req, 500, Route_McpJsonRpcError(id, -32603, "internal"));
   }
 
-  /* Each inputSchema is standalone, so include only definitions reachable from that tool. */
-  cJSON* defs = cJSON_DetachItemFromObjectCaseSensitive(result, "$defs");
-  cJSON* tools = cJSON_GetObjectItemCaseSensitive(result, "tools");
-  if (defs != NULL && cJSON_IsArray(tools)) {
-    cJSON* tool = NULL;
-    cJSON_ArrayForEach(tool, tools) {
-      cJSON* schema = cJSON_GetObjectItemCaseSensitive(tool, "inputSchema");
-      if (!cJSON_IsObject(schema)) continue;
-      cJSON* selectedDefs = cJSON_CreateObject();
+  cJSON* defs = cJSON_DetachItemFromObjectCaseSensitive(inventory, "$defs");
+  cJSON* tools = cJSON_GetObjectItemCaseSensitive(inventory, "tools");
+  if (!cJSON_IsArray(tools)) {
+    ESP_LOGE(tag, "mcp.json tools missing");
+    cJSON_Delete(defs);
+    cJSON_Delete(inventory);
+    return Route_McpSendJsonRpc(req, 500, Route_McpJsonRpcError(id, -32603, "internal"));
+  }
+
+  HttpServer_SetCors(req);
+  httpd_resp_set_status(req, "200 OK");
+  httpd_resp_set_type(req, "application/json");
+  esp_err_t ret = httpd_resp_send_chunk(req, "{\"jsonrpc\":\"2.0\",\"result\":{\"tools\":[", HTTPD_RESP_USE_STRLEN);
+  bool first = true;
+  cJSON* tool = NULL;
+  cJSON_ArrayForEach(tool, tools) {
+    cJSON* schema = cJSON_GetObjectItemCaseSensitive(tool, "inputSchema");
+    cJSON* selectedDefs = NULL;
+    if (ret == ESP_OK && defs != NULL && cJSON_IsObject(schema)) {
+      selectedDefs = cJSON_CreateObject();
       if (selectedDefs == NULL || !Route_McpCollectDefs(schema, defs, selectedDefs)) {
         ESP_LOGE(tag, "tool schema definition expansion failed");
+        ret = ESP_ERR_NO_MEM;
+      } else if (selectedDefs->child == NULL) {
         cJSON_Delete(selectedDefs);
-        cJSON_Delete(defs);
-        cJSON_Delete(result);
-        return NULL;
-      }
-      if (selectedDefs->child == NULL) {
-        cJSON_Delete(selectedDefs);
+        selectedDefs = NULL;
       } else if (!cJSON_AddItemToObject(schema, "$defs", selectedDefs)) {
         cJSON_Delete(selectedDefs);
-        cJSON_Delete(defs);
-        cJSON_Delete(result);
-        return NULL;
+        selectedDefs = NULL;
+        ret = ESP_ERR_NO_MEM;
       }
     }
+
+    char* printed = ret == ESP_OK ? cJSON_PrintUnformatted(tool) : NULL;
+    if (ret == ESP_OK && printed == NULL) ret = ESP_ERR_NO_MEM;
+    if (ret == ESP_OK && !first) ret = httpd_resp_send_chunk(req, ",", 1);
+    if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, printed, strlen(printed));
+    free(printed);
+
+    if (selectedDefs != NULL) {
+      cJSON* detached = cJSON_DetachItemFromObjectCaseSensitive(schema, "$defs");
+      cJSON_Delete(detached);
+    }
+    if (ret != ESP_OK) break;
+    first = false;
   }
+
+  char* printedId = ret == ESP_OK && id != NULL ? cJSON_PrintUnformatted(id) : NULL;
+  if (ret == ESP_OK && id != NULL && printedId == NULL) ret = ESP_ERR_NO_MEM;
+  if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, "]},\"id\":", HTTPD_RESP_USE_STRLEN);
+  if (ret == ESP_OK) {
+    const char* idText = printedId != NULL ? printedId : "null";
+    ret = httpd_resp_send_chunk(req, idText, strlen(idText));
+  }
+  if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, "}", 1);
+  free(printedId);
   cJSON_Delete(defs);
-  return result;
+  cJSON_Delete(inventory);
+
+  esp_err_t endRet = httpd_resp_send_chunk(req, NULL, 0);
+  return ret == ESP_OK ? endRet : ret;
 }
 
 static void Route_McpScriptRespond(httpd_req_t* req, Script_Status st, Script_Result* sr, void* userCtx)
@@ -367,6 +398,54 @@ static cJSON* Route_McpHandleToolsCall(cJSON* params)
   return out;
 }
 
+static esp_err_t Route_McpDispatchTrace(httpd_req_t* req, cJSON* id, cJSON* params)
+{
+  if (!cJSON_IsObject(params)) {
+    return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("params are required.")));
+  }
+  cJSON* args = cJSON_GetObjectItem(params, "arguments");
+  if (args != NULL && !cJSON_IsObject(args)) {
+    return Route_McpSendJsonRpc(req, 200,
+                                Route_McpJsonRpcResult(id, Route_McpToolResultErr("arguments must be an object.")));
+  }
+  if (args == NULL) args = cJSON_CreateObject();
+  bool ownedArgs = cJSON_GetObjectItem(params, "arguments") == NULL;
+  GpioCtrl_TraceEvent* events = NULL;
+  size_t eventCount = 0;
+  ToolCall_Result result = ToolCall_TraceCapture(args, &events, &eventCount);
+  if (ownedArgs) cJSON_Delete(args);
+  if (!result.ok) {
+    return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr(result.reason)));
+  }
+
+  HttpServer_SetCors(req);
+  httpd_resp_set_status(req, "200 OK");
+  httpd_resp_set_type(req, "application/json");
+  esp_err_t ret = httpd_resp_send_chunk(
+      req, "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"events\\\":[",
+      HTTPD_RESP_USE_STRLEN);
+  char item[160];
+  for (size_t i = 0; ret == ESP_OK && i < eventCount; i++) {
+    int len = snprintf(item, sizeof(item),
+                       "%s{\\\"pin\\\":%d,\\\"edge\\\":\\\"%s\\\",\\\"level\\\":%d,\\\"time\\\":%lld}",
+                       i == 0 ? "" : ",", events[i].pin, events[i].edge, events[i].level, (long long)events[i].time);
+    if (len < 0 || (size_t)len >= sizeof(item)) {
+      ret = ESP_ERR_INVALID_SIZE;
+      break;
+    }
+    ret = httpd_resp_send_chunk(req, item, (size_t)len);
+  }
+  if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, "]}\"}]},\"id\":", HTTPD_RESP_USE_STRLEN);
+  char* printedId = ret == ESP_OK && id != NULL ? cJSON_PrintUnformatted(id) : NULL;
+  if (ret == ESP_OK && id != NULL && printedId == NULL) ret = ESP_ERR_NO_MEM;
+  if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, printedId != NULL ? printedId : "null", HTTPD_RESP_USE_STRLEN);
+  if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, "}", 1);
+  free(printedId);
+  free(events);
+  esp_err_t endRet = httpd_resp_send_chunk(req, NULL, 0);
+  return ret == ESP_OK ? endRet : ret;
+}
+
 static esp_err_t Route_McpDispatchRunScript(httpd_req_t* req, cJSON* id, cJSON* params)
 {
   if (!cJSON_IsObject(params)) {
@@ -435,13 +514,14 @@ static esp_err_t Route_McpDispatch(httpd_req_t* req, cJSON* msg)
     return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, cJSON_CreateObject()));
   }
   if (strcmp(method, "tools/list") == 0) {
-    return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, Route_McpToolsListResult()));
+    return Route_McpSendToolsList(req, id);
   }
   if (strcmp(method, "tools/call") == 0) {
     if (cJSON_IsObject(params)) {
       cJSON* nameItem = cJSON_GetObjectItem(params, "name");
-      if (cJSON_IsString(nameItem) && nameItem->valuestring != NULL && strcmp(nameItem->valuestring, "run_script") == 0) {
-        return Route_McpDispatchRunScript(req, id, params);
+      if (cJSON_IsString(nameItem) && nameItem->valuestring != NULL) {
+        if (strcmp(nameItem->valuestring, "run_script") == 0) return Route_McpDispatchRunScript(req, id, params);
+        if (strcmp(nameItem->valuestring, "trace_pins") == 0) return Route_McpDispatchTrace(req, id, params);
       }
     }
     return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, Route_McpHandleToolsCall(params)));

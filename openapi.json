@@ -616,6 +616,9 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
           "412": {
             "$ref": "#/components/responses/PreconditionFailed"
           },
@@ -935,6 +938,9 @@
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "412": {
             "$ref": "#/components/responses/PreconditionFailed"
@@ -2128,7 +2134,7 @@
         }
       },
       "Conflict": {
-        "description": "POST /lock overlaps an existing lock or peripheral hold; or UART enable conflicts with a held pin",
+        "description": "A request overlaps an existing lock, peripheral hold, or active trace; or resource configuration conflicts with a held pin",
         "content": {
           "application/json": {
             "schema": {

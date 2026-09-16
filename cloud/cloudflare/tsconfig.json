@@ -17,5 +17,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src/**/*.ts", "../../tests/cloud/cloudflare/**/*.ts"]
+  "include": ["src/**/*.ts", "../../tests/cloud/cloudflare/**/*.ts", "../../tests/hardware/**/*.ts"]
 }

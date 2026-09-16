@@ -7,6 +7,7 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "test": "bun test ../../tests/cloud/cloudflare/client.test.ts",
+    "test:hardware": "bun ../../tests/hardware/smoke.ts",
     "fake-device": "bun ../../tests/cloud/cloudflare/fake-device.ts"
   },
   "devDependencies": {

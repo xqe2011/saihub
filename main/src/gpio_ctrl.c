@@ -49,6 +49,11 @@ typedef struct {
 } TraceIsrEvent;
 
 typedef struct {
+  QueueHandle_t queue;
+  GpioCtrl_Edge edge;
+} TraceContext;
+
+typedef struct {
   bool inUse;
   uint32_t frequencyHz;
   uint32_t dutyResolution;
@@ -61,9 +66,8 @@ static bool channelInUse[GPIO_CTRL_LEDC_CHANNEL_COUNT];
 static LedcTimerSlot timers[GPIO_CTRL_LEDC_TIMER_COUNT];
 static bool powerEnable3v3 = false;
 static bool powerEnable5v = false;
-static QueueHandle_t traceQueue;
-static volatile bool traceActive = false;
-static GpioCtrl_Edge traceEdge = GPIO_CTRL_EDGE_BOTH;
+static TraceContext* traceOwners[TOOL_GET_ARRAY_LENGTH(logicalToHw)];
+static portMUX_TYPE traceMux = portMUX_INITIALIZER_UNLOCKED;
 
 bool GpioCtrl_IsValidLogicalPin(int pin)
 {
@@ -262,26 +266,29 @@ static int64_t GpioCtrl_NowUs(void)
 static void IRAM_ATTR GpioCtrl_IsrHandler(void* arg)
 {
   int logicalPin = (int)(intptr_t)arg;
-  if (!traceActive || !GpioCtrl_IsValidLogicalPin(logicalPin)) {
-    return;
-  }
-  int hw = GpioCtrl_Hw(logicalPin);
-  int level = gpio_get_level(hw);
-  bool raising = level != 0;
-  if (traceEdge == GPIO_CTRL_EDGE_RAISING && !raising) return;
-  if (traceEdge == GPIO_CTRL_EDGE_FALLING && raising) return;
+  if (!GpioCtrl_IsValidLogicalPin(logicalPin)) return;
 
-  TraceIsrEvent ev = {
-      .logicalPin = logicalPin,
-      .timeUs = GpioCtrl_NowUs(),
-      .level = level,
-      .raising = raising,
-  };
   BaseType_t hp = pdFALSE;
-  xQueueSendFromISR(traceQueue, &ev, &hp);
-  if (hp) {
-    portYIELD_FROM_ISR();
+  portENTER_CRITICAL_ISR(&traceMux);
+  TraceContext* context = traceOwners[logicalPin];
+  if (context != NULL) {
+    int level = gpio_get_level(GpioCtrl_Hw(logicalPin));
+    bool raising = level != 0;
+    bool accepted = context->edge == GPIO_CTRL_EDGE_BOTH ||
+                    (context->edge == GPIO_CTRL_EDGE_RAISING && raising) ||
+                    (context->edge == GPIO_CTRL_EDGE_FALLING && !raising);
+    if (accepted) {
+      TraceIsrEvent ev = {
+          .logicalPin = logicalPin,
+          .timeUs = GpioCtrl_NowUs(),
+          .level = level,
+          .raising = raising,
+      };
+      xQueueSendFromISR(context->queue, &ev, &hp);
+    }
   }
+  portEXIT_CRITICAL_ISR(&traceMux);
+  if (hp) portYIELD_FROM_ISR();
 }
 
 static esp_err_t GpioCtrl_InitPowerRail(int hwPin, bool* enableOut)
@@ -309,7 +316,7 @@ static esp_err_t GpioCtrl_InitLedcFade(void)
       .duty_resolution = (ledc_timer_bit_t)resolution,
       .timer_num = (ledc_timer_t)0,
       .freq_hz = CONFIG_GPIO_PWM_DEFAULT_FREQ_HZ,
-      .clk_cfg = LEDC_AUTO_CLK,
+      .clk_cfg = LEDC_USE_PLL_DIV_CLK,
       .deconfigure = false,
   };
   TOOL_CHECK_ESP_OK_OR_RETURN(ledc_timer_config(&cfg));
@@ -370,7 +377,7 @@ static esp_err_t GpioCtrl_AcquireTimer(uint32_t frequencyHz, int* timerOut)
           .duty_resolution = (ledc_timer_bit_t)resolution,
           .timer_num = (ledc_timer_t)i,
           .freq_hz = frequencyHz,
-          .clk_cfg = LEDC_AUTO_CLK,
+          .clk_cfg = LEDC_USE_PLL_DIV_CLK,
           .deconfigure = false,
       };
       if (ledc_timer_config(&cfg) != ESP_OK) {
@@ -406,6 +413,30 @@ static void GpioCtrl_ReleaseTimer(int timer)
     timers[timer].frequencyHz = 0;
     timers[timer].dutyResolution = 0;
   }
+}
+
+static esp_err_t GpioCtrl_ReconfigureExclusiveTimer(int timer, uint32_t frequencyHz)
+{
+  if (timer < 0 || timer >= GPIO_CTRL_LEDC_TIMER_COUNT || !timers[timer].inUse || timers[timer].refCount != 1) {
+    return ESP_ERR_INVALID_STATE;
+  }
+
+  uint32_t resolution = GpioCtrl_PwmResolutionBits(frequencyHz);
+  if (resolution == 0) return ESP_ERR_NOT_SUPPORTED;
+
+  ledc_timer_config_t cfg = {
+      .speed_mode = GPIO_CTRL_LEDC_SPEED,
+      .duty_resolution = (ledc_timer_bit_t)resolution,
+      .timer_num = (ledc_timer_t)timer,
+      .freq_hz = frequencyHz,
+      .clk_cfg = LEDC_USE_PLL_DIV_CLK,
+      .deconfigure = false,
+  };
+  if (ledc_timer_config(&cfg) != ESP_OK) return ESP_ERR_NOT_SUPPORTED;
+
+  timers[timer].frequencyHz = frequencyHz;
+  timers[timer].dutyResolution = resolution;
+  return ESP_OK;
 }
 
 static uint32_t GpioCtrl_DutyToTicks(double dutyPercent, uint32_t resolutionBits)
@@ -499,16 +530,20 @@ static esp_err_t GpioCtrl_ApplyPwm(int logicalPin, uint32_t frequencyHz, double 
 
   if (timers[p->ledcTimer].frequencyHz != frequencyHz) {
     int oldTimer = p->ledcTimer;
-    int newTimer = -1;
-    esp_err_t terr = GpioCtrl_AcquireTimer(frequencyHz, &newTimer);
-    if (terr != ESP_OK) return terr;
-    terr = ledc_bind_channel_timer(GPIO_CTRL_LEDC_SPEED, (ledc_channel_t)p->ledcChannel, (ledc_timer_t)newTimer);
-    if (terr != ESP_OK) {
-      GpioCtrl_ReleaseTimer(newTimer);
-      return terr;
+    if (timers[oldTimer].refCount == 1) {
+      TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_ReconfigureExclusiveTimer(oldTimer, frequencyHz));
+    } else {
+      int newTimer = -1;
+      esp_err_t terr = GpioCtrl_AcquireTimer(frequencyHz, &newTimer);
+      if (terr != ESP_OK) return terr;
+      terr = ledc_bind_channel_timer(GPIO_CTRL_LEDC_SPEED, (ledc_channel_t)p->ledcChannel, (ledc_timer_t)newTimer);
+      if (terr != ESP_OK) {
+        GpioCtrl_ReleaseTimer(newTimer);
+        return terr;
+      }
+      GpioCtrl_ReleaseTimer(oldTimer);
+      p->ledcTimer = newTimer;
     }
-    GpioCtrl_ReleaseTimer(oldTimer);
-    p->ledcTimer = newTimer;
   }
 
   TOOL_CHECK_ESP_OK_OR_RETURN(ledc_set_duty_and_update(GPIO_CTRL_LEDC_SPEED, (ledc_channel_t)p->ledcChannel,
@@ -523,6 +558,7 @@ esp_err_t GpioCtrl_Init(void)
   memset(pins, 0, sizeof(pins));
   memset(channelInUse, 0, sizeof(channelInUse));
   memset(timers, 0, sizeof(timers));
+  memset(traceOwners, 0, sizeof(traceOwners));
   for (int i = 0; i < GpioCtrl_GetLogicalCount(); i++) {
     pins[i].mode = GPIO_CTRL_MODE_DISABLE;
     pins[i].ledcChannel = -1;
@@ -530,9 +566,6 @@ esp_err_t GpioCtrl_Init(void)
     pins[i].pwmFrequencyHz = (double)CONFIG_GPIO_PWM_DEFAULT_FREQ_HZ;
     pins[i].pwmDutyPercent = 0.0;
   }
-
-  traceQueue = xQueueCreate(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(TraceIsrEvent));
-  TOOL_CHECK_OR_LOG_RETURN(traceQueue == NULL, "trace queue create failed");
 
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_install_isr_service(0));
   TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_InitLedcFade());
@@ -706,6 +739,31 @@ static esp_err_t GpioCtrl_DisableTraceInterrupt(int logicalPin)
   return ESP_OK;
 }
 
+static esp_err_t GpioCtrl_ClaimTracePins(const int* logicalPins, size_t pinCount, TraceContext* context)
+{
+  portENTER_CRITICAL(&traceMux);
+  for (size_t i = 0; i < pinCount; i++) {
+    if (traceOwners[logicalPins[i]] != NULL) {
+      portEXIT_CRITICAL(&traceMux);
+      return GPIO_CTRL_ERR_TRACE_BUSY;
+    }
+  }
+  for (size_t i = 0; i < pinCount; i++) {
+    traceOwners[logicalPins[i]] = context;
+  }
+  portEXIT_CRITICAL(&traceMux);
+  return ESP_OK;
+}
+
+static void GpioCtrl_ReleaseTracePins(const int* logicalPins, size_t pinCount, TraceContext* context)
+{
+  portENTER_CRITICAL(&traceMux);
+  for (size_t i = 0; i < pinCount; i++) {
+    if (traceOwners[logicalPins[i]] == context) traceOwners[logicalPins[i]] = NULL;
+  }
+  portEXIT_CRITICAL(&traceMux);
+}
+
 esp_err_t GpioCtrl_Trace(const int* logicalPins, size_t pinCount, GpioCtrl_Edge edge, uint64_t durationUs,
                          GpioCtrl_TraceEvent* eventsOut, size_t maxEvents, size_t* eventCountOut, bool includePin)
 {
@@ -715,47 +773,51 @@ esp_err_t GpioCtrl_Trace(const int* logicalPins, size_t pinCount, GpioCtrl_Edge 
   if (durationUs == 0 || durationUs > CONFIG_GPIO_TRACE_MAX_DURATION_US) {
     return ESP_ERR_INVALID_ARG;
   }
-
-  xQueueReset(traceQueue);
-  traceEdge = edge;
-  traceActive = true;
-
   for (size_t i = 0; i < pinCount; i++) {
-    if (!GpioCtrl_IsValidLogicalPin(logicalPins[i])) {
-      traceActive = false;
-      return ESP_ERR_INVALID_ARG;
+    if (!GpioCtrl_IsValidLogicalPin(logicalPins[i])) return ESP_ERR_INVALID_ARG;
+    for (size_t j = 0; j < i; j++) {
+      if (logicalPins[j] == logicalPins[i]) return ESP_ERR_INVALID_ARG;
     }
-    if (GpioCtrl_EnableTraceInterrupt(logicalPins[i], edge) != ESP_OK) {
-      traceActive = false;
-      return ESP_FAIL;
-    }
+  }
+
+  TraceContext context = {
+      .queue = xQueueCreate(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(TraceIsrEvent)),
+      .edge = edge,
+  };
+  if (context.queue == NULL) return ESP_ERR_NO_MEM;
+
+  esp_err_t result = GpioCtrl_ClaimTracePins(logicalPins, pinCount, &context);
+  if (result != ESP_OK) {
+    vQueueDelete(context.queue);
+    return result;
+  }
+
+  size_t enabledCount = 0;
+  size_t count = 0;
+  for (; enabledCount < pinCount; enabledCount++) {
+    result = GpioCtrl_EnableTraceInterrupt(logicalPins[enabledCount], edge);
+    if (result != ESP_OK) goto cleanup;
   }
 
   int64_t endUs = esp_timer_get_time() + (int64_t)durationUs;
-  size_t count = 0;
   while (esp_timer_get_time() < endUs) {
     TraceIsrEvent ev;
     TickType_t wait = pdMS_TO_TICKS(20);
-    if (xQueueReceive(traceQueue, &ev, wait) == pdTRUE) {
-      if (count < maxEvents) {
-        eventsOut[count].pin = includePin ? ev.logicalPin : -1;
-        eventsOut[count].edge = ev.raising ? "raising" : "falling";
-        eventsOut[count].level = ev.level;
-        eventsOut[count].time = ev.timeUs;
-        count++;
-      }
+    if (xQueueReceive(context.queue, &ev, wait) == pdTRUE && count < maxEvents) {
+      eventsOut[count].pin = includePin ? ev.logicalPin : -1;
+      eventsOut[count].edge = ev.raising ? "raising" : "falling";
+      eventsOut[count].level = ev.level;
+      eventsOut[count].time = ev.timeUs;
+      count++;
     }
   }
 
-  traceActive = false;
-  for (size_t i = 0; i < pinCount; i++) {
+cleanup:
+  for (size_t i = 0; i < enabledCount; i++) {
     GpioCtrl_DisableTraceInterrupt(logicalPins[i]);
   }
-  /* Drain leftover */
-  TraceIsrEvent dump;
-  while (xQueueReceive(traceQueue, &dump, 0) == pdTRUE) {
-  }
-
+  GpioCtrl_ReleaseTracePins(logicalPins, pinCount, &context);
+  vQueueDelete(context.queue);
   *eventCountOut = count;
-  return ESP_OK;
+  return result;
 }

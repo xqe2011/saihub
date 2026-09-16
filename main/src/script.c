@@ -49,7 +49,7 @@ typedef struct {
   size_t usedBytes; /* allocated payload+hdr total for OOM diagnostics */
 } Script_Arena;
 
-static uint8_t scriptLuaHeap[CONFIG_SCRIPT_LUA_HEAP_BYTES];
+static uint8_t* scriptLuaHeap = NULL;
 static Script_Arena scriptArena;
 
 static StackType_t scriptTaskStack[CONFIG_SCRIPT_STACK_BYTES / sizeof(StackType_t)];
@@ -68,17 +68,27 @@ static char scriptDefaultLockId[SCRIPT_LOCK_ID_MAX];
 static char scriptOutput[CONFIG_SCRIPT_MAX_OUTPUT_BYTES];
 static size_t scriptOutputLen = 0;
 
-static void Script_ArenaReset(void)
+static bool Script_ArenaAcquire(void)
 {
+  scriptLuaHeap = malloc(CONFIG_SCRIPT_LUA_HEAP_BYTES);
+  if (scriptLuaHeap == NULL) return false;
   scriptArena.base = scriptLuaHeap;
   scriptArena.capacity = CONFIG_SCRIPT_LUA_HEAP_BYTES;
   scriptArena.usedBytes = 0;
-  memset(scriptLuaHeap, 0, sizeof(scriptLuaHeap));
+  memset(scriptLuaHeap, 0, CONFIG_SCRIPT_LUA_HEAP_BYTES);
   Script_Block* first = (Script_Block*)scriptArena.base;
   first->size = scriptArena.capacity - sizeof(Script_Block);
   first->free = 1;
   first->next = NULL;
   scriptArena.freeList = first;
+  return true;
+}
+
+static void Script_ArenaRelease(void)
+{
+  free(scriptLuaHeap);
+  scriptLuaHeap = NULL;
+  memset(&scriptArena, 0, sizeof(scriptArena));
 }
 
 static void Script_ArenaCoalesce(void)
@@ -680,7 +690,12 @@ static void Script_ExecuteJob(Script_Job* job)
     return;
   }
 
-  Script_ArenaReset();
+  if (!Script_ArenaAcquire()) {
+    snprintf(out->reason, sizeof(out->reason), "Script memory is temporarily unavailable.");
+    job->status = SCRIPT_ERR_RUNTIME;
+    out->httpStatus = 503;
+    return;
+  }
   scriptAbort = SCRIPT_ABORT_NONE;
   scriptCalls = 0;
   scriptMaxCalls = maxCalls;
@@ -766,6 +781,7 @@ static void Script_TaskMain(void* arg)
       continue;
     }
     Script_ExecuteJob(job);
+    Script_ArenaRelease();
     xSemaphoreGive(job->done);
   }
 }
@@ -787,7 +803,6 @@ esp_err_t Script_Init(void)
     ESP_LOGE(tag, "script task create failed");
     return ESP_FAIL;
   }
-  Script_ArenaReset();
   ESP_LOGI(tag, "script runner ready heap=%u stack=%u", (unsigned)CONFIG_SCRIPT_LUA_HEAP_BYTES,
            (unsigned)CONFIG_SCRIPT_STACK_BYTES);
   return ESP_OK;
