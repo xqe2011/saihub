@@ -1,0 +1,338 @@
+import { DEFAULT_AUTH_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS, parseTimeoutMs, type Env } from "./env.ts";
+import { base64UrlToBytes, bytesToBase64Url, randomChallenge, verifyDeviceAuth } from "./crypto.ts";
+import { jsonError, MAX_BODY_BYTES, MAX_PATH_LEN, parseDeviceMessage, selectForwardHeaders, type AuthRequestMessage, type AuthResultMessage, type RequestMessage } from "./protocol.ts";
+
+type PendingRequest = {
+  resolve: (response: Response) => void;
+  timer: ReturnType<typeof setTimeout>;
+};
+
+type SocketState = {
+  authenticated: boolean;
+  challenge: Uint8Array | null;
+};
+
+type SocketAttachment = {
+  digest: string;
+  authenticated: boolean;
+  challenge?: string;
+};
+
+export class Device implements DurableObject {
+  readonly #ctx: DurableObjectState;
+  readonly #env: Env;
+  readonly #pending = new Map<string, PendingRequest>();
+  #seq = 0;
+  #socket: WebSocket | null = null;
+  #socketState: SocketState | null = null;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    this.#ctx = ctx;
+    this.#env = env;
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    this.#restoreSocket();
+    const url = new URL(request.url);
+
+    if (url.pathname === "/websocket") {
+      const digest = url.searchParams.get("digest") ?? "";
+      return this.#handleWebSocket(request, digest);
+    }
+    if (url.pathname === "/proxy") {
+      return this.#handleProxy(request);
+    }
+    return jsonError(404, "not found");
+  }
+
+  async alarm(): Promise<void> {
+    this.#restoreSocket();
+    if (this.#socket && this.#socketState && !this.#socketState.authenticated) {
+      await this.#failAuth(this.#socket, "authentication timeout");
+      return;
+    }
+    await this.#clearAuthAlarm();
+  }
+
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    this.#restoreSocket();
+    if (ws !== this.#socket) {
+      try {
+        ws.close(1008, "stale connection");
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    if (typeof message !== "string") {
+      await this.#failAuth(ws, "expected text frame");
+      return;
+    }
+
+    const parsed = parseDeviceMessage(message);
+    if (!parsed) {
+      if (!this.#socketState?.authenticated) {
+        await this.#failAuth(ws, "malformed auth response");
+      }
+      return;
+    }
+
+    if (parsed.type === "authResponse") {
+      await this.#handleAuthResponse(ws, parsed);
+      return;
+    }
+
+    if (!this.#socketState?.authenticated) {
+      await this.#failAuth(ws, "not authenticated");
+      return;
+    }
+
+    const pending = this.#pending.get(parsed.requestId);
+    if (!pending) {
+      return;
+    }
+
+    const bodyBytes = base64UrlToBytes(parsed.body);
+    if (!bodyBytes || bodyBytes.byteLength > MAX_BODY_BYTES) {
+      this.#completePending(parsed.requestId, jsonError(502, "invalid device response body"));
+      return;
+    }
+
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(parsed.headers)) {
+      try {
+        headers.set(name, value);
+      } catch {
+        this.#completePending(parsed.requestId, jsonError(502, "invalid device response headers"));
+        return;
+      }
+    }
+
+    this.#completePending(parsed.requestId, new Response(bodyBytes, { status: parsed.status, headers }));
+  }
+
+  async webSocketClose(ws: WebSocket): Promise<void> {
+    if (this.#socket !== null && ws !== this.#socket) {
+      return;
+    }
+    if (this.#socket === null) {
+      this.#restoreSocket();
+    }
+    if (ws !== this.#socket) {
+      return;
+    }
+    await this.#clearAuthAlarm();
+    await this.#clearSocket();
+    this.#rejectAllPending("device offline");
+  }
+
+  async webSocketError(ws: WebSocket): Promise<void> {
+    await this.webSocketClose(ws);
+  }
+
+  #restoreSocket(): void {
+    if (this.#socket) {
+      return;
+    }
+    const sockets = this.#ctx.getWebSockets();
+    if (sockets.length === 0) {
+      return;
+    }
+    const socket = sockets[sockets.length - 1]!;
+    const attachment = socket.deserializeAttachment() as SocketAttachment | null;
+    this.#socket = socket;
+    this.#socketState = {
+      authenticated: attachment?.authenticated === true,
+      challenge: attachment?.challenge ? base64UrlToBytes(attachment.challenge) : null,
+    };
+  }
+
+  #handleWebSocket(request: Request, digest: string): Response {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return jsonError(426, "websocket upgrade required");
+    }
+    this.#restoreSocket();
+    if (this.#socket !== null) {
+      return jsonError(409, "device already connected");
+    }
+
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    this.#ctx.acceptWebSocket(server);
+
+    const challenge = randomChallenge();
+    const challengeB64 = bytesToBase64Url(challenge);
+    const authTimeout = parseTimeoutMs(this.#env.AUTH_TIMEOUT_MS, DEFAULT_AUTH_TIMEOUT_MS);
+    server.serializeAttachment({ digest, authenticated: false, challenge: challengeB64 } satisfies SocketAttachment);
+    void this.#setAuthAlarm(Date.now() + authTimeout);
+
+    this.#socket = server;
+    this.#socketState = { authenticated: false, challenge };
+
+    const authRequest: AuthRequestMessage = { type: "authRequest", challenge: challengeB64 };
+    server.send(JSON.stringify(authRequest));
+
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async #handleAuthResponse(
+    ws: WebSocket,
+    message: {
+      devicePublicKey: string;
+      devicePublicKeyDigest: string;
+      version: string;
+      response: string;
+    },
+  ): Promise<void> {
+    const state = this.#socketState;
+    if (!state || ws !== this.#socket) {
+      return;
+    }
+    if (state.authenticated) {
+      return;
+    }
+
+    const attachment = ws.deserializeAttachment() as SocketAttachment | null;
+    const expectedDigest = attachment?.digest ?? "";
+    if (!expectedDigest) {
+      await this.#failAuth(ws, "missing digest");
+      return;
+    }
+
+    if (!state.challenge) {
+      state.challenge = attachment?.challenge ? base64UrlToBytes(attachment.challenge) : null;
+    }
+    if (!state.challenge) {
+      await this.#failAuth(ws, "missing challenge");
+      return;
+    }
+
+    const verified = await verifyDeviceAuth({
+      publicKeyB64: message.devicePublicKey,
+      signatureB64: message.response,
+      challenge: state.challenge,
+      expectedDigest,
+      claimedDigest: message.devicePublicKeyDigest,
+    });
+
+    if (!verified.ok) {
+      await this.#failAuth(ws, verified.reason);
+      return;
+    }
+
+    state.challenge = null;
+    state.authenticated = true;
+    ws.serializeAttachment({ digest: expectedDigest, authenticated: true } satisfies SocketAttachment);
+    await this.#clearAuthAlarm();
+
+    const result: AuthResultMessage = { type: "authResult", success: true };
+    ws.send(JSON.stringify(result));
+  }
+
+  async #handleProxy(request: Request): Promise<Response> {
+    if (!this.#socket || !this.#socketState?.authenticated) {
+      return jsonError(503, "device offline");
+    }
+
+    const url = new URL(request.url);
+    const path = url.searchParams.get("path") ?? "/";
+    if (path.length === 0 || path.length > MAX_PATH_LEN || !path.startsWith("/")) {
+      return jsonError(400, "invalid path");
+    }
+
+    const body = new Uint8Array(await request.arrayBuffer());
+    if (body.byteLength > MAX_BODY_BYTES) {
+      return jsonError(413, "body too large");
+    }
+
+    const requestId = this.#nextRequestId();
+    const message: RequestMessage = {
+      type: "request",
+      requestId,
+      method: request.method,
+      path,
+      headers: selectForwardHeaders(request),
+      body: bytesToBase64Url(body),
+    };
+
+    const timeoutMs = parseTimeoutMs(this.#env.REQUEST_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS);
+
+    try {
+      this.#socket.send(JSON.stringify(message));
+    } catch {
+      return jsonError(503, "device offline");
+    }
+
+    // In-flight fetch keeps the DO awake, so setTimeout is sufficient here.
+    return new Promise<Response>((resolve) => {
+      const timer = setTimeout(() => {
+        this.#pending.delete(requestId);
+        resolve(jsonError(504, "device timeout"));
+      }, timeoutMs);
+      this.#pending.set(requestId, { resolve, timer });
+    });
+  }
+
+  #nextRequestId(): string {
+    this.#seq = (this.#seq + 1) >>> 0;
+    const random = crypto.getRandomValues(new Uint8Array(8));
+    return `${this.#seq.toString(16)}-${bytesToBase64Url(random)}`;
+  }
+
+  async #failAuth(ws: WebSocket, reason: string): Promise<void> {
+    if (ws !== this.#socket) {
+      try {
+        ws.close(1008, reason);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    const result: AuthResultMessage = { type: "authResult", success: false, reason };
+    try {
+      ws.send(JSON.stringify(result));
+    } catch {
+      // ignore
+    }
+    try {
+      ws.close(1008, reason);
+    } catch {
+      // ignore
+    }
+    await this.#clearAuthAlarm();
+    await this.#clearSocket();
+  }
+
+  async #clearSocket(): Promise<void> {
+    this.#socket = null;
+    this.#socketState = null;
+  }
+
+  #completePending(requestId: string, response: Response): void {
+    const pending = this.#pending.get(requestId);
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending.timer);
+    this.#pending.delete(requestId);
+    pending.resolve(response);
+  }
+
+  #rejectAllPending(reason: string): void {
+    for (const [id, pending] of this.#pending) {
+      clearTimeout(pending.timer);
+      pending.resolve(jsonError(503, reason));
+      this.#pending.delete(id);
+    }
+  }
+
+  async #setAuthAlarm(deadline: number): Promise<void> {
+    await this.#ctx.storage.setAlarm(Math.max(deadline, Date.now()));
+  }
+
+  async #clearAuthAlarm(): Promise<void> {
+    await this.#ctx.storage.deleteAlarm();
+  }
+}
