@@ -71,6 +71,9 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
+# Local fake device identity (private key)
+tests/cloud/cloudflare/.fake-device-key.json
+
 # User-specific configuration files
 *.user
 *.workspace # General workspace files, can be from various tools

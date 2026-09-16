@@ -21,4 +21,5 @@
     "AUTH_TIMEOUT_MS": "10000",
     "REQUEST_TIMEOUT_MS": "55000"
   }
+  // ROUTING_TOKEN_SECRET: set via `wrangler secret put ROUTING_TOKEN_SECRET`
 }

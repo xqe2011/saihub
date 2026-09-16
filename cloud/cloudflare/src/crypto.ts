@@ -140,6 +140,60 @@ export function rsaModulusBitsFromSpki(spki: Uint8Array): number | null {
   return modulusBytes * 8;
 }
 
+export type RoutingTokenPayload = {
+  devicePublicKeyDigest: string;
+  grantSecret: string;
+};
+
+const GCM_IV_BYTES = 12;
+const TEXT_ENCODER = new TextEncoder();
+const TEXT_DECODER = new TextDecoder();
+
+async function routingAesKey(secret: string): Promise<CryptoKey> {
+  const digest = await crypto.subtle.digest("SHA-256", TEXT_ENCODER.encode(secret));
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+export async function sealRoutingToken(secret: string, payload: RoutingTokenPayload): Promise<string> {
+  const key = await routingAesKey(secret);
+  const iv = crypto.getRandomValues(new Uint8Array(GCM_IV_BYTES));
+  const plaintext = TEXT_ENCODER.encode(JSON.stringify(payload));
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext));
+  const packed = new Uint8Array(iv.length + ciphertext.length);
+  packed.set(iv, 0);
+  packed.set(ciphertext, iv.length);
+  return bytesToBase64Url(packed);
+}
+
+export async function openRoutingToken(secret: string, token: string): Promise<RoutingTokenPayload | null> {
+  const packed = base64UrlToBytes(token);
+  if (!packed || packed.length <= GCM_IV_BYTES) {
+    return null;
+  }
+  const iv = packed.subarray(0, GCM_IV_BYTES);
+  const ciphertext = packed.subarray(GCM_IV_BYTES);
+  try {
+    const key = await routingAesKey(secret);
+    const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+    const parsed = JSON.parse(TEXT_DECODER.decode(plaintext)) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+    const record = parsed as Record<string, unknown>;
+    const devicePublicKeyDigest = record.devicePublicKeyDigest;
+    const grantSecret = record.grantSecret;
+    if (typeof devicePublicKeyDigest !== "string" || typeof grantSecret !== "string") {
+      return null;
+    }
+    if (!/^[0-9a-f]{64}$/.test(devicePublicKeyDigest) || grantSecret.length === 0) {
+      return null;
+    }
+    return { devicePublicKeyDigest, grantSecret };
+  } catch {
+    return null;
+  }
+}
+
 export async function verifyDeviceAuth(args: {
   publicKeyB64: string;
   signatureB64: string;

@@ -1,11 +1,16 @@
+import { openRoutingToken } from "./crypto.ts";
 import { Device } from "./device.ts";
 import type { Env } from "./env.ts";
+import { handleOauthRedirectPage, handleProtectedResourceMetadata, handleRegister, handleToken, handleWellKnown, unauthorized } from "./oauth.ts";
+import { handlePairingSession, handlePairingToken } from "./pairing.ts";
 import { isDigest, jsonError } from "./protocol.ts";
+import { proxyToDevice } from "./proxy.ts";
 
 export { Device };
 
 const DEVICE_WS_RE = /^\/cloud\/device\/([0-9a-fA-F]{64})$/;
 const DEVICE_HTTP_RE = /^\/device\/([0-9a-fA-F]{64})(\/.*)?$/;
+const PROTECTED_RESOURCE_RE = /^\/\.well-known\/oauth-protected-resource(?:\/.*)?$/;
 
 function normalizeDigest(value: string): string {
   return value.toLowerCase();
@@ -15,6 +20,28 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const pathname = url.pathname;
+
+    if (pathname === "/.well-known/oauth-authorization-server") {
+      return handleWellKnown(request);
+    }
+    if (PROTECTED_RESOURCE_RE.test(pathname)) {
+      return handleProtectedResourceMetadata(request, pathname);
+    }
+    if (pathname === "/register") {
+      return handleRegister(request);
+    }
+    if (pathname === "/token") {
+      return handleToken(request, env);
+    }
+    if (pathname === "/cloud/oauth/redirect") {
+      return handleOauthRedirectPage(request);
+    }
+    if (pathname === "/cloud/pairing/session") {
+      return handlePairingSession(request, env);
+    }
+    if (pathname === "/cloud/pairing/token") {
+      return handlePairingToken(request, env);
+    }
 
     const wsMatch = DEVICE_WS_RE.exec(pathname);
     if (wsMatch) {
@@ -59,18 +86,40 @@ async function handleDeviceHttp(
     return jsonError(400, "invalid digest");
   }
 
-  const path = `${suffixPath === "" ? "/" : suffixPath}${search}`;
-  const id = env.DEVICE.idFromName(digest);
-  const stub = env.DEVICE.get(id);
-  const forwardUrl = new URL("https://device/proxy");
-  forwardUrl.searchParams.set("path", path);
+  const auth = await requireRoutingToken(request, env, digest);
+  if (auth) {
+    return auth;
+  }
 
-  const headers = new Headers(request.headers);
-  return stub.fetch(
-    new Request(forwardUrl, {
-      method: request.method,
-      headers,
-      body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
-    }),
-  );
+  const path = `${suffixPath === "" ? "/" : suffixPath}${search}`;
+  const headers: Record<string, string> = {};
+  for (const name of ["content-type", "accept", "x-lock-id"] as const) {
+    const value = request.headers.get(name);
+    if (value !== null) {
+      headers[name] = value;
+    }
+  }
+
+  const body =
+    request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
+  return proxyToDevice(env, digest, request.method, path, body, headers);
+}
+
+async function requireRoutingToken(request: Request, env: Env, digest: string): Promise<Response | null> {
+  if (!env.ROUTING_TOKEN_SECRET) {
+    return jsonError(500, "routing token secret not configured");
+  }
+  const header = request.headers.get("authorization");
+  if (!header || !header.toLowerCase().startsWith("bearer ")) {
+    return unauthorized(request);
+  }
+  const token = header.slice("bearer ".length).trim();
+  if (!token) {
+    return unauthorized(request);
+  }
+  const payload = await openRoutingToken(env.ROUTING_TOKEN_SECRET, token);
+  if (!payload || payload.devicePublicKeyDigest !== digest) {
+    return unauthorized(request);
+  }
+  return null;
 }

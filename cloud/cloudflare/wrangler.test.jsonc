@@ -19,6 +19,7 @@
   ],
   "vars": {
     "AUTH_TIMEOUT_MS": "2000",
-    "REQUEST_TIMEOUT_MS": "2000"
+    "REQUEST_TIMEOUT_MS": "2000",
+    "ROUTING_TOKEN_SECRET": "local-dev-routing-token-secret"
   }
 }

@@ -2,6 +2,7 @@ export interface Env {
   DEVICE: DurableObjectNamespace;
   AUTH_TIMEOUT_MS: string;
   REQUEST_TIMEOUT_MS: string;
+  ROUTING_TOKEN_SECRET: string;
 }
 
 export const DEFAULT_AUTH_TIMEOUT_MS = 10_000;

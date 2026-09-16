@@ -92,7 +92,7 @@ export class Device implements DurableObject {
       return;
     }
 
-    const bodyBytes = base64UrlToBytes(parsed.body);
+    const bodyBytes = parsed.body.length === 0 ? new Uint8Array(0) : base64UrlToBytes(parsed.body);
     if (!bodyBytes || bodyBytes.byteLength > MAX_BODY_BYTES) {
       this.#completePending(parsed.requestId, jsonError(502, "invalid device response body"));
       return;
