@@ -17,12 +17,31 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 static const char* tag = "SAIHUB-Http";
 
 #define TRACE_DEFAULT_DURATION_US 1000000ULL
 
 static const int pinLogicalToHw[] = CONFIG_GPIO_LOGICAL_TO_HW;
+static esp_err_t Route_PinSendTraceEvents(httpd_req_t* req, const GpioCtrl_TraceEvent* events, size_t count, bool includePin);
+
+typedef struct { httpd_req_t* req; int* pins; size_t pinCount; GpioCtrl_Edge edge; uint64_t duration; bool includePin; char lockId[64]; } PinTraceJob;
+static void Route_PinTraceTask(void* arg) {
+  PinTraceJob* j = arg; GpioCtrl_TraceEvent* ev = calloc(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(*ev)); size_t n=0;
+  esp_err_t r = ev ? GpioCtrl_Trace(j->pins,j->pinCount,j->edge,j->duration,ev,CONFIG_GPIO_TRACE_MAX_EVENTS,&n,j->includePin) : ESP_ERR_NO_MEM;
+  if (r == ESP_OK) { Lock_Touch(j->lockId[0] ? j->lockId : NULL); Route_PinSendTraceEvents(j->req,ev,n,j->includePin); }
+  else if (r == GPIO_CTRL_ERR_TRACE_BUSY) HttpServer_SendError(j->req,409,"One or more pins already have an active trace request.");
+  else HttpServer_SendError(j->req,500,"internal");
+  free(ev); free(j->pins); httpd_req_async_handler_complete(j->req); free(j); vTaskDelete(NULL);
+}
+static esp_err_t Route_PinStartTrace(httpd_req_t* req,const int* pins,size_t count,GpioCtrl_Edge edge,uint64_t duration,bool includePin,const char* lockId) {
+  PinTraceJob* j=calloc(1,sizeof(*j)); if(!j) return HttpServer_SendError(req,500,"internal");
+  j->pins=malloc(count*sizeof(int)); if(!j->pins){free(j);return HttpServer_SendError(req,500,"internal");} memcpy(j->pins,pins,count*sizeof(int)); j->pinCount=count;j->edge=edge;j->duration=duration;j->includePin=includePin; snprintf(j->lockId,sizeof(j->lockId),"%s",lockId?lockId:"");
+  if(httpd_req_async_handler_begin(req,&j->req)!=ESP_OK){free(j->pins);free(j);return HttpServer_SendError(req,500,"internal");}
+  if(xTaskCreate(Route_PinTraceTask,"pin_trace",4096,j,5,NULL)!=pdPASS){ HttpServer_SendError(j->req,500,"internal"); httpd_req_async_handler_complete(j->req); free(j->pins); free(j); return ESP_OK; } return ESP_OK;
+}
 
 static esp_err_t Route_PinSendTraceEvents(httpd_req_t* req, const GpioCtrl_TraceEvent* events, size_t count, bool includePin)
 {
@@ -458,22 +477,7 @@ static esp_err_t Route_PinGetTraceHandler(httpd_req_t* req)
     return HttpServer_SendError(req, 400, "duration must be an integer from 1 to 60000000 microseconds (max 60 seconds).");
   }
 
-  GpioCtrl_TraceEvent* events = calloc(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(GpioCtrl_TraceEvent));
-  if (events == NULL) return HttpServer_SendError(req, 500, "internal");
-  size_t count = 0;
-  esp_err_t tr = GpioCtrl_Trace(&pin, 1, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &count, false);
-  if (tr != ESP_OK) {
-    free(events);
-    if (tr == GPIO_CTRL_ERR_TRACE_BUSY) {
-      return HttpServer_SendError(req, 409, "One or more pins already have an active trace request.");
-    }
-    return HttpServer_SendError(req, 500, "internal");
-  }
-
-  Lock_Touch(lockId[0] ? lockId : NULL);
-  esp_err_t ret = Route_PinSendTraceEvents(req, events, count, false);
-  free(events);
-  return ret;
+  return Route_PinStartTrace(req, &pin, 1, edge, duration, false, lockId);
 }
 
 static esp_err_t Route_PinBatchGetLevelHandler(httpd_req_t* req)
@@ -718,21 +722,7 @@ static esp_err_t Route_PinBatchGetTraceHandler(httpd_req_t* req)
     if (st) return HttpServer_SendError(req, st, reason);
   }
 
-  GpioCtrl_TraceEvent* events = calloc(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(GpioCtrl_TraceEvent));
-  if (events == NULL) return HttpServer_SendError(req, 500, "internal");
-  size_t eventCount = 0;
-  esp_err_t tr = GpioCtrl_Trace(pins, count, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &eventCount, true);
-  if (tr != ESP_OK) {
-    free(events);
-    if (tr == GPIO_CTRL_ERR_TRACE_BUSY) {
-      return HttpServer_SendError(req, 409, "One or more pins already have an active trace request.");
-    }
-    return HttpServer_SendError(req, 500, "internal");
-  }
-  Lock_Touch(lockId[0] ? lockId : NULL);
-  esp_err_t ret = Route_PinSendTraceEvents(req, events, eventCount, true);
-  free(events);
-  return ret;
+  return Route_PinStartTrace(req, pins, count, edge, duration, true, lockId);
 }
 
 /* Exact /pin/config before /pin/<pin> so wildcard does not swallow "config". */

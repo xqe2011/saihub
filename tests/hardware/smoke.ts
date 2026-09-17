@@ -534,6 +534,8 @@ async function testPwmResourcesAndTraceRaces(): Promise<void> {
   log("PWM resource sharing, frequency churn, trace saturation, and overlapping traces");
   const resourcePins = [0, 1, 2, 3, 4, 5, 6];
   try {
+    // Start from a known allocation state; earlier sections may leave PWM timers/channels active.
+    for (const pin of resourcePins) await configureRestPin(pin, "disable");
     const channelPins = [0, 1, 2, 3, 4, 5];
     for (const pin of channelPins) {
       await configureRestPin(pin, "pwmOutput");
@@ -581,10 +583,16 @@ async function testPwmResourcesAndTraceRaces(): Promise<void> {
 }
 
 async function testOverlappingTraceRace(): Promise<void> {
-  log("overlapping trace race isolation");
+  log("concurrent trace isolation");
   await configureRestPin(OUTPUT_A, "pwmOutput");
   await requestJson<void>("POST", `/pin/${OUTPUT_A}/pwm`, { frequency: 1000, duty: 50 }, 204);
   await configureRestPin(OUTPUT_B, "digitalInput");
+  const disjoint = await Promise.all([
+    rawRequest("GET", `/pin/${OUTPUT_A}/trace?edge=both&duration=100000`),
+    rawRequest("GET", `/pin/${OUTPUT_B}/trace?edge=both&duration=100000`),
+  ]);
+  assert(disjoint.every((result) => result.status === 200),
+    `Disjoint traces returned ${disjoint.map((result) => result.status).join(", ")}, expected 200/200`);
   const overlapSettled = await Promise.allSettled([
     rawRequest("GET", `/pin/${OUTPUT_B}/trace?edge=raising&duration=100000`),
     rawRequest("GET", `/pin/${OUTPUT_B}/trace?edge=falling&duration=100000`),
