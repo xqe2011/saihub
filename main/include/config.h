@@ -26,10 +26,11 @@
 #define CONFIG_GPIO_PULSE_MAX_WIDTH_US (1ULL * 1000 * 1000)
 #define CONFIG_GPIO_PWM_MAX_FREQ_HZ 50000U
 #define CONFIG_GPIO_PWM_DEFAULT_FREQ_HZ 1000U
-#define CONFIG_GPIO_LOGICAL_TO_HW {10, 1, 2, 3, 4, 5, 6, 7}
+#define CONFIG_GPIO_LOGICAL_TO_HW {10, 1, 0, 23, 4, 5, 6, 24}
 #define CONFIG_BUTTON_PIN 28
 #define CONFIG_GPIO_POWER_3V3_PIN 8
 #define CONFIG_GPIO_POWER_5V_PIN 9
+#define CONFIG_BUZZER_PIN 12
 
 /* Product UART id -> hardware UART port number (controller 0 reserved for console). */
 #define CONFIG_UART_ID_TO_NUM {1}

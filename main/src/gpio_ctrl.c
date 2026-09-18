@@ -294,6 +294,7 @@ static void IRAM_ATTR GpioCtrl_IsrHandler(void* arg)
 static esp_err_t GpioCtrl_InitPowerRail(int hwPin, bool* enableOut)
 {
   gpio_reset_pin(hwPin);
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(hwPin, 0));
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_output_enable(hwPin));
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_pull_mode(hwPin, GPIO_FLOATING));
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(hwPin, 0));
