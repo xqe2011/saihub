@@ -1,0 +1,1 @@
+(fp_lib_table (version 7) (lib (name "Saihub") (type "KiCad") (uri "${KIPRJMOD}/libraries/Saihub.pretty") (options "") (descr "Project-local footprints")))

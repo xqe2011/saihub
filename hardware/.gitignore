@@ -1,0 +1,10 @@
+# Local KiCad state and caches
+.DS_Store
+__pycache__/
+*.kicad_prl
+~*.lck
+.history/
+*-backups/
+
+# Regenerable images; human review is committed as docs/pcb.pdf.
+/agent/previews/

@@ -1,0 +1,15 @@
+{
+  "name": "SAIHub-Mini",
+  "revision": "A",
+  "version": "2026-09-18",
+  "author": "GPT6-Astra",
+  "co_author": "xqe2011",
+  "board_mm": [
+    48.0,
+    28.0
+  ],
+  "status": "routed-cad-validated",
+  "drc_violations": 0,
+  "schematic_parity_issues": 0,
+  "unconnected_items": 0
+}

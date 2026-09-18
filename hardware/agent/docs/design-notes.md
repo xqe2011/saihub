@@ -1,0 +1,56 @@
+# SAIHub-Mini Rev A design review
+
+Version: 2026-09-18. Author: GPT6-Astra. Co-author: xqe2011.
+Version updates require explicit user permission; record each approved change in `../../docs/version-log.md`.
+
+## Requirements and mechanical envelope
+
+The board uses a regulated 5 V / 3 A source, nominal 1 A limits on each of the two external power channels, SGM6232 DC/DC, and USB-C beside the 12-pin right-angle header on the same edge. IO0-IO7 remain logic signals, not 1 A power outputs.
+
+The PCB is **48 × 28 mm**, with all components on top. The front edge is ordered **J2 header, SW1 BOOT, J1 USB-C**, from left to right. Width is set by those three footprints and assembly clearances. Header pins and the switch actuator project beyond the outline.
+
+SW1 is [Panasonic EVQP7A01P](https://industry.panasonic.com/ap/en/products/control/switch/light-touch/number/evqp7a01p), a side-push switch with a 3.5 × 2.9 mm body and 1.35 mm mounting height. The actuator projects beyond the body (3.55 mm overall depth). The project-local `SW_SPST_EVQP7A` footprint matches the manufacturer's straight-terminal land pattern; duplicate pads 1 and 2 retain BOOT-to-GND operation. Rotate 180 degrees so the actuator faces the front edge.
+
+The board has 55 footprints and is routed on both copper layers with filled ground zones.
+
+Two copper layers, 1.6 mm FR-4, nominal 1 oz copper. **All 55 footprints, including all fitted BOM parts and test pads, are on the top face.** The bottom has routed copper and ground fill but no fitted parts; the through-hole connector tails still extend below the PCB. The maximum body height is set by the fitted connector/module combination, not the PCB outline. No mounting holes. Check USB plug and header mating clearance in the final enclosure.
+
+## Power stage
+
+U2 is **SGM6232YPS8G/TR**, a nonsynchronous 1.4 MHz, 2 A buck in SOIC-8 with exposed pad. The [SGMICRO datasheet](https://www.sg-micro.com/rect/assets/9fe04e94-334c-4982-964b-fc08001cd9ac/SGM6232.pdf) defines BS/IN/SW/GND/FB/COMP/EN/SS as pins 1-8, with the exposed pad grounded. EN is intentionally open for automatic startup. C15 = 100 nF provides soft start. R18 = 10 ohms and C14 = 10 nF form the bootstrap network. R15 = 33 kΩ and R16 = 10.5 kΩ set nominal output to `0.8 × (1 + 33/10.5) = 3.314 V`. C16 = 5.6 nF and R17 = 10 kΩ form the series compensation branch to ground.
+
+The switching stage uses a **4.7 µH SRP5030TA-4R7M**, SS34 catch diode, 22 µF input ceramic C2, 100 nF local input bypass C3, and 47 µF output ceramic C4. C2/C4 use 1210 footprints; procure X7R, ≥10 V parts and check capacitance under DC bias. Nominal capacitance is not effective capacitance. Qualify loop stability and transient response with the exact selected capacitors; the vendor reference values do not establish board-level stability. C6 adds 10 µF at the ESP supply.
+
+The [Bourns drawing](https://bourns.com/docs/product-datasheets/SRP5030TA.pdf), downloaded 2026-09-17, gives 4.6 A Irms and 6 A Isat for -4R7M, with 5.7 × 5.2 × 2.8 mm nominal body. The local footprint follows its 6.5 mm land span, 2.5 mm gap and 1.8 mm pad width. SGM6232's local footprint follows the manufacturer land recommendation: 1.91 × 0.61 mm leads, 1.27 mm pitch, 5.56 mm row spacing and 2.413 × 3.302 mm exposed pad. Four reduced paste apertures cover approximately 49% of the EP. Three 0.6/0.3 mm ground vias connect the regulator exposed pad to the bottom ground copper; the module ground pad has four. Ground vias also connect the input/output capacitors and catch diode. Review exposed-pad via tenting/plugging with the assembler.
+
+SGMICRO currently lists SGM6232 as [not recommended for new designs](https://www.sg-micro.com/product/SGM6232). It is retained as requested; verify supply availability for production.
+
+## Channel limits and input budget
+
+Both TPS2553DBVR switches retain active-high enables and 100 kΩ pulldowns. **R7/R8 = 26.1 kΩ, 1%**. Using the [TI datasheet equations](https://www.ti.com/lit/ds/symlink/tps2553.pdf), with R in kΩ and current in mA:
+
+- Nominal: `23950 / 26.1^0.977 = 989 mA`.
+- Lower bound including resistor tolerance: `25230 / (26.1 × 1.01)^1.016 = 908 mA`.
+- Upper bound including resistor tolerance: `22980 / (26.1 × 0.99)^0.94 = 1081 mA`.
+
+This is a **nominal 1 A protection setting**, not a guaranteed 1 A continuous output and not a hard 1.000 A maximum. Units may enter current limit below 1 A. Qualify rated continuous loading below the lowest measured/guaranteed threshold, accounting for temperature. FAULT outputs remain available at TP5/TP6. There is no controlled output discharge.
+
+F1 is a 3 A, 1206 Littelfuse 0467003.NR fuse. The fuse is fault protection, not a precise 3 A limiter. Supply and cable must be rated for 5 V / 3 A. USB-C still has separate 5.1 kΩ CC pulldowns and has no PD negotiation or source-current detection. External loads must remain disabled on unqualified PC USB supplies; the board cannot identify available source current.
+
+Illustrative budget at the 1.081 A upper channel limits: reserve 0.6 A for ESP peak demand and 0.11 A for the buzzer. Buck demand is then 1.791 A, below its nominal 2 A rating. At 4.75 V and an assumed 80% conversion efficiency, total input is approximately `1.081 + 3.314 × 1.791 / (4.75 × 0.80) = 2.64 A`, before small control losses. These reservations and efficiency are design assumptions, not measured performance.
+
+SGM6232 specifies 4.5 V minimum input and 80% maximum duty cycle. Cable/fuse losses can therefore still compromise 3.3 V at high load. Aim for **at least 4.75 V at U2 IN under load** and verify the actual dropout margin, startup and heat. The SMF5.0A TVS is not a sustained overvoltage disconnect. Input ceramic capacitance still requires hot-plug/inrush verification.
+
+## Interfaces and assembly details
+
+The DOIT ESPC5-32E-H4 module, its exact pinout, USB4105-GF-A connector, Würth 61301211021 header, GPIO mapping, reset pads and buzzer circuit remain. An external dual-band U.FL antenna is required. GPIOs are 3.3 V only. Neither switched output may be back-powered.
+
+BZ1 is **KELIKING KLJ-5020**. The [manufacturer specification v3.1](https://datasheet.lcsc.com/datasheet/pdf/5a334e56ebfeea427b46ed3bd7f9e2de.pdf?productCode=C556937) specifies a 5 × 5 × 2 mm body, 3.3 V rated drive, 2-4 V operating range, and ≤110 mA mean current at **4 kHz / 50% duty**. Its page-6 recommended top-view lands have 6.3 × 4.52 mm total span and 2.4 × 1.72 mm gaps: three 1.95 × 1.4 mm pads. Positive is upper-left, negative upper-right; the third, lower-left land is mechanical and unconnected. Do not substitute an arbitrary 5020 without checking its footprint and polarity. D3 remains SS14 flyback protection and Q1 is AO3400A; do not drive the coil directly from GPIO.
+
+Native USB retains the series resistors and USBLC6-2SC6. Its long run uses adjacent 0.2 mm bottom-layer traces on 0.4 mm center spacing, left of the buck stage; the connector and ESD escapes complete the connection. These are not impedance-qualified traces. Validate full-speed enumeration, flashing and traffic in both plug orientations. The additional 1.0 mm bottom VBUS link connects the two connector power-pad groups using 0.8/0.4 mm vias and a short 0.45 mm pad escape.
+
+## Validation and fabrication
+
+See `../validation/erc.rpt`, `../validation/drc.rpt`, `../validation/routing-drc.json` and `../validation/routing-summary.json`: zero ERC violations, zero DRC violations, zero unconnected items and zero schematic parity findings. No fabrication exports have been produced for this baseline. Manufacturing export runs ERC and PCB DRC with schematic parity before generating Gerbers. The power class retains 0.6 mm routing widths, with a 0.8 mm output trunk and short connector neck-downs. Clearance rules remain 0.15 mm minimum signal, 0.2 mm power netclass and 0.25 mm copper-to-edge. No individual DRC exclusions are used.
+
+CAD checks do not establish thermal, electrical, RF or USB compliance. No Rev A board has been fabricated or bench tested. Complete `prototype-test.md` before accepting production current ratings. Top-side assembly, EP paste/vias, connector pin protrusion and pick-and-place rotation conventions require assembler review. No fabrication or component order has been placed.
