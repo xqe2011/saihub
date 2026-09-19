@@ -1,6 +1,7 @@
 #include "main.h"
 
 #include "button.h"
+#include "cloud.h"
 #include "gpio_ctrl.h"
 #include "http_server.h"
 #include "lock.h"
@@ -20,6 +21,7 @@ void app_main(void)
 {
   bool someModuleFailed = false;
   MAIN_LOAD_MODULE(Nvs_Init(), "Nvs");
+  MAIN_LOAD_MODULE(Cloud_Init(), "Cloud");
   MAIN_LOAD_MODULE(GpioCtrl_Init(), "Gpio");
   MAIN_LOAD_MODULE(Lock_Init(), "Lock");
   MAIN_LOAD_MODULE(UartCtrl_Init(), "Uart");
