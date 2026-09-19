@@ -1,4 +1,6 @@
-export const DIGEST_RE = /^[0-9a-f]{64}$/;
+export const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+/** Base58Check digest length range for SHA-256(publicKey)[0..19] + 4-byte checksum. */
+export const DIGEST_RE = /^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,33}$/;
 
 export const MAX_VERSION_LEN = 64;
 export const MAX_HEADER_NAME_LEN = 64;
@@ -6,11 +8,13 @@ export const MAX_HEADER_VALUE_LEN = 512;
 export const MAX_HEADERS = 16;
 export const MAX_PATH_LEN = 1024;
 export const MAX_BODY_BYTES = 64 * 1024;
-export const MAX_PUBLIC_KEY_BYTES = 1024;
-export const MAX_SIGNATURE_BYTES = 512;
+export const PUBLIC_KEY_BYTES = 65;
+export const SIGNATURE_BYTES = 64;
 export const CHALLENGE_BYTES = 32;
-export const RSA_MODULUS_BITS = 3072;
-export const PSS_SALT_LENGTH = 32;
+export const DIGEST_PAYLOAD_BYTES = 20;
+export const DIGEST_CHECKSUM_BYTES = 4;
+/** Domain separation prefix including trailing NUL: UTF8("saihub/cloud-auth/v1") || 0x00 */
+export const AUTH_DOMAIN_PREFIX = "saihub/cloud-auth/v1\0";
 
 export const FORWARDED_HEADERS = ["content-type", "accept", "x-lock-id"] as const;
 

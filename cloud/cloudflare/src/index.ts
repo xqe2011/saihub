@@ -8,13 +8,9 @@ import { proxyToDevice } from "./proxy.ts";
 
 export { Device };
 
-const DEVICE_WS_RE = /^\/cloud\/device\/([0-9a-fA-F]{64})$/;
-const DEVICE_HTTP_RE = /^\/device\/([0-9a-fA-F]{64})(\/.*)?$/;
+const DEVICE_WS_RE = /^\/cloud\/device\/([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,33})$/;
+const DEVICE_HTTP_RE = /^\/device\/([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,33})(\/.*)?$/;
 const PROTECTED_RESOURCE_RE = /^\/\.well-known\/oauth-protected-resource(?:\/.*)?$/;
-
-function normalizeDigest(value: string): string {
-  return value.toLowerCase();
-}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -45,12 +41,12 @@ export default {
 
     const wsMatch = DEVICE_WS_RE.exec(pathname);
     if (wsMatch) {
-      return handleDeviceWebSocket(request, env, normalizeDigest(wsMatch[1]!));
+      return handleDeviceWebSocket(request, env, wsMatch[1]!);
     }
 
     const httpMatch = DEVICE_HTTP_RE.exec(pathname);
     if (httpMatch) {
-      return handleDeviceHttp(request, env, normalizeDigest(httpMatch[1]!), httpMatch[2] ?? "/", url.search);
+      return handleDeviceHttp(request, env, httpMatch[1]!, httpMatch[2] ?? "/", url.search);
     }
 
     return jsonError(404, "not found");

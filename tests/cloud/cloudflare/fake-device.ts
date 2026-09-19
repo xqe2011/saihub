@@ -3,12 +3,14 @@
  * Usage: bun tests/cloud/cloudflare/fake-device.ts [cloudBaseUrl]
  * Identity is persisted in tests/cloud/cloudflare/.fake-device-key.json so the digest stays stable.
  */
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { authSignedMessage, publicKeyDigest } from "../../../cloud/cloudflare/src/crypto.ts";
+import { PUBLIC_KEY_BYTES, SIGNATURE_BYTES } from "../../../cloud/cloudflare/src/protocol.ts";
 
 const CLOUD = (process.argv[2] ?? "http://127.0.0.1:8787").replace(/\/$/, "");
-const PSS_SALT_LENGTH = 32;
 const KEY_PATH = join(import.meta.dir, ".fake-device-key.json");
+const IDENTITY_VERSION = 2;
 
 function bytesToBase64Url(bytes: ArrayBuffer | Uint8Array): string {
   const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -28,20 +30,6 @@ function base64UrlToBytes(value: string): Uint8Array {
     out[i] = binary.charCodeAt(i);
   }
   return out;
-}
-
-function bytesToHex(bytes: ArrayBuffer | Uint8Array): string {
-  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  let out = "";
-  for (let i = 0; i < view.length; i += 1) {
-    out += view[i]!.toString(16).padStart(2, "0");
-  }
-  return out;
-}
-
-async function sha256Hex(bytes: ArrayBuffer | Uint8Array): Promise<string> {
-  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  return bytesToHex(await crypto.subtle.digest("SHA-256", view));
 }
 
 function reply(
@@ -169,54 +157,71 @@ function handleMcp(ws: WebSocket, requestId: string, method: string, rawBody: st
   });
 }
 
+type SavedIdentity = {
+  version: number;
+  privateKey: JsonWebKey;
+  publicKey: JsonWebKey;
+};
+
 async function loadOrCreateIdentity(): Promise<{
   privateKey: CryptoKey;
-  publicKeySpki: Uint8Array;
+  publicKeyRaw: Uint8Array;
   digest: string;
   publicKeyB64: string;
 }> {
   if (existsSync(KEY_PATH)) {
-    const saved = JSON.parse(readFileSync(KEY_PATH, "utf8")) as { privateKey: JsonWebKey; publicKey: JsonWebKey };
-    const privateKey = await crypto.subtle.importKey(
-      "jwk",
-      saved.privateKey,
-      { name: "RSA-PSS", hash: "SHA-256" },
-      true,
-      ["sign"],
-    );
-    const publicKey = await crypto.subtle.importKey(
-      "jwk",
-      saved.publicKey,
-      { name: "RSA-PSS", hash: "SHA-256" },
-      true,
-      ["verify"],
-    );
-    const spki = new Uint8Array(await crypto.subtle.exportKey("spki", publicKey));
-    const digest = await sha256Hex(spki);
-    return { privateKey, publicKeySpki: spki, digest, publicKeyB64: bytesToBase64Url(spki) };
+    try {
+      const saved = JSON.parse(readFileSync(KEY_PATH, "utf8")) as SavedIdentity;
+      if (saved.version === IDENTITY_VERSION && saved.privateKey?.crv === "P-256") {
+        const privateKey = await crypto.subtle.importKey(
+          "jwk",
+          saved.privateKey,
+          { name: "ECDSA", namedCurve: "P-256" },
+          true,
+          ["sign"],
+        );
+        const publicKey = await crypto.subtle.importKey(
+          "jwk",
+          saved.publicKey,
+          { name: "ECDSA", namedCurve: "P-256" },
+          true,
+          ["verify"],
+        );
+        const raw = new Uint8Array((await crypto.subtle.exportKey("raw", publicKey)) as ArrayBuffer);
+        if (raw.length === PUBLIC_KEY_BYTES && raw[0] === 0x04) {
+          const digest = await publicKeyDigest(raw);
+          if (digest !== null) {
+            return { privateKey, publicKeyRaw: raw, digest, publicKeyB64: bytesToBase64Url(raw) };
+          }
+        }
+      }
+    } catch {
+      // fall through and regenerate
+    }
+    unlinkSync(KEY_PATH);
   }
 
-  const keyPair = (await crypto.subtle.generateKey(
-    {
-      name: "RSA-PSS",
-      modulusLength: 3072,
-      publicExponent: new Uint8Array([1, 0, 1]),
-      hash: "SHA-256",
-    },
-    true,
-    ["sign", "verify"],
-  )) as CryptoKeyPair;
+  const keyPair = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+    "sign",
+    "verify",
+  ])) as CryptoKeyPair;
   const privateJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
   const publicJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
   mkdirSync(dirname(KEY_PATH), { recursive: true });
-  writeFileSync(KEY_PATH, JSON.stringify({ privateKey: privateJwk, publicKey: publicJwk }, null, 2));
-  const spki = new Uint8Array(await crypto.subtle.exportKey("spki", keyPair.publicKey));
-  const digest = await sha256Hex(spki);
+  writeFileSync(
+    KEY_PATH,
+    JSON.stringify({ version: IDENTITY_VERSION, privateKey: privateJwk, publicKey: publicJwk }, null, 2),
+  );
+  const raw = new Uint8Array((await crypto.subtle.exportKey("raw", keyPair.publicKey)) as ArrayBuffer);
+  const digest = await publicKeyDigest(raw);
+  if (digest === null || raw.length !== PUBLIC_KEY_BYTES) {
+    throw new Error("failed to create ECDSA fake-device identity");
+  }
   return {
     privateKey: keyPair.privateKey,
-    publicKeySpki: spki,
+    publicKeyRaw: raw,
     digest,
-    publicKeyB64: bytesToBase64Url(spki),
+    publicKeyB64: bytesToBase64Url(raw),
   };
 }
 
@@ -227,7 +232,9 @@ async function main(): Promise<void> {
   const wsUrl = CLOUD.replace(/^http/, "ws") + `/cloud/device/${digest}`;
   console.log(`digest: ${digest}`);
   console.log(`mcp: ${CLOUD}/device/${digest}/mcp`);
-  console.log(`pairing: ${CLOUD}/cloud/oauth/redirect?devicePublicKeyDigest=${digest}&redirect_uri=${encodeURIComponent("http://127.0.0.1:9999/cb")}&state=test`);
+  console.log(
+    `pairing: ${CLOUD}/cloud/oauth/redirect?devicePublicKeyDigest=${digest}&redirect_uri=${encodeURIComponent("http://127.0.0.1:9999/cb")}&state=test`,
+  );
   console.log(`connecting ${wsUrl}`);
 
   const connect = (): void => {
@@ -249,17 +256,22 @@ async function main(): Promise<void> {
       }
 
       if (msg.type === "authRequest" && typeof msg.challenge === "string") {
+        const challenge = base64UrlToBytes(msg.challenge);
         const signature = await crypto.subtle.sign(
-          { name: "RSA-PSS", saltLength: PSS_SALT_LENGTH },
+          { name: "ECDSA", hash: "SHA-256" },
           privateKey,
-          base64UrlToBytes(msg.challenge),
+          authSignedMessage(challenge),
         );
+        if (signature.byteLength !== SIGNATURE_BYTES) {
+          console.error(`unexpected signature length ${signature.byteLength}`);
+          return;
+        }
         ws.send(
           JSON.stringify({
             type: "authResponse",
             devicePublicKey: publicKeyB64,
             devicePublicKeyDigest: digest,
-            version: "fake-device-1",
+            version: "fake-device-2",
             response: bytesToBase64Url(signature),
           }),
         );

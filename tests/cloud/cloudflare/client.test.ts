@@ -1,12 +1,23 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, type Subprocess } from "bun";
 import { join } from "node:path";
+import { authSignedMessage, publicKeyDigest } from "../../../cloud/cloudflare/src/crypto.ts";
+import { PUBLIC_KEY_BYTES, SIGNATURE_BYTES } from "../../../cloud/cloudflare/src/protocol.ts";
 
 const PACKAGE_DIR = join(import.meta.dir, "../../../cloud/cloudflare");
-const PSS_SALT_LENGTH = 32;
 const BASE_PORT = 8787 + Math.floor(Math.random() * 1000);
 const ROUTING_TOKEN_SECRET = "local-dev-routing-token-secret";
 const ACCESS_TOKEN_EXPIRES_IN = 315_360_000;
+
+/** Stable placeholder digests for offline/oauth path tests (Base58Check of SHA-256(label)[0..19]). */
+const PLACEHOLDER = {
+  a: "KUCzSr49wPWckUDouJLybJuRYtVpMajPX",
+  b: "6fZuj9x4tozLd6CAQ7AhTLd9RYXHqq42x",
+  c: "5Ep2vW3TjZVpdvmFFvw3XrEAALpNvLNAN",
+  d: "3FTZKk18itEyDpnPvCcUFTYsQ74pm1MFy",
+  e: "6ndQCSYG2zEb281o2AEhr2g2ssidiANCr",
+  zero: "9kD1gZjgzuP8KuQw8fKTm9hoNuqKvtq3b",
+} as const;
 
 type AuthRequestMessage = {
   type: "authRequest";
@@ -48,20 +59,6 @@ function base64UrlToBytes(value: string): Uint8Array {
     out[i] = binary.charCodeAt(i);
   }
   return out;
-}
-
-function bytesToHex(bytes: ArrayBuffer | Uint8Array): string {
-  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  let out = "";
-  for (let i = 0; i < view.length; i += 1) {
-    out += view[i]!.toString(16).padStart(2, "0");
-  }
-  return out;
-}
-
-async function sha256Hex(bytes: ArrayBuffer | Uint8Array): Promise<string> {
-  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  return bytesToHex(await crypto.subtle.digest("SHA-256", view));
 }
 
 async function sealRoutingToken(
@@ -112,38 +109,37 @@ async function bearerFor(digest: string, grantSecret = "grant-secret"): Promise<
 
 async function generateDeviceIdentity(): Promise<{
   privateKey: CryptoKey;
-  publicKeySpki: Uint8Array;
+  publicKeyRaw: Uint8Array;
   digest: string;
   publicKeyB64: string;
 }> {
-  const keyPair = (await crypto.subtle.generateKey(
-    {
-      name: "RSA-PSS",
-      modulusLength: 3072,
-      publicExponent: new Uint8Array([1, 0, 1]),
-      hash: "SHA-256",
-    },
-    true,
-    ["sign", "verify"],
-  )) as CryptoKeyPair;
-  const spkiBuf = await crypto.subtle.exportKey("spki", keyPair.publicKey);
-  const spki = new Uint8Array(spkiBuf as ArrayBuffer);
-  const digest = await sha256Hex(spki);
+  const keyPair = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+    "sign",
+    "verify",
+  ])) as CryptoKeyPair;
+  const raw = new Uint8Array((await crypto.subtle.exportKey("raw", keyPair.publicKey)) as ArrayBuffer);
+  expect(raw.length).toBe(PUBLIC_KEY_BYTES);
+  expect(raw[0]).toBe(0x04);
+  const digest = await publicKeyDigest(raw);
+  if (digest === null) {
+    throw new Error("failed to compute public key digest");
+  }
   return {
     privateKey: keyPair.privateKey,
-    publicKeySpki: spki,
+    publicKeyRaw: raw,
     digest,
-    publicKeyB64: bytesToBase64Url(spki),
+    publicKeyB64: bytesToBase64Url(raw),
   };
 }
 
 async function signChallenge(privateKey: CryptoKey, challengeB64: string): Promise<string> {
   const challenge = base64UrlToBytes(challengeB64);
   const signature = await crypto.subtle.sign(
-    { name: "RSA-PSS", saltLength: PSS_SALT_LENGTH },
+    { name: "ECDSA", hash: "SHA-256" },
     privateKey,
-    challenge,
+    authSignedMessage(challenge),
   );
+  expect(signature.byteLength).toBe(SIGNATURE_BYTES);
   return bytesToBase64Url(signature);
 }
 
@@ -334,7 +330,7 @@ describe("cloudflare device proxy e2e", () => {
   }, 30_000);
 
   test("mcp 401 includes protected resource metadata", async () => {
-    const digest = "d".repeat(64);
+    const digest = PLACEHOLDER.d;
     const res = await fetch(`${baseUrl}/device/${digest}/mcp`, { method: "POST" });
     expect(res.status).toBe(401);
     const www = res.headers.get("www-authenticate") ?? "";
@@ -349,7 +345,7 @@ describe("cloudflare device proxy e2e", () => {
   }, 30_000);
 
   test("oauth redirect accepts digest from resource param", async () => {
-    const digest = "e".repeat(64);
+    const digest = PLACEHOLDER.e;
     const resource = `${baseUrl}/device/${digest}/mcp`;
     const ok = await fetch(
       `${baseUrl}/cloud/oauth/redirect?resource=${encodeURIComponent(resource)}&redirect_uri=${encodeURIComponent("https://client.example/cb")}&state=xyz`,
@@ -362,11 +358,11 @@ describe("cloudflare device proxy e2e", () => {
     const missing = await fetch(`${baseUrl}/cloud/oauth/redirect`);
     expect(missing.status).toBe(400);
 
-    const noRedirect = await fetch(`${baseUrl}/cloud/oauth/redirect?devicePublicKeyDigest=${"a".repeat(64)}`);
+    const noRedirect = await fetch(`${baseUrl}/cloud/oauth/redirect?devicePublicKeyDigest=${PLACEHOLDER.a}`);
     expect(noRedirect.status).toBe(400);
 
     const ok = await fetch(
-      `${baseUrl}/cloud/oauth/redirect?devicePublicKeyDigest=${"a".repeat(64)}&redirect_uri=${encodeURIComponent("https://client.example/cb")}&state=xyz`,
+      `${baseUrl}/cloud/oauth/redirect?devicePublicKeyDigest=${PLACEHOLDER.a}&redirect_uri=${encodeURIComponent("https://client.example/cb")}&state=xyz`,
     );
     expect(ok.status).toBe(200);
     expect(ok.headers.get("content-type") ?? "").toContain("text/html");
@@ -465,7 +461,7 @@ describe("cloudflare device proxy e2e", () => {
   }, 60_000);
 
   test("pairing session returns 503 when device offline", async () => {
-    const digest = "b".repeat(64);
+    const digest = PLACEHOLDER.b;
     const res = await fetch(`${baseUrl}/cloud/pairing/session`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -480,7 +476,7 @@ describe("cloudflare device proxy e2e", () => {
     expect(missing.headers.get("www-authenticate") ?? "").toContain("Bearer");
     expect(((await missing.json()) as { reason: string }).reason).toContain("access token");
 
-    const wrongDigest = await bearerFor("c".repeat(64));
+    const wrongDigest = await bearerFor(PLACEHOLDER.c);
     const mismatch = await fetch(`${baseUrl}/device/${identity.digest}/pin/1`, {
       headers: { authorization: `Bearer ${wrongDigest}` },
     });
@@ -572,65 +568,71 @@ describe("cloudflare device proxy e2e", () => {
 
   test("correlates concurrent out-of-order responses", async () => {
     const ws = await openDeviceSocket(baseUrl, identity.digest);
-    expect((await authenticateDevice(ws, identity)).success).toBe(true);
-    const token = await bearerFor(identity.digest);
+    try {
+      expect((await authenticateDevice(ws, identity)).success).toBe(true);
+      const token = await bearerFor(identity.digest);
 
-    const requests: RequestMessage[] = [];
-    const collect = new Promise<void>((resolve) => {
-      const onMessage = (event: MessageEvent) => {
-        const parsed = JSON.parse(String(event.data)) as DeviceInbound;
-        if (parsed.type !== "request") {
-          return;
-        }
-        requests.push(parsed);
-        if (requests.length === 2) {
-          ws.removeEventListener("message", onMessage);
-          resolve();
-        }
-      };
-      ws.addEventListener("message", onMessage);
-    });
+      const requests: RequestMessage[] = [];
+      const collect = new Promise<void>((resolve) => {
+        const onMessage = (event: MessageEvent) => {
+          const parsed = JSON.parse(String(event.data)) as DeviceInbound;
+          if (parsed.type !== "request") {
+            return;
+          }
+          requests.push(parsed);
+          if (requests.length === 2) {
+            ws.removeEventListener("message", onMessage);
+            resolve();
+          }
+        };
+        ws.addEventListener("message", onMessage);
+      });
 
-    const first = fetch(`${baseUrl}/device/${identity.digest}/first`, {
-      method: "GET",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const second = fetch(`${baseUrl}/device/${identity.digest}/second`, {
-      method: "GET",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    await collect;
+      const first = fetch(`${baseUrl}/device/${identity.digest}/first`, {
+        method: "GET",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const second = fetch(`${baseUrl}/device/${identity.digest}/second`, {
+        method: "GET",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      await collect;
 
-    const [a, b] = requests;
-    expect(a).toBeDefined();
-    expect(b).toBeDefined();
-    expect(a!.requestId).not.toBe(b!.requestId);
+      const byPath = Object.fromEntries(requests.map((r) => [r.path, r]));
+      const firstReq = byPath["/first"];
+      const secondReq = byPath["/second"];
+      expect(firstReq).toBeDefined();
+      expect(secondReq).toBeDefined();
+      expect(firstReq!.requestId).not.toBe(secondReq!.requestId);
 
-    ws.send(
-      JSON.stringify({
-        type: "response",
-        requestId: b!.requestId,
-        status: 201,
-        headers: { "content-type": "text/plain" },
-        body: bytesToBase64Url(new TextEncoder().encode("second")),
-      }),
-    );
-    ws.send(
-      JSON.stringify({
-        type: "response",
-        requestId: a!.requestId,
-        status: 200,
-        headers: { "content-type": "text/plain" },
-        body: bytesToBase64Url(new TextEncoder().encode("first")),
-      }),
-    );
+      ws.send(
+        JSON.stringify({
+          type: "response",
+          requestId: secondReq!.requestId,
+          status: 201,
+          headers: { "content-type": "text/plain" },
+          body: bytesToBase64Url(new TextEncoder().encode("second")),
+        }),
+      );
+      ws.send(
+        JSON.stringify({
+          type: "response",
+          requestId: firstReq!.requestId,
+          status: 200,
+          headers: { "content-type": "text/plain" },
+          body: bytesToBase64Url(new TextEncoder().encode("first")),
+        }),
+      );
 
-    const [firstRes, secondRes] = await Promise.all([first, second]);
-    expect(firstRes.status).toBe(200);
-    expect(await firstRes.text()).toBe("first");
-    expect(secondRes.status).toBe(201);
-    expect(await secondRes.text()).toBe("second");
-    ws.close();
+      const [firstRes, secondRes] = await Promise.all([first, second]);
+      expect(firstRes.status).toBe(200);
+      expect(await firstRes.text()).toBe("first");
+      expect(secondRes.status).toBe(201);
+      expect(await secondRes.text()).toBe("second");
+    } finally {
+      ws.close();
+      await Bun.sleep(300);
+    }
   }, 60_000);
 
   test("rejects duplicate device websocket", async () => {
@@ -671,7 +673,7 @@ describe("cloudflare device proxy e2e", () => {
 
   test("rejects digest mismatch", async () => {
     const ws = await openDeviceSocket(baseUrl, identity.digest);
-    const result = await authenticateDevice(ws, identity, { digest: "0".repeat(64) });
+    const result = await authenticateDevice(ws, identity, { digest: PLACEHOLDER.zero });
     expect(result.success).toBe(false);
     expect(result.reason?.toLowerCase()).toContain("digest");
   }, 60_000);
@@ -679,7 +681,59 @@ describe("cloudflare device proxy e2e", () => {
   test("rejects bad signature", async () => {
     const ws = await openDeviceSocket(baseUrl, identity.digest);
     const result = await authenticateDevice(ws, identity, {
-      response: bytesToBase64Url(crypto.getRandomValues(new Uint8Array(384))),
+      response: bytesToBase64Url(crypto.getRandomValues(new Uint8Array(SIGNATURE_BYTES))),
+    });
+    expect(result.success).toBe(false);
+  }, 60_000);
+
+  test("rejects signature without domain prefix", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    const authRequest = await waitForMessage(ws, (msg): msg is AuthRequestMessage => msg.type === "authRequest");
+    const challenge = base64UrlToBytes(authRequest.challenge);
+    const bare = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, other.privateKey, challenge);
+    ws.send(
+      JSON.stringify({
+        type: "authResponse",
+        devicePublicKey: other.publicKeyB64,
+        devicePublicKeyDigest: other.digest,
+        version: "test-1.0.0",
+        response: bytesToBase64Url(bare),
+      }),
+    );
+    const result = await waitForMessage(ws, (msg): msg is AuthResultMessage => msg.type === "authResult");
+    expect(result.success).toBe(false);
+    ws.close();
+  }, 60_000);
+
+  test("rejects RSA public key material", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    await waitForMessage(ws, (msg): msg is AuthRequestMessage => msg.type === "authRequest");
+    const rsa = (await crypto.subtle.generateKey(
+      { name: "RSA-PSS", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+      true,
+      ["sign", "verify"],
+    )) as CryptoKeyPair;
+    const spki = new Uint8Array((await crypto.subtle.exportKey("spki", rsa.publicKey)) as ArrayBuffer);
+    ws.send(
+      JSON.stringify({
+        type: "authResponse",
+        devicePublicKey: bytesToBase64Url(spki),
+        devicePublicKeyDigest: other.digest,
+        version: "test-1.0.0",
+        response: bytesToBase64Url(crypto.getRandomValues(new Uint8Array(SIGNATURE_BYTES))),
+      }),
+    );
+    const result = await waitForMessage(ws, (msg): msg is AuthResultMessage => msg.type === "authResult");
+    expect(result.success).toBe(false);
+    ws.close();
+  }, 60_000);
+
+  test("rejects wrong signature length", async () => {
+    const ws = await openDeviceSocket(baseUrl, identity.digest);
+    const result = await authenticateDevice(ws, identity, {
+      response: bytesToBase64Url(crypto.getRandomValues(new Uint8Array(48))),
     });
     expect(result.success).toBe(false);
   }, 60_000);
@@ -742,7 +796,7 @@ describe("cloudflare device proxy e2e", () => {
   }, 60_000);
 
   test("offline device returns 503", async () => {
-    const digest = "a".repeat(64);
+    const digest = PLACEHOLDER.a;
     const token = await bearerFor(digest);
     const res = await fetch(`${baseUrl}/device/${digest}/pin/1`, {
       headers: { authorization: `Bearer ${token}` },

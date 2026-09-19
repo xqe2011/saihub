@@ -1,6 +1,18 @@
-import { CHALLENGE_BYTES, MAX_PUBLIC_KEY_BYTES, MAX_SIGNATURE_BYTES, PSS_SALT_LENGTH, RSA_MODULUS_BITS } from "./protocol.ts";
+import {
+  AUTH_DOMAIN_PREFIX,
+  BASE58_ALPHABET,
+  CHALLENGE_BYTES,
+  DIGEST_CHECKSUM_BYTES,
+  DIGEST_PAYLOAD_BYTES,
+  PUBLIC_KEY_BYTES,
+  SIGNATURE_BYTES,
+  isDigest,
+} from "./protocol.ts";
 
 const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
+const TEXT_ENCODER = new TextEncoder();
+const TEXT_DECODER = new TextDecoder();
+const AUTH_DOMAIN_BYTES = TEXT_ENCODER.encode(AUTH_DOMAIN_PREFIX);
 
 export function bytesToBase64Url(bytes: ArrayBuffer | Uint8Array): string {
   const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -38,10 +50,9 @@ export function bytesToHex(bytes: ArrayBuffer | Uint8Array): string {
   return out;
 }
 
-export async function sha256Hex(bytes: ArrayBuffer | Uint8Array): Promise<string> {
+export async function sha256(bytes: ArrayBuffer | Uint8Array): Promise<Uint8Array> {
   const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", view);
-  return bytesToHex(digest);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", view));
 }
 
 export function randomChallenge(): Uint8Array {
@@ -50,94 +61,59 @@ export function randomChallenge(): Uint8Array {
   return challenge;
 }
 
-function readAsn1Length(bytes: Uint8Array, offset: number): { length: number; next: number } | null {
-  if (offset >= bytes.length) {
-    return null;
-  }
-  const first = bytes[offset]!;
-  if (first < 0x80) {
-    return { length: first, next: offset + 1 };
-  }
-  const size = first & 0x7f;
-  if (size === 0 || size > 3 || offset + size >= bytes.length) {
-    return null;
-  }
-  let length = 0;
-  for (let i = 1; i <= size; i += 1) {
-    length = (length << 8) | bytes[offset + i]!;
-  }
-  return { length, next: offset + 1 + size };
+export function authSignedMessage(challenge: Uint8Array): Uint8Array {
+  const out = new Uint8Array(AUTH_DOMAIN_BYTES.length + challenge.length);
+  out.set(AUTH_DOMAIN_BYTES, 0);
+  out.set(challenge, AUTH_DOMAIN_BYTES.length);
+  return out;
 }
 
-function skipAsn1Value(bytes: Uint8Array, offset: number): number | null {
-  if (offset >= bytes.length) {
+/** Base58Check-encode a fixed-length payload (matches firmware Cloud_Base58Check). */
+export async function base58CheckEncode(payload: Uint8Array): Promise<string | null> {
+  if (payload.length !== DIGEST_PAYLOAD_BYTES) {
     return null;
   }
-  const lengthInfo = readAsn1Length(bytes, offset + 1);
-  if (!lengthInfo) {
-    return null;
+  const checksumInput = await sha256(payload);
+  const checksum = await sha256(checksumInput);
+  const encoded = new Uint8Array(DIGEST_PAYLOAD_BYTES + DIGEST_CHECKSUM_BYTES);
+  encoded.set(payload, 0);
+  encoded.set(checksum.subarray(0, DIGEST_CHECKSUM_BYTES), DIGEST_PAYLOAD_BYTES);
+
+  let leadingZeroes = 0;
+  while (leadingZeroes < encoded.length && encoded[leadingZeroes] === 0) {
+    leadingZeroes += 1;
   }
-  const end = lengthInfo.next + lengthInfo.length;
-  if (end > bytes.length) {
-    return null;
+
+  const digits: number[] = [];
+  for (let i = leadingZeroes; i < encoded.length; i += 1) {
+    let carry = encoded[i]!;
+    for (let j = 0; j < digits.length; j += 1) {
+      const value = digits[j]! * 256 + carry;
+      digits[j] = value % 58;
+      carry = (value / 58) | 0;
+    }
+    while (carry > 0) {
+      digits.push(carry % 58);
+      carry = (carry / 58) | 0;
+    }
   }
-  return end;
+
+  let out = "";
+  for (let i = 0; i < leadingZeroes; i += 1) {
+    out += "1";
+  }
+  for (let i = digits.length - 1; i >= 0; i -= 1) {
+    out += BASE58_ALPHABET[digits[i]!]!;
+  }
+  return out;
 }
 
-/** Returns RSA modulus bit length from a DER-encoded SubjectPublicKeyInfo. */
-export function rsaModulusBitsFromSpki(spki: Uint8Array): number | null {
-  if (spki.length < 20 || spki[0] !== 0x30) {
+export async function publicKeyDigest(publicKey: Uint8Array): Promise<string | null> {
+  if (publicKey.length !== PUBLIC_KEY_BYTES || publicKey[0] !== 0x04) {
     return null;
   }
-  const seqLen = readAsn1Length(spki, 1);
-  if (!seqLen) {
-    return null;
-  }
-  let offset = seqLen.next;
-  // AlgorithmIdentifier SEQUENCE
-  if (spki[offset] !== 0x30) {
-    return null;
-  }
-  const afterAlg = skipAsn1Value(spki, offset);
-  if (afterAlg === null || afterAlg >= spki.length || spki[afterAlg] !== 0x03) {
-    return null;
-  }
-  offset = afterAlg;
-  const bitStringLen = readAsn1Length(spki, offset + 1);
-  if (!bitStringLen) {
-    return null;
-  }
-  offset = bitStringLen.next;
-  if (offset >= spki.length) {
-    return null;
-  }
-  // unused bits byte
-  offset += 1;
-  if (offset >= spki.length || spki[offset] !== 0x30) {
-    return null;
-  }
-  const rsaSeqLen = readAsn1Length(spki, offset + 1);
-  if (!rsaSeqLen) {
-    return null;
-  }
-  offset = rsaSeqLen.next;
-  if (offset >= spki.length || spki[offset] !== 0x02) {
-    return null;
-  }
-  const modulusLen = readAsn1Length(spki, offset + 1);
-  if (!modulusLen) {
-    return null;
-  }
-  offset = modulusLen.next;
-  let modulusBytes = modulusLen.length;
-  if (modulusBytes === 0 || offset + modulusBytes > spki.length) {
-    return null;
-  }
-  // Strip leading zero used for positive INTEGER encoding.
-  if (spki[offset] === 0x00) {
-    modulusBytes -= 1;
-  }
-  return modulusBytes * 8;
+  const hash = await sha256(publicKey);
+  return base58CheckEncode(hash.subarray(0, DIGEST_PAYLOAD_BYTES));
 }
 
 export type RoutingTokenPayload = {
@@ -146,8 +122,6 @@ export type RoutingTokenPayload = {
 };
 
 const GCM_IV_BYTES = 12;
-const TEXT_ENCODER = new TextEncoder();
-const TEXT_DECODER = new TextDecoder();
 
 async function routingAesKey(secret: string): Promise<CryptoKey> {
   const digest = await crypto.subtle.digest("SHA-256", TEXT_ENCODER.encode(secret));
@@ -185,7 +159,7 @@ export async function openRoutingToken(secret: string, token: string): Promise<R
     if (typeof devicePublicKeyDigest !== "string" || typeof grantSecret !== "string") {
       return null;
     }
-    if (!/^[0-9a-f]{64}$/.test(devicePublicKeyDigest) || grantSecret.length === 0) {
+    if (!isDigest(devicePublicKeyDigest) || grantSecret.length === 0) {
       return null;
     }
     return { devicePublicKeyDigest, grantSecret };
@@ -206,28 +180,23 @@ export async function verifyDeviceAuth(args: {
   }
 
   const publicKey = base64UrlToBytes(args.publicKeyB64);
-  if (!publicKey || publicKey.length === 0 || publicKey.length > MAX_PUBLIC_KEY_BYTES) {
+  if (!publicKey || publicKey.length !== PUBLIC_KEY_BYTES || publicKey[0] !== 0x04) {
     return { ok: false, reason: "invalid devicePublicKey" };
   }
 
   const signature = base64UrlToBytes(args.signatureB64);
-  if (!signature || signature.length === 0 || signature.length > MAX_SIGNATURE_BYTES) {
+  if (!signature || signature.length !== SIGNATURE_BYTES) {
     return { ok: false, reason: "invalid response" };
   }
 
-  const digest = await sha256Hex(publicKey);
-  if (digest !== args.expectedDigest) {
+  const digest = await publicKeyDigest(publicKey);
+  if (digest === null || digest !== args.expectedDigest) {
     return { ok: false, reason: "devicePublicKey digest mismatch" };
-  }
-
-  const modulusBits = rsaModulusBitsFromSpki(publicKey);
-  if (modulusBits !== RSA_MODULUS_BITS) {
-    return { ok: false, reason: "unsupported public key size" };
   }
 
   let key: CryptoKey;
   try {
-    key = await crypto.subtle.importKey("spki", publicKey, { name: "RSA-PSS", hash: "SHA-256" }, false, ["verify"]);
+    key = await crypto.subtle.importKey("raw", publicKey, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
   } catch {
     return { ok: false, reason: "invalid devicePublicKey" };
   }
@@ -235,10 +204,10 @@ export async function verifyDeviceAuth(args: {
   let valid = false;
   try {
     valid = await crypto.subtle.verify(
-      { name: "RSA-PSS", saltLength: PSS_SALT_LENGTH },
+      { name: "ECDSA", hash: "SHA-256" },
       key,
       signature,
-      args.challenge,
+      authSignedMessage(args.challenge),
     );
   } catch {
     return { ok: false, reason: "invalid response" };

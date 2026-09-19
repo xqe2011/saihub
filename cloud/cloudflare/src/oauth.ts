@@ -5,7 +5,9 @@ import { DIGEST_RE, isDigest, jsonError } from "./protocol.ts";
 export const ACCESS_TOKEN_EXPIRES_IN = 315_360_000; // 10 years
 export const STATIC_CLIENT_ID = "saihub-static-client";
 
-const DEVICE_MCP_RE = /^\/device\/([0-9a-f]{64})\/mcp\/?$/i;
+const DIGEST_PATH = "([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,33})";
+const DEVICE_MCP_RE = new RegExp(`^/device/${DIGEST_PATH}/mcp/?$`);
+const DEVICE_PATH_RE = new RegExp(`^/device/${DIGEST_PATH}(?:/|$)`);
 
 export function unauthorized(request: Request): Response {
   const origin = new URL(request.url).origin;
@@ -26,8 +28,7 @@ export function unauthorized(request: Request): Response {
 function protectedResourceMetadataPath(pathname: string): string {
   const mcp = DEVICE_MCP_RE.exec(pathname);
   if (mcp) {
-    const digest = mcp[1]!.toLowerCase();
-    return `/.well-known/oauth-protected-resource/device/${digest}/mcp`;
+    return `/.well-known/oauth-protected-resource/device/${mcp[1]!}/mcp`;
   }
   return "/.well-known/oauth-protected-resource";
 }
@@ -191,7 +192,7 @@ export function handleOauthRedirectPage(request: Request): Response {
 }
 
 function resolveDigest(url: URL): string | null {
-  const direct = (url.searchParams.get("devicePublicKeyDigest") ?? "").toLowerCase();
+  const direct = url.searchParams.get("devicePublicKeyDigest") ?? "";
   if (DIGEST_RE.test(direct)) {
     return direct;
   }
@@ -201,8 +202,8 @@ function resolveDigest(url: URL): string | null {
   }
   try {
     const resourceUrl = new URL(resource);
-    const match = DEVICE_MCP_RE.exec(resourceUrl.pathname) ?? /^\/device\/([0-9a-f]{64})(?:\/|$)/i.exec(resourceUrl.pathname);
-    return match ? match[1]!.toLowerCase() : null;
+    const match = DEVICE_MCP_RE.exec(resourceUrl.pathname) ?? DEVICE_PATH_RE.exec(resourceUrl.pathname);
+    return match ? match[1]! : null;
   } catch {
     return null;
   }

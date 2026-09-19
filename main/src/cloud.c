@@ -29,6 +29,7 @@ static const char* tag = "SAIHUB-Cloud";
 #define CLOUD_HASH_BYTES 32
 #define CLOUD_KEY_GENERATION_ATTEMPTS 8
 #define CLOUD_RNG_WARMUP_BYTES 256
+#define CLOUD_CHALLENGE_MAX_BYTES 64
 #define CLOUD_SIGNATURE_ALGORITHM PSA_ALG_DETERMINISTIC_ECDSA(PSA_ALG_SHA_256)
 
 static psa_key_id_t signingKey = PSA_KEY_ID_NULL;
@@ -390,14 +391,23 @@ esp_err_t Cloud_SignChallenge(const uint8_t* challenge, size_t challengeLen,
 {
   if (signatureLenOut != NULL) *signatureLenOut = 0;
   if (!initialized) return ESP_ERR_INVALID_STATE;
-  if (challenge == NULL || challengeLen == 0 || signature == NULL) return ESP_ERR_INVALID_ARG;
+  if (challenge == NULL || challengeLen == 0 || challengeLen > CLOUD_CHALLENGE_MAX_BYTES || signature == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
 
   memset(signature, 0, CLOUD_SIGNATURE_BYTES);
 
+  /* signedMessage = UTF8(CLOUD_AUTH_DOMAIN) || 0x00 || challenge */
+  const size_t domainLen = sizeof(CLOUD_AUTH_DOMAIN); /* includes trailing NUL */
+  uint8_t signedMessage[sizeof(CLOUD_AUTH_DOMAIN) + CLOUD_CHALLENGE_MAX_BYTES];
+  memcpy(signedMessage, CLOUD_AUTH_DOMAIN, domainLen);
+  memcpy(signedMessage + domainLen, challenge, challengeLen);
+
   uint8_t challengeHash[CLOUD_HASH_BYTES] = {0};
   size_t challengeHashLen = 0;
-  psa_status_t status = psa_hash_compute(PSA_ALG_SHA_256, challenge, challengeLen, challengeHash,
+  psa_status_t status = psa_hash_compute(PSA_ALG_SHA_256, signedMessage, domainLen + challengeLen, challengeHash,
                                          sizeof(challengeHash), &challengeHashLen);
+  Cloud_SecureZero(signedMessage, domainLen + challengeLen);
   if (status != PSA_SUCCESS || challengeHashLen != CLOUD_HASH_BYTES) {
     ESP_LOGE(tag, "challenge hash failed: %d", (int)status);
     Cloud_SecureZero(challengeHash, sizeof(challengeHash));

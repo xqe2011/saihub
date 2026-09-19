@@ -24,8 +24,7 @@ export async function handlePairingSession(request: Request, env: Env): Promise<
   if (!body) {
     return jsonError(400, "invalid body");
   }
-  const digestRaw = typeof body.devicePublicKeyDigest === "string" ? body.devicePublicKeyDigest : "";
-  const digest = digestRaw.toLowerCase();
+  const digest = typeof body.devicePublicKeyDigest === "string" ? body.devicePublicKeyDigest : "";
   if (!isDigest(digest)) {
     return jsonError(400, "invalid devicePublicKeyDigest");
   }
@@ -47,8 +46,7 @@ export async function handlePairingToken(request: Request, env: Env): Promise<Re
   if (!body) {
     return jsonError(400, "invalid body");
   }
-  const digestRaw = typeof body.devicePublicKeyDigest === "string" ? body.devicePublicKeyDigest : "";
-  const digest = digestRaw.toLowerCase();
+  const digest = typeof body.devicePublicKeyDigest === "string" ? body.devicePublicKeyDigest : "";
   const sessionToken = typeof body.sessionToken === "string" ? body.sessionToken : "";
   if (!isDigest(digest)) {
     return jsonError(400, "invalid devicePublicKeyDigest");
