@@ -3,7 +3,7 @@ import { Device } from "./device.ts";
 import type { Env } from "./env.ts";
 import { handleOauthRedirectPage, handleProtectedResourceMetadata, handleRegister, handleToken, handleWellKnown, unauthorized } from "./oauth.ts";
 import { handlePairingSession, handlePairingToken } from "./pairing.ts";
-import { isDigest, jsonError } from "./protocol.ts";
+import { isDigest, isJsonContentType, unsupportedContentType, selectForwardHeaders, jsonError } from "./protocol.ts";
 import { proxyToDevice } from "./proxy.ts";
 
 export { Device };
@@ -88,13 +88,19 @@ async function handleDeviceHttp(
   }
 
   const path = `${suffixPath === "" ? "/" : suffixPath}${search}`;
-  const headers: Record<string, string> = {};
-  for (const name of ["content-type", "accept", "x-lock-id"] as const) {
-    const value = request.headers.get(name);
-    if (value !== null) {
-      headers[name] = value;
-    }
+  const contentType = request.headers.get("content-type");
+  const isMcp = suffixPath === "/mcp";
+  if (isMcp && (request.method === "GET" || request.method === "DELETE")) {
+    return new Response(null, { status: 405, headers: { Allow: "POST, OPTIONS" } });
   }
+  // Validate writes before the device relay adds its JSON transport header.
+  const requiresJson = ["POST", "PUT", "PATCH"].includes(request.method);
+  if ((contentType !== null || requiresJson) && !isJsonContentType(contentType)) return unsupportedContentType(contentType);
+  const accept = request.headers.get("accept");
+  if (accept && !accept.split(",").some((part) => /^(application\/json|application\/\*|\*\/\*)$/i.test(part.split(";", 1)[0]!.trim()) && !/;\s*q=0(?:\.0*)?\s*(?:;|$)/i.test(part))) {
+    return unsupportedContentType(accept, 406);
+  }
+  const headers = selectForwardHeaders(request);
 
   const body =
     request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();

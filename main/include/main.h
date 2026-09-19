@@ -11,8 +11,11 @@
 
 #define MAIN_LOAD_MODULE(expression, moduleName)                      \
   {                                                                   \
-    if ((expression) != ESP_OK) {                                     \
-      ESP_LOGE("SAIHUB-Main", "Failed to load module %s", moduleName); \
+    esp_err_t moduleLoadError = (expression);                         \
+    if (moduleLoadError != ESP_OK) {                                  \
+      ESP_LOGE("SAIHUB-Main", "Failed to load module %s: %s (0x%x)",  \
+               moduleName, esp_err_to_name(moduleLoadError),          \
+               (unsigned int)moduleLoadError);                        \
       someModuleFailed = true;                                        \
     }                                                                 \
   }

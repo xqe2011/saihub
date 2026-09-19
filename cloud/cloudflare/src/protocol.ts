@@ -16,7 +16,17 @@ export const DIGEST_CHECKSUM_BYTES = 4;
 /** Domain separation prefix including trailing NUL: UTF8("saihub/cloud-auth/v1") || 0x00 */
 export const AUTH_DOMAIN_PREFIX = "saihub/cloud-auth/v1\0";
 
-export const FORWARDED_HEADERS = ["content-type", "accept", "x-lock-id"] as const;
+export const FORWARDED_HEADERS = ["content-type", "accept", "x-lock-id", "mcp-protocol-version", "mcp-session-id", "origin"] as const;
+
+export type JsonBody = Record<string, unknown> | unknown[] | null;
+
+export function isJsonContentType(value: string | null): boolean {
+  return value?.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
+}
+
+export function unsupportedContentType(value: string | null, status = 415): Response {
+  return jsonError(status, `cloud relay not support ${value || "missing content-type"} currently, use application/json instead`);
+}
 
 export type AuthRequestMessage = {
   type: "authRequest";
@@ -43,7 +53,7 @@ export type RequestMessage = {
   method: string;
   path: string;
   headers: Record<string, string>;
-  body: string;
+  body: Record<string, unknown> | null;
 };
 
 export type ResponseMessage = {
@@ -51,7 +61,7 @@ export type ResponseMessage = {
   requestId: string;
   status: number;
   headers: Record<string, string>;
-  body: string;
+  body: JsonBody;
 };
 
 export type ServerMessage = AuthRequestMessage | AuthResultMessage | RequestMessage;
@@ -135,16 +145,16 @@ export function parseDeviceMessage(raw: string): DeviceMessage | null {
     const requestId = asString(parsed.requestId);
     const status = parsed.status;
     const headers = parseHeaders(parsed.headers);
-    const body = asString(parsed.body);
+    const body = parsed.body;
     if (
       requestId === null ||
       requestId.length === 0 ||
       typeof status !== "number" ||
       !Number.isInteger(status) ||
-      status < 100 ||
+      status < 200 ||
       status > 599 ||
       headers === null ||
-      body === null
+      !(body === null || isRecord(body) || Array.isArray(body))
     ) {
       return null;
     }

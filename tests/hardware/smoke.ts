@@ -94,6 +94,7 @@ function normalizeTarget(value: string): URL {
 }
 
 const target = normalizeTarget(process.env.SAIHUB_TARGET ?? process.env.SAIHUB_IP ?? DEFAULT_TARGET);
+const routingToken = process.env.SAIHUB_ROUTING_TOKEN?.trim();
 
 function targetUrl(path: string): URL {
   const basePath = `${target.pathname.replace(/\/$/, "")}/`;
@@ -107,6 +108,7 @@ function log(message: string): void {
 async function rawRequest(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<HttpResult> {
   const serialized = body === undefined ? undefined : JSON.stringify(body);
   const headers: Record<string, string> = { Accept: "application/json", ...extraHeaders };
+  if (routingToken) headers.Authorization = `Bearer ${routingToken}`;
   if (serialized !== undefined) headers["Content-Type"] = "application/json";
   const args = [
     "curl", "--noproxy", "*", "--silent", "--show-error", "--max-time", String(REQUEST_TIMEOUT_MS / 1000),
@@ -298,7 +300,9 @@ async function testMcpProtocol(): Promise<void> {
   const batch = await rawRequest("POST", "/mcp", [{ jsonrpc: "2.0", id: 1, method: "ping" }], {
     Accept: "application/json", "MCP-Protocol-Version": "2025-06-18",
   });
-  assert(batch.status === 400 && batch.text.includes("JSON-RPC batch not supported"), "MCP batch rejection was incorrect");
+  const batchReason = parseJson(batch, "MCP batch rejection") as JsonObject;
+  assert(batch.status === 400 && (batch.text.includes("JSON-RPC batch not supported") ||
+    batchReason.reason === "body must be a JSON object"), "MCP batch rejection was incorrect");
   const invalid = await rawRequest("POST", "/mcp", { jsonrpc: "1.0", id: 1, method: "ping" }, {
     Accept: "application/json", "MCP-Protocol-Version": "2025-06-18",
   });
@@ -997,11 +1001,11 @@ async function cleanup(): Promise<void> {
 
 async function main(): Promise<void> {
   if (process.argv.includes("--help")) {
-    console.log("SAIHUB_HARDWARE_TEST=1 SAIHUB_TARGET=192.168.88.160 bun tests/hardware/smoke.ts");
+    console.log("SAIHUB_TARGET=192.168.88.160 bun tests/hardware/smoke.ts");
+    console.log("Cloud: SAIHUB_TARGET=https://<cloud-host>/device/<device-digest> SAIHUB_ROUTING_TOKEN=<token> bun tests/hardware/smoke.ts");
     console.log("Only connected pins 6 and 7 are driven. Other pins are inventory-checked but never configured or driven.");
     return;
   }
-  assert(process.env.SAIHUB_HARDWARE_TEST === "1", "Set SAIHUB_HARDWARE_TEST=1 to acknowledge physical hardware access");
   assert(Number.isFinite(REQUEST_TIMEOUT_MS) && REQUEST_TIMEOUT_MS > 0, "SAIHUB_REQUEST_TIMEOUT_MS must be positive");
   assert(Number.isFinite(UART_TIMEOUT_MS) && UART_TIMEOUT_MS > 0, "SAIHUB_UART_TIMEOUT_MS must be positive");
   assert(Number.isInteger(SOAK_ITERATIONS) && SOAK_ITERATIONS >= 0 && SOAK_ITERATIONS <= 100,

@@ -1,6 +1,6 @@
 import { DEFAULT_AUTH_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS, parseTimeoutMs, type Env } from "./env.ts";
 import { base64UrlToBytes, bytesToBase64Url, randomChallenge, verifyDeviceAuth } from "./crypto.ts";
-import { jsonError, MAX_BODY_BYTES, MAX_PATH_LEN, parseDeviceMessage, selectForwardHeaders, type AuthRequestMessage, type AuthResultMessage, type RequestMessage } from "./protocol.ts";
+import { isJsonContentType, unsupportedContentType, jsonError, MAX_BODY_BYTES, MAX_PATH_LEN, parseDeviceMessage, selectForwardHeaders, type AuthRequestMessage, type AuthResultMessage, type RequestMessage } from "./protocol.ts";
 
 type PendingRequest = {
   resolve: (response: Response) => void;
@@ -92,8 +92,8 @@ export class Device implements DurableObject {
       return;
     }
 
-    const bodyBytes = parsed.body.length === 0 ? new Uint8Array(0) : base64UrlToBytes(parsed.body);
-    if (!bodyBytes || bodyBytes.byteLength > MAX_BODY_BYTES) {
+    const bodyText = parsed.body === null ? null : JSON.stringify(parsed.body);
+    if (bodyText !== null && new TextEncoder().encode(bodyText).byteLength > 1024 * 1024) {
       this.#completePending(parsed.requestId, jsonError(502, "invalid device response body"));
       return;
     }
@@ -108,7 +108,17 @@ export class Device implements DurableObject {
       }
     }
 
-    this.#completePending(parsed.requestId, new Response(bodyBytes, { status: parsed.status, headers }));
+    if (bodyText !== null && !isJsonContentType(headers.get("content-type"))) {
+      this.#completePending(parsed.requestId, unsupportedContentType(headers.get("content-type"), 502));
+      return;
+    }
+    if ([204, 205, 304].includes(parsed.status) && bodyText !== null) {
+      this.#completePending(parsed.requestId, jsonError(502, "invalid device response body"));
+      return;
+    }
+    headers.delete("content-length");
+    headers.delete("transfer-encoding");
+    this.#completePending(parsed.requestId, new Response(bodyText, { status: parsed.status, headers }));
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
@@ -246,14 +256,29 @@ export class Device implements DurableObject {
       return jsonError(413, "body too large");
     }
 
+    const contentType = request.headers.get("content-type");
+    if ((contentType !== null || body.length > 0) && !isJsonContentType(contentType)) {
+      return unsupportedContentType(contentType);
+    }
+    let jsonBody: Record<string, unknown> | null = null;
+    if (body.length > 0) {
+      try {
+        const parsed: unknown = JSON.parse(new TextDecoder().decode(body));
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("object required");
+        jsonBody = parsed as Record<string, unknown>;
+      } catch {
+        return jsonError(400, "body must be a JSON object");
+      }
+    }
+
     const requestId = this.#nextRequestId();
     const message: RequestMessage = {
       type: "request",
       requestId,
       method: request.method,
       path,
-      headers: selectForwardHeaders(request),
-      body: bytesToBase64Url(body),
+      headers: { ...selectForwardHeaders(request), "content-type": "application/json" },
+      body: jsonBody,
     };
 
     const timeoutMs = parseTimeoutMs(this.#env.REQUEST_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS);

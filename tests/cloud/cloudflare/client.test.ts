@@ -36,7 +36,7 @@ type RequestMessage = {
   method: string;
   path: string;
   headers: Record<string, string>;
-  body: string;
+  body: Record<string, unknown> | null;
 };
 
 type DeviceInbound = AuthRequestMessage | AuthResultMessage | RequestMessage;
@@ -244,7 +244,7 @@ function replyJson(ws: WebSocket, requestId: string, status: number, body: unkno
       requestId,
       status,
       headers: { "content-type": "application/json" },
-      body: bytesToBase64Url(new TextEncoder().encode(JSON.stringify(body))),
+      body,
     }),
   );
 }
@@ -512,8 +512,7 @@ describe("cloudflare device proxy e2e", () => {
     expect(deviceRequest.headers["x-lock-id"]).toBe("lock-abc");
     expect(deviceRequest.headers["authorization"]).toBeUndefined();
 
-    const requestBody = new TextDecoder().decode(base64UrlToBytes(deviceRequest.body));
-    expect(JSON.parse(requestBody)).toEqual({ duty: 0.5 });
+    expect(deviceRequest.body).toEqual({ duty: 0.5 });
 
     ws.send(
       JSON.stringify({
@@ -521,7 +520,7 @@ describe("cloudflare device proxy e2e", () => {
         requestId: deviceRequest.requestId,
         status: 200,
         headers: { "content-type": "application/json", "x-lock-id": "lock-abc" },
-        body: bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ ok: true, pin: 1 }))),
+        body: { ok: true, pin: 1 },
       }),
     );
 
@@ -557,7 +556,7 @@ describe("cloudflare device proxy e2e", () => {
         requestId: req.requestId,
         status: 202,
         headers: {},
-        body: "",
+        body: null,
       }),
     );
     const res = await httpPromise;
@@ -610,8 +609,8 @@ describe("cloudflare device proxy e2e", () => {
           type: "response",
           requestId: secondReq!.requestId,
           status: 201,
-          headers: { "content-type": "text/plain" },
-          body: bytesToBase64Url(new TextEncoder().encode("second")),
+          headers: { "content-type": "application/json" },
+          body: { order: "second" },
         }),
       );
       ws.send(
@@ -619,21 +618,143 @@ describe("cloudflare device proxy e2e", () => {
           type: "response",
           requestId: firstReq!.requestId,
           status: 200,
-          headers: { "content-type": "text/plain" },
-          body: bytesToBase64Url(new TextEncoder().encode("first")),
+          headers: { "content-type": "application/json" },
+          body: { order: "first" },
         }),
       );
 
       const [firstRes, secondRes] = await Promise.all([first, second]);
       expect(firstRes.status).toBe(200);
-      expect(await firstRes.text()).toBe("first");
+      expect(await firstRes.json() as unknown).toEqual({ order: "first" });
       expect(secondRes.status).toBe(201);
-      expect(await secondRes.text()).toBe("second");
+      expect(await secondRes.json() as unknown).toEqual({ order: "second" });
     } finally {
       ws.close();
       await Bun.sleep(300);
     }
   }, 60_000);
+
+  test("forwards bodyless OPTIONS without synthesizing a text/plain content type", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    expect((await authenticateDevice(ws, other)).success).toBe(true);
+    const token = await bearerFor(other.digest);
+    try {
+      const pending = waitForMessage(ws, (msg): msg is RequestMessage => msg.type === "request");
+      const response = fetch(`${baseUrl}/device/${other.digest}/pin/`, {
+        method: "OPTIONS",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const request = await pending;
+      expect(request.method).toBe("OPTIONS");
+      expect(request.path).toBe("/pin/");
+      expect(request.body).toBeNull();
+      ws.send(JSON.stringify({
+        type: "response", requestId: request.requestId, status: 204,
+        headers: {}, body: null,
+      }));
+      const result = await response;
+      expect(result.status).toBe(204);
+      expect(await result.text()).toBe("");
+    } finally {
+      ws.close();
+    }
+  }, 30_000);
+
+  test("rejects non-JSON media and handles MCP SSE on the cloud", async () => {
+    const token = await bearerFor(PLACEHOLDER.a);
+    for (const method of ["POST", "PUT", "PATCH"]) {
+      const res = await fetch(`${baseUrl}/device/${PLACEHOLDER.a}/pin/6`, {
+        method, headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(415);
+      expect(await res.json() as unknown).toEqual({
+        reason: "cloud relay not support missing content-type currently, use application/json instead",
+      });
+    }
+    for (const contentType of ["text/plain", "application/jsonp", "application/octet-stream"]) {
+      const res = await fetch(`${baseUrl}/device/${PLACEHOLDER.a}/pin/1`, {
+        method: "PUT", headers: { authorization: `Bearer ${token}`, "content-type": contentType }, body: "{}",
+      });
+      expect(res.status).toBe(415);
+      expect(await res.json() as unknown).toEqual({ reason: `cloud relay not support ${contentType} currently, use application/json instead` });
+    }
+    const sse = await fetch(`${baseUrl}/device/${PLACEHOLDER.a}/mcp`, {
+      headers: { authorization: `Bearer ${token}`, accept: "text/event-stream" },
+    });
+    expect(sse.status).toBe(405);
+    const post = await fetch(`${baseUrl}/device/${PLACEHOLDER.a}/mcp`, {
+      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "text/event-stream" }, body: "{}",
+    });
+    expect(post.status).toBe(406);
+    expect(await post.json() as unknown).toEqual({ reason: "cloud relay not support text/event-stream currently, use application/json instead" });
+  });
+
+  test("validates JSON object bodies and preserves MCP headers", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    expect((await authenticateDevice(ws, other)).success).toBe(true);
+    const token = await bearerFor(other.digest);
+    try {
+      for (const body of ["{", "[]", "null", '"base64"']) {
+        const res = await fetch(`${baseUrl}/device/${other.digest}/mcp`, {
+          method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body,
+        });
+        expect(res.status).toBe(400);
+      }
+      const pending = waitForMessage(ws, (msg): msg is RequestMessage => msg.type === "request");
+      const response = fetch(`${baseUrl}/device/${other.digest}/mcp`, {
+        method: "POST", headers: {
+          authorization: `Bearer ${token}`, "content-type": "Application/JSON; charset=utf-8",
+          accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-03-26", "mcp-session-id": "session-1",
+        }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      });
+      const request = await pending;
+      expect(request.body).toEqual({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+      expect(request.headers["mcp-protocol-version"]).toBe("2025-03-26");
+      expect(request.headers["mcp-session-id"]).toBe("session-1");
+      replyJson(ws, request.requestId, 200, { jsonrpc: "2.0", id: 1, result: {} });
+      expect((await response).status).toBe(200);
+    } finally { ws.close(); }
+  });
+
+  test("receives a fragmented JSON response larger than the old 64 KiB limit", async () => {
+    const other = await generateDeviceIdentity();
+    const device = spawn(["node", join(import.meta.dir, "fragment-device.mjs"), JSON.stringify({
+      url: baseUrl.replace(/^http/, "ws"), digest: other.digest, publicKeyB64: other.publicKeyB64,
+      privateKey: await crypto.subtle.exportKey("jwk", other.privateKey),
+    })], { stdout: "pipe", stderr: "inherit" });
+    const token = await bearerFor(other.digest);
+    try {
+      const reader = device.stdout.getReader();
+      const ready = await reader.read();
+      expect(new TextDecoder().decode(ready.value)).toContain("ready");
+      reader.releaseLock();
+      const response = fetch(`${baseUrl}/device/${other.digest}/pin/trace`, { headers: { authorization: `Bearer ${token}` } });
+      const events = Array.from({ length: 2000 }, (_, i) => ({ pin: 1, level: i % 2, time: i, label: "测试" }));
+      const res = await response;
+      expect(res.status).toBe(200);
+      expect(await res.json() as unknown).toEqual({ events });
+    } finally { device.kill(); await device.exited; }
+  });
+
+  test("rejects non-JSON device responses and supports bodyless 204", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    expect((await authenticateDevice(ws, other)).success).toBe(true);
+    const token = await bearerFor(other.digest);
+    try {
+      for (const status of [200, 204]) {
+        const pending = waitForMessage(ws, (msg): msg is RequestMessage => msg.type === "request");
+        const response = fetch(`${baseUrl}/device/${other.digest}/pin/1`, { headers: { authorization: `Bearer ${token}` } });
+        const request = await pending;
+        ws.send(JSON.stringify({ type: "response", requestId: request.requestId, status, headers: { "content-type": "text/plain" }, body: status === 204 ? null : {} }));
+        const res = await response;
+        expect(res.status).toBe(status === 204 ? 204 : 502);
+        if (status === 204) expect(await res.text()).toBe("");
+      }
+    } finally { ws.close(); }
+  });
 
   test("rejects duplicate device websocket", async () => {
     const ws1 = await openDeviceSocket(baseUrl, identity.digest);

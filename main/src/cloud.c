@@ -1,10 +1,25 @@
 /**
- * @name Cloud identity
+ * @name Cloud identity and relay
  * @file cloud.c
  * @author xqe2011
  */
 #include "cloud.h"
+#include "config.h"
+#include "http_server.h"
+#include "ntp.h"
+#include "wifi.h"
 
+#include <esp_app_desc.h>
+#include <esp_crt_bundle.h>
+#include <esp_websocket_client.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
+#include <mbedtls/base64.h>
+#include <stdatomic.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <bootloader_random.h>
 #include <esp_efuse.h>
 #include <esp_efuse_chip.h>
@@ -36,6 +51,7 @@ static psa_key_id_t signingKey = PSA_KEY_ID_NULL;
 static uint8_t publicKey[CLOUD_PUBLIC_KEY_BYTES];
 static char publicKeyDigest[CLOUD_DIGEST_CHARS + 1];
 static bool initialized;
+static esp_err_t Cloud_StartRelay(void);
 
 static void Cloud_SecureZero(void* data, size_t len)
 {
@@ -365,6 +381,7 @@ cleanup:
   if (entropyEnabled) bootloader_random_disable();
   if (err == ESP_OK) {
     Cloud_LogIdentity();
+    err = Cloud_StartRelay();
   } else {
     Cloud_DestroyKey();
     Cloud_ClearIdentity();
@@ -425,4 +442,253 @@ esp_err_t Cloud_SignChallenge(const uint8_t* challenge, size_t challengeLen,
   }
   if (signatureLenOut != NULL) *signatureLenOut = signatureLen;
   return ESP_OK;
+}
+
+static esp_websocket_client_handle_t client;
+static QueueHandle_t incoming;
+static SemaphoreHandle_t sendMutex;
+static SemaphoreHandle_t requestSlots;
+static atomic_uint generation;
+static atomic_bool authenticated;
+static atomic_bool restart;
+static _Atomic(TaskHandle_t) streamOwner;
+static char* receiveBuffer;
+static size_t receiveLength;
+static unsigned receiveGeneration;
+
+typedef struct { char* text; unsigned generation; } Cloud_Message;
+typedef struct { cJSON* root; unsigned generation; } Cloud_Request;
+
+static void Cloud_ResetReceive(void)
+{
+  free(receiveBuffer);
+  receiveBuffer = NULL;
+  receiveLength = 0;
+}
+
+static bool Cloud_ConnectionCurrent(unsigned expected)
+{
+  return expected == atomic_load(&generation) && !atomic_load(&restart) &&
+         esp_websocket_client_is_connected(client);
+}
+
+/* One fragmented WebSocket message at a time, including async route responses. */
+static esp_err_t Cloud_Write(void* user, HttpServer_CloudWriteKind kind, const void* data, size_t length)
+{
+  unsigned expected = (unsigned)(uintptr_t)user;
+  TaskHandle_t self = xTaskGetCurrentTaskHandle();
+  if (kind == HTTP_CLOUD_ABORT) {
+    if (streamOwner == self) {
+      atomic_store(&restart, true);
+      streamOwner = NULL;
+      xSemaphoreGive(sendMutex);
+    }
+    return ESP_OK;
+  }
+  if (kind == HTTP_CLOUD_BEGIN) {
+    if (xSemaphoreTake(sendMutex, pdMS_TO_TICKS(65000)) != pdTRUE) return ESP_ERR_TIMEOUT;
+    if (!Cloud_ConnectionCurrent(expected) || !atomic_load(&authenticated)) {
+      xSemaphoreGive(sendMutex);
+      return ESP_ERR_INVALID_STATE;
+    }
+    streamOwner = self;
+  } else if (streamOwner != self) return ESP_ERR_INVALID_STATE;
+
+  if (!Cloud_ConnectionCurrent(expected)) return ESP_ERR_INVALID_STATE;
+  int sent = kind == HTTP_CLOUD_BEGIN
+      ? esp_websocket_client_send_text_partial(client, data, length, pdMS_TO_TICKS(10000))
+      : esp_websocket_client_send_cont_msg(client, data, length, pdMS_TO_TICKS(10000));
+  if (sent != (int)length) return ESP_FAIL;
+  if (kind == HTTP_CLOUD_END) {
+    if (esp_websocket_client_send_fin(client, pdMS_TO_TICKS(10000)) < 0) return ESP_FAIL;
+    streamOwner = NULL;
+    xSemaphoreGive(sendMutex);
+  }
+  return ESP_OK;
+}
+
+static bool Cloud_Base64Encode(const uint8_t* data, size_t length, char* out, size_t capacity)
+{
+  size_t written = 0;
+  if (mbedtls_base64_encode((unsigned char*)out, capacity, &written, data, length) != 0) return false;
+  while (written && out[written - 1] == '=') written--;
+  out[written] = '\0';
+  for (size_t i = 0; i < written; i++) {
+    if (out[i] == '+') out[i] = '-';
+    if (out[i] == '/') out[i] = '_';
+  }
+  return true;
+}
+
+static void Cloud_Authenticate(cJSON* message, unsigned expected)
+{
+  cJSON* challenge = cJSON_GetObjectItemCaseSensitive(message, "challenge");
+  if (!cJSON_IsString(challenge) || strlen(challenge->valuestring) != 43) { atomic_store(&restart, true); return; }
+  char encoded[45];
+  memcpy(encoded, challenge->valuestring, 43);
+  for (size_t i = 0; i < 43; i++) {
+    if (encoded[i] == '-') encoded[i] = '+';
+    if (encoded[i] == '_') encoded[i] = '/';
+  }
+  encoded[43] = '=';
+  encoded[44] = '\0';
+  uint8_t bytes[32], signature[CLOUD_SIGNATURE_BYTES], publicKey[CLOUD_PUBLIC_KEY_BYTES];
+  size_t length = 0;
+  if (mbedtls_base64_decode(bytes, sizeof(bytes), &length, (unsigned char*)encoded, 44) != 0 || length != 32 ||
+      Cloud_SignChallenge(bytes, length, signature, NULL) != ESP_OK || Cloud_GetPublicKey(publicKey, NULL) != ESP_OK) {
+    atomic_store(&restart, true);
+    return;
+  }
+  char signatureText[89], publicKeyText[89];
+  if (!Cloud_Base64Encode(signature, sizeof(signature), signatureText, sizeof(signatureText)) ||
+      !Cloud_Base64Encode(publicKey, sizeof(publicKey), publicKeyText, sizeof(publicKeyText))) return;
+  cJSON* response = cJSON_CreateObject();
+  if (!response) return;
+  cJSON_AddStringToObject(response, "type", "authResponse");
+  cJSON_AddStringToObject(response, "devicePublicKey", publicKeyText);
+  cJSON_AddStringToObject(response, "devicePublicKeyDigest", Cloud_GetPublicKeyDigest());
+  cJSON_AddStringToObject(response, "version", esp_app_get_description()->version);
+  cJSON_AddStringToObject(response, "response", signatureText);
+  char* text = cJSON_PrintUnformatted(response);
+  cJSON_Delete(response);
+  if (!text) return;
+  if (xSemaphoreTake(sendMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+    if (Cloud_ConnectionCurrent(expected) && esp_websocket_client_send_text(client, text, strlen(text), pdMS_TO_TICKS(10000)) < 0)
+      atomic_store(&restart, true);
+    xSemaphoreGive(sendMutex);
+  } else atomic_store(&restart, true);
+  free(text);
+}
+
+static void Cloud_RequestTask(void* arg)
+{
+  Cloud_Request* message = arg;
+  cJSON* root = message->root;
+  if (root && Cloud_ConnectionCurrent(message->generation) && atomic_load(&authenticated))
+    HttpServer_DispatchCloud(root, Cloud_Write, (void*)(uintptr_t)message->generation);
+  else cJSON_Delete(root);
+  free(message);
+  xSemaphoreGive(requestSlots);
+  vTaskDelete(NULL);
+}
+
+static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* eventData)
+{
+  (void)arg;
+  (void)base;
+  if (event == WEBSOCKET_EVENT_CONNECTED || event == WEBSOCKET_EVENT_DISCONNECTED || event == WEBSOCKET_EVENT_CLOSED) {
+    atomic_fetch_add(&generation, 1);
+    atomic_store(&authenticated, false);
+    Cloud_ResetReceive();
+    if (event == WEBSOCKET_EVENT_CLOSED) atomic_store(&restart, true);
+    return;
+  }
+  if (event != WEBSOCKET_EVENT_DATA) return;
+  esp_websocket_event_data_t* data = eventData;
+  if (data->op_code != 1 && data->op_code != 0) return; /* Control frames may interrupt fragments. */
+  if (data->op_code == 1 && data->payload_offset == 0) {
+    Cloud_ResetReceive();
+    receiveGeneration = atomic_load(&generation);
+    receiveBuffer = malloc(1);
+  }
+  if (!receiveBuffer || data->data_len < 0 || receiveLength + data->data_len > CONFIG_CLOUD_MAX_MESSAGE_BYTES) {
+    Cloud_ResetReceive();
+    atomic_store(&restart, true);
+    return;
+  }
+  char* grown = realloc(receiveBuffer, receiveLength + data->data_len + 1);
+  if (!grown) { Cloud_ResetReceive(); atomic_store(&restart, true); return; }
+  receiveBuffer = grown;
+  memcpy(receiveBuffer + receiveLength, data->data_ptr, data->data_len);
+  receiveLength += data->data_len;
+  receiveBuffer[receiveLength] = '\0';
+  if (!data->fin || data->payload_offset + data->data_len != data->payload_len) return;
+  Cloud_Message message = {.text = receiveBuffer, .generation = receiveGeneration};
+  if (xQueueSend(incoming, &message, 0) != pdTRUE) { free(message.text); atomic_store(&restart, true); }
+  receiveBuffer = NULL;
+  receiveLength = 0;
+}
+
+static void Cloud_RelayTask(void* arg)
+{
+  (void)arg;
+  bool running = false;
+  for (;;) {
+    bool ready = Wifi_IsConnected() && !Wifi_IsPairing() && Ntp_IsSynced();
+    if (running && (!ready || atomic_load(&restart))) {
+      atomic_store(&authenticated, false);
+      atomic_fetch_add(&generation, 1);
+      /* Writers notice the generation change and release their fragment lock. */
+      xSemaphoreTake(sendMutex, portMAX_DELAY);
+      esp_websocket_client_stop(client);
+      xSemaphoreGive(sendMutex);
+      Cloud_ResetReceive();
+      running = false;
+      vTaskDelay(pdMS_TO_TICKS(3000));
+    }
+    if (!running && ready) {
+      atomic_store(&restart, false);
+      running = esp_websocket_client_start(client) == ESP_OK;
+    }
+    Cloud_Message message;
+    if (xQueueReceive(incoming, &message, pdMS_TO_TICKS(200)) != pdTRUE) continue;
+    if (!Cloud_ConnectionCurrent(message.generation)) { free(message.text); continue; }
+    cJSON* root = cJSON_Parse(message.text);
+    cJSON* type = cJSON_GetObjectItemCaseSensitive(root, "type");
+    bool dispatched = false;
+    if (cJSON_IsString(type)) {
+      if (strcmp(type->valuestring, "authRequest") == 0 && !atomic_load(&authenticated)) Cloud_Authenticate(root, message.generation);
+      else if (strcmp(type->valuestring, "authResult") == 0) {
+        bool success = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "success"));
+        atomic_store(&authenticated, success);
+        if (!success) atomic_store(&restart, true);
+        ESP_LOGI(tag, "cloud authentication %s", success ? "ready" : "rejected");
+      } else if (strcmp(type->valuestring, "request") == 0 && atomic_load(&authenticated)) {
+        if (xSemaphoreTake(requestSlots, 0) == pdTRUE) {
+          Cloud_Request* copy = malloc(sizeof(*copy));
+          if (copy) {
+            *copy = (Cloud_Request){.root = root, .generation = message.generation};
+            dispatched = xTaskCreate(Cloud_RequestTask, "cloud-request", 8192, copy, 5, NULL) == pdPASS;
+            if (!dispatched) free(copy);
+          }
+          if (!dispatched) xSemaphoreGive(requestSlots);
+        }
+        if (!dispatched) atomic_store(&restart, true);
+      }
+    }
+    if (!dispatched) cJSON_Delete(root);
+    free(message.text);
+  }
+}
+
+static esp_err_t Cloud_StartRelay(void)
+{
+  if (CONFIG_CLOUD_URL[0] == '\0') { ESP_LOGI(tag, "cloud relay disabled; set CONFIG_CLOUD_URL"); return ESP_OK; }
+  if (strncmp(CONFIG_CLOUD_URL, "wss://", 6) != 0 && strncmp(CONFIG_CLOUD_URL, "ws://", 5) != 0) {
+    ESP_LOGE(tag, "CONFIG_CLOUD_URL must start with ws:// or wss://");
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!Cloud_GetPublicKeyDigest()[0]) return ESP_ERR_INVALID_STATE;
+  char uri[512];
+  int length = snprintf(uri, sizeof(uri), "%s/cloud/device/%s", CONFIG_CLOUD_URL, Cloud_GetPublicKeyDigest());
+  if (length < 0 || length >= sizeof(uri)) return ESP_ERR_INVALID_SIZE;
+  incoming = xQueueCreate(8, sizeof(Cloud_Message));
+  sendMutex = xSemaphoreCreateMutex();
+  requestSlots = xSemaphoreCreateCounting(4, 4);
+  if (!incoming || !sendMutex || !requestSlots) goto failed;
+  esp_websocket_client_config_t config = {
+    .uri = uri, .crt_bundle_attach = esp_crt_bundle_attach, .buffer_size = 2048,
+    .task_stack = 6144, .reconnect_timeout_ms = 3000, .network_timeout_ms = 10000,
+  };
+  client = esp_websocket_client_init(&config);
+  if (!client) goto failed;
+  if (esp_websocket_register_events(client, WEBSOCKET_EVENT_ANY, Cloud_Event, NULL) != ESP_OK) goto failed;
+  if (xTaskCreate(Cloud_RelayTask, "cloud-relay", 6144, NULL, 5, NULL) != pdPASS) goto failed;
+  return ESP_OK;
+failed:
+  if (client) esp_websocket_client_destroy(client);
+  if (incoming) vQueueDelete(incoming);
+  if (sendMutex) vSemaphoreDelete(sendMutex);
+  if (requestSlots) vSemaphoreDelete(requestSlots);
+  return ESP_ERR_NO_MEM;
 }

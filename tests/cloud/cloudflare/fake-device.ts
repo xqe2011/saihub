@@ -39,14 +39,13 @@ function reply(
   body: unknown,
   headers: Record<string, string> = { "content-type": "application/json" },
 ): void {
-  const payload = typeof body === "string" ? body : JSON.stringify(body);
   ws.send(
     JSON.stringify({
       type: "response",
       requestId,
       status,
       headers,
-      body: bytesToBase64Url(new TextEncoder().encode(payload)),
+      body: body === "" ? null : body,
     }),
   );
 }
@@ -303,10 +302,7 @@ async function main(): Promise<void> {
           return;
         }
         if (path === "/mcp") {
-          const rawBody =
-            typeof msg.body === "string" && msg.body.length > 0
-              ? new TextDecoder().decode(base64UrlToBytes(msg.body))
-              : "";
+          const rawBody = msg.body === null ? "" : JSON.stringify(msg.body);
           console.log(`  body: ${rawBody.slice(0, 200)}${rawBody.length > 200 ? "…" : ""}`);
           handleMcp(ws, msg.requestId, method, rawBody);
           return;

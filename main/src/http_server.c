@@ -18,11 +18,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/time.h>
 
 static const char* tag = "SAIHUB-Http";
 static httpd_handle_t server = NULL;
 static bool pairingServer = false;
+static const HttpServer_Route* cloudRoutes[48];
+static size_t cloudRouteCount;
+static bool HttpServer_UriMatch(const char* tpl, const char* uri, size_t match_upto);
 
 int64_t HttpServer_NowUs(void)
 {
@@ -41,6 +45,10 @@ struct HttpServer_Context {
   HttpServer_ResponseState responseState;
   bool async;
   char status[64];
+  cJSON* cloudRequest;
+  HttpServer_CloudWrite cloudWrite;
+  void* cloudUser;
+  bool cloudBodySent;
 };
 
 static HttpServer_Method HttpServer_FromEspMethod(httpd_method_t method)
@@ -68,9 +76,16 @@ static httpd_method_t HttpServer_ToEspMethod(HttpServer_Method method)
   }
 }
 
-const char* HttpServer_GetUri(const HttpServer_Context* ctx) { return ctx->req->uri; }
-HttpServer_Method HttpServer_GetMethod(const HttpServer_Context* ctx) { return HttpServer_FromEspMethod(ctx->req->method); }
-size_t HttpServer_GetContentLength(const HttpServer_Context* ctx) { return ctx->req->content_len; }
+const char* HttpServer_GetUri(const HttpServer_Context* ctx) {
+  return ctx->cloudRequest ? cJSON_GetObjectItemCaseSensitive(ctx->cloudRequest, "path")->valuestring : ctx->req->uri;
+}
+HttpServer_Method HttpServer_GetMethod(const HttpServer_Context* ctx) {
+  if (!ctx->cloudRequest) return HttpServer_FromEspMethod(ctx->req->method);
+  const char* name = cJSON_GetObjectItemCaseSensitive(ctx->cloudRequest, "method")->valuestring;
+  for (int i = HTTP_SERVER_GET; i <= HTTP_SERVER_OPTIONS; i++)
+    if (strcmp(name, HttpServer_MethodName(i)) == 0) return i;
+  return HTTP_SERVER_UNKNOWN;
+}
 const char* HttpServer_GetFrom(const HttpServer_Context* ctx) { return ctx->from; }
 
 const char* HttpServer_MethodName(HttpServer_Method method)
@@ -90,6 +105,18 @@ esp_err_t HttpServer_GetHeader(HttpServer_Context* ctx, const char* name, char* 
 {
   if (!ctx || !name || !out || !outLen) return ESP_ERR_INVALID_ARG;
   out[0] = '\0';
+  if (ctx->cloudRequest) {
+    cJSON* headers = cJSON_GetObjectItemCaseSensitive(ctx->cloudRequest, "headers");
+    cJSON* h = NULL;
+    cJSON_ArrayForEach(h, headers) {
+      if (h->string && strcasecmp(h->string, name) == 0 && cJSON_IsString(h)) {
+        if (strlen(h->valuestring) >= outLen) return ESP_ERR_INVALID_SIZE;
+        strcpy(out, h->valuestring);
+        return ESP_OK;
+      }
+    }
+    return ESP_ERR_NOT_FOUND;
+  }
   return httpd_req_get_hdr_value_str(ctx->req, name, out, outLen);
 }
 
@@ -97,6 +124,13 @@ esp_err_t HttpServer_GetQuery(HttpServer_Context* ctx, char* out, size_t outLen)
 {
   if (!ctx || !out || !outLen) return ESP_ERR_INVALID_ARG;
   out[0] = '\0';
+  if (ctx->cloudRequest) {
+    const char* query = strchr(HttpServer_GetUri(ctx), '?');
+    if (!query) return ESP_ERR_NOT_FOUND;
+    if (strlen(++query) >= outLen) return ESP_ERR_INVALID_SIZE;
+    strcpy(out, query);
+    return ESP_OK;
+  }
   return httpd_req_get_url_query_str(ctx->req, out, outLen);
 }
 
@@ -111,9 +145,9 @@ void HttpServer_LogCall(HttpServer_Context* ctx)
 {
   char lockId[64] = {0};
   HttpServer_GetLockHeader(ctx, lockId, sizeof(lockId));
-  ESP_LOGI(tag, "Call rest/%s %s %s content_len=%u%s%s", ctx->from,
+  ESP_LOGI(tag, "Call rest/%s %s %s%s%s", ctx->from,
            HttpServer_MethodName(HttpServer_GetMethod(ctx)), HttpServer_GetUri(ctx),
-           (unsigned)HttpServer_GetContentLength(ctx), lockId[0] ? " X-Lock-Id=" : "", lockId);
+           lockId[0] ? " X-Lock-Id=" : "", lockId);
 }
 
 static esp_err_t HttpServer_SetCors(httpd_req_t* req)
@@ -156,6 +190,38 @@ static esp_err_t HttpServer_PrepareResponse(HttpServer_Context* ctx, int code, c
 {
   if (!ctx || code < 100 || code > 599) return ESP_ERR_INVALID_ARG;
   if (ctx->responseState != RESPONSE_IDLE) return ESP_ERR_INVALID_STATE;
+  if (ctx->cloudWrite) {
+    char type[64];
+    snprintf(type, sizeof(type), "%s", contentType ? contentType : "application/json");
+    char* semicolon = strchr(type, ';');
+    if (semicolon) *semicolon = '\0';
+    if (strcasecmp(type, "application/json") != 0) return ESP_ERR_NOT_SUPPORTED;
+    cJSON* envelope = cJSON_CreateObject();
+    cJSON* h = cJSON_CreateObject();
+    if (!envelope || !h) { cJSON_Delete(envelope); cJSON_Delete(h); return ESP_ERR_NO_MEM; }
+    cJSON_AddStringToObject(envelope, "type", "response");
+    cJSON_AddStringToObject(envelope, "requestId", cJSON_GetObjectItemCaseSensitive(ctx->cloudRequest, "requestId")->valuestring);
+    cJSON_AddNumberToObject(envelope, "status", code);
+    cJSON_AddItemToObject(envelope, "headers", h);
+    cJSON_AddStringToObject(h, "content-type", "application/json");
+    for (const HttpServer_Header* p = headers; p && p->name; p++) {
+      if (!p->value || strcasecmp(p->name, "content-type") == 0) { cJSON_Delete(envelope); return ESP_ERR_INVALID_ARG; }
+      cJSON_AddStringToObject(h, p->name, p->value);
+    }
+    char* text = cJSON_PrintUnformatted(envelope);
+    cJSON_Delete(envelope);
+    if (!text) return ESP_ERR_NO_MEM;
+    size_t length = strlen(text);
+    text[length - 1] = ',';
+    esp_err_t ret = ctx->cloudWrite(ctx->cloudUser, HTTP_CLOUD_BEGIN, text, length);
+    free(text);
+    if (ret == ESP_OK) ret = ctx->cloudWrite(ctx->cloudUser, HTTP_CLOUD_CHUNK, "\"body\":", 7);
+    if (ret != ESP_OK) {
+      ctx->cloudWrite(ctx->cloudUser, HTTP_CLOUD_ABORT, NULL, 0);
+      ctx->responseState = RESPONSE_FAILED;
+    }
+    return ret;
+  }
   snprintf(ctx->status, sizeof(ctx->status), "%d %s", code, HttpServer_StatusReason(code));
   esp_err_t ret = httpd_resp_set_status(ctx->req, ctx->status);
   if (ret == ESP_OK) ret = HttpServer_SetCors(ctx->req);
@@ -173,6 +239,12 @@ esp_err_t HttpServer_Send(HttpServer_Context* ctx, int code, const char* content
                           const HttpServer_Header* headers, const void* data, size_t length)
 {
   if ((!data && length) || length > INT_MAX) return ESP_ERR_INVALID_ARG;
+  if (ctx && ctx->cloudWrite) {
+    esp_err_t ret = HttpServer_SendChunkBegin(ctx, code, contentType, headers);
+    if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, data, length);
+    if (ret == ESP_OK) ret = HttpServer_SendChunkDone(ctx);
+    return ret;
+  }
   esp_err_t ret = HttpServer_PrepareResponse(ctx, code, contentType, headers);
   if (ret != ESP_OK) return ret;
   ret = httpd_resp_send(ctx->req, data, (ssize_t)length);
@@ -195,7 +267,10 @@ esp_err_t HttpServer_SendChunk(HttpServer_Context* ctx, const void* data, size_t
   if ((!data && length) || length > INT_MAX) return ESP_ERR_INVALID_ARG;
   /* Only Done may send the zero-length terminator. */
   if (length == 0) return ESP_OK;
-  esp_err_t ret = httpd_resp_send_chunk(ctx->req, data, (ssize_t)length);
+  esp_err_t ret = ctx->cloudWrite ? ctx->cloudWrite(ctx->cloudUser, HTTP_CLOUD_CHUNK, data, length)
+                                : httpd_resp_send_chunk(ctx->req, data, (ssize_t)length);
+  if (ctx->cloudWrite && ret == ESP_OK) ctx->cloudBodySent = true;
+  if (ctx->cloudWrite && ret != ESP_OK) ctx->cloudWrite(ctx->cloudUser, HTTP_CLOUD_ABORT, NULL, 0);
   if (ret != ESP_OK) ctx->responseState = RESPONSE_FAILED;
   return ret;
 }
@@ -204,7 +279,11 @@ esp_err_t HttpServer_SendChunkDone(HttpServer_Context* ctx)
 {
   if (!ctx) return ESP_ERR_INVALID_ARG;
   if (ctx->responseState != RESPONSE_STREAMING) return ESP_ERR_INVALID_STATE;
-  esp_err_t ret = httpd_resp_send_chunk(ctx->req, NULL, 0);
+  esp_err_t ret;
+  if (ctx->cloudWrite) {
+    ret = ctx->cloudWrite(ctx->cloudUser, HTTP_CLOUD_END, ctx->cloudBodySent ? "}" : "null}", ctx->cloudBodySent ? 1 : 5);
+    if (ret != ESP_OK) ctx->cloudWrite(ctx->cloudUser, HTTP_CLOUD_ABORT, NULL, 0);
+  } else ret = httpd_resp_send_chunk(ctx->req, NULL, 0);
   ctx->responseState = ret == ESP_OK ? RESPONSE_DONE : RESPONSE_FAILED;
   return ret;
 }
@@ -216,6 +295,14 @@ esp_err_t HttpServer_AsyncBegin(HttpServer_Context* ctx, HttpServer_Context** ou
   if (ctx->async || ctx->responseState != RESPONSE_IDLE) return ESP_ERR_INVALID_STATE;
   HttpServer_Context* copy = calloc(1, sizeof(*copy));
   if (!copy) return ESP_ERR_NO_MEM;
+  if (ctx->cloudWrite) {
+    *copy = *ctx;
+    ctx->cloudRequest = NULL; /* Ownership moves to AsyncComplete. */
+    copy->async = true;
+    ctx->responseState = RESPONSE_DETACHED;
+    *out = copy;
+    return ESP_OK;
+  }
   esp_err_t ret = httpd_req_async_handler_begin(ctx->req, &copy->req);
   if (ret != ESP_OK) { free(copy); return ret; }
   copy->from = ctx->from;
@@ -229,7 +316,11 @@ esp_err_t HttpServer_AsyncComplete(HttpServer_Context* ctx)
 {
   if (!ctx) return ESP_ERR_INVALID_ARG;
   if (!ctx->async) return ESP_ERR_INVALID_STATE;
-  esp_err_t ret = httpd_req_async_handler_complete(ctx->req);
+  esp_err_t ret = ESP_OK;
+  if (ctx->cloudWrite) {
+    if (ctx->responseState == RESPONSE_STREAMING) ctx->cloudWrite(ctx->cloudUser, HTTP_CLOUD_ABORT, NULL, 0);
+    cJSON_Delete(ctx->cloudRequest);
+  } else ret = httpd_req_async_handler_complete(ctx->req);
   free(ctx);
   return ret;
 }
@@ -252,6 +343,14 @@ esp_err_t HttpServer_RegisterRoutes(const HttpServer_Route* routes, size_t count
                        .handler = HttpServer_RouteAdapter, .user_ctx = (void*)&routes[i]};
     esp_err_t ret = httpd_register_uri_handler(server, &uri);
     if (ret != ESP_OK) return ret;
+    if (!pairingServer) {
+      bool registered = false;
+      for (size_t j = 0; j < cloudRouteCount; j++) if (cloudRoutes[j] == &routes[i]) registered = true;
+      if (!registered) {
+        if (cloudRouteCount >= 48) return ESP_ERR_NO_MEM;
+        cloudRoutes[cloudRouteCount++] = &routes[i];
+      }
+    }
   }
   return ESP_OK;
 }
@@ -292,7 +391,12 @@ esp_err_t HttpServer_SendEmpty(HttpServer_Context* ctx, int status)
 bool HttpServer_HasJsonContentType(HttpServer_Context* ctx)
 {
   char type[64] = {0};
-  return HttpServer_GetHeader(ctx, "Content-Type", type, sizeof(type)) == ESP_OK && strstr(type, "application/json") != NULL;
+  if (HttpServer_GetHeader(ctx, "Content-Type", type, sizeof(type)) != ESP_OK) return false;
+  char* end = strchr(type, ';');
+  if (!end) end = type + strlen(type);
+  while (end > type && (end[-1] == ' ' || end[-1] == '\t')) end--;
+  *end = '\0';
+  return strcasecmp(type, "application/json") == 0;
 }
 
 void HttpServer_GetLockHeader(HttpServer_Context* ctx, char* out, size_t outLen)
@@ -686,13 +790,13 @@ cJSON* HttpServer_SerializeLockResources(const Lock_Resource* resources, size_t 
   return resArr;
 }
 
-esp_err_t HttpServer_ReadBody(HttpServer_Context* ctx, char** outBuf, size_t* outLen)
+static esp_err_t HttpServer_ReadHttpBody(HttpServer_Context* ctx, char** outBuf, size_t* outLen)
 {
   if (!ctx || !outBuf || !outLen) return ESP_ERR_INVALID_ARG;
   *outBuf = NULL;
   *outLen = 0;
   if (ctx->responseState != RESPONSE_IDLE) return ESP_ERR_INVALID_STATE;
-  size_t total = HttpServer_GetContentLength(ctx);
+  size_t total = ctx->req->content_len;
   if (total > 16 * 1024) {
     return ESP_ERR_INVALID_SIZE;
   }
@@ -714,9 +818,18 @@ esp_err_t HttpServer_ReadBody(HttpServer_Context* ctx, char** outBuf, size_t* ou
 
 cJSON* HttpServer_ParseBody(HttpServer_Context* ctx, esp_err_t* errOut)
 {
+  if (ctx && ctx->cloudRequest) {
+    cJSON* body = cJSON_GetObjectItemCaseSensitive(ctx->cloudRequest, "body");
+    if (ctx->responseState != RESPONSE_IDLE || !cJSON_IsObject(body)) {
+      if (errOut) *errOut = ESP_ERR_INVALID_ARG;
+      return NULL;
+    }
+    if (errOut) *errOut = ESP_OK;
+    return cJSON_DetachItemFromObjectCaseSensitive(ctx->cloudRequest, "body");
+  }
   char* buf = NULL;
   size_t len = 0;
-  esp_err_t ret = HttpServer_ReadBody(ctx, &buf, &len);
+  esp_err_t ret = HttpServer_ReadHttpBody(ctx, &buf, &len);
   if (ret != ESP_OK) {
     if (errOut) *errOut = ret;
     return NULL;
@@ -849,6 +962,53 @@ static bool HttpServer_UriMatch(const char* tpl, const char* uri, size_t match_u
     u++;
   }
   return u == u_end;
+}
+
+esp_err_t HttpServer_DispatchCloud(cJSON* request, HttpServer_CloudWrite write, void* user)
+{
+  cJSON* id = cJSON_GetObjectItemCaseSensitive(request, "requestId");
+  cJSON* path = cJSON_GetObjectItemCaseSensitive(request, "path");
+  cJSON* method = cJSON_GetObjectItemCaseSensitive(request, "method");
+  cJSON* headers = cJSON_GetObjectItemCaseSensitive(request, "headers");
+  cJSON* body = cJSON_GetObjectItemCaseSensitive(request, "body");
+  if (!write || !cJSON_IsString(id) || !id->valuestring[0] || strlen(id->valuestring) > 128 ||
+      !cJSON_IsString(path) || path->valuestring[0] != '/' || strlen(path->valuestring) > 1024 ||
+      !cJSON_IsString(method) || !cJSON_IsObject(headers)) {
+    cJSON_Delete(request);
+    return ESP_ERR_INVALID_ARG;
+  }
+  HttpServer_Context ctx = {.from = "cloud", .cloudRequest = request, .cloudWrite = write, .cloudUser = user};
+  esp_err_t ret;
+  if (!HttpServer_HasJsonContentType(&ctx)) {
+    ret = HttpServer_SendError(&ctx, 415, "cloud relay not support non-JSON content-type currently, use application/json instead");
+    goto cleanup;
+  }
+  if (!cJSON_IsObject(body) && !cJSON_IsNull(body)) {
+    ret = HttpServer_SendError(&ctx, 400, "body must be a JSON object or null");
+    goto cleanup;
+  }
+  if (!server || pairingServer || Wifi_IsPairing()) {
+    ret = HttpServer_SendError(&ctx, 503, "device API unavailable");
+    goto cleanup;
+  }
+  size_t pathLen = strcspn(path->valuestring, "?");
+  HttpServer_Handler handler = NULL;
+  bool foundPath = false;
+  for (size_t i = 0; i < cloudRouteCount; i++) {
+    if (!HttpServer_UriMatch(cloudRoutes[i]->uri, path->valuestring, pathLen)) continue;
+    foundPath = true;
+    if (cloudRoutes[i]->method == HttpServer_GetMethod(&ctx)) { handler = cloudRoutes[i]->handler; break; }
+  }
+  ret = handler ? handler(&ctx) : HttpServer_SendError(&ctx, foundPath ? 405 : 404, foundPath ? "method not allowed" : "not found");
+  if (ctx.responseState == RESPONSE_IDLE) {
+    ret = HttpServer_SendError(&ctx, ret == ESP_ERR_NOT_SUPPORTED ? 415 : 500,
+        ret == ESP_ERR_NOT_SUPPORTED ? "cloud relay not support non-JSON content-type currently, use application/json instead" : "internal");
+  } else if (ctx.responseState == RESPONSE_STREAMING) {
+    write(user, HTTP_CLOUD_ABORT, NULL, 0);
+  }
+cleanup:
+  cJSON_Delete(ctx.cloudRequest); /* NULL when AsyncBegin took ownership. */
+  return ret;
 }
 
 static esp_err_t HttpServer_PortalRedirect(httpd_req_t* req)

@@ -16,6 +16,10 @@
 #define CONFIG_NTP_SERVER "pool.ntp.org"
 #define CONFIG_NTP_TIMEOUT_MS (15 * 1000)
 
+/* Set to the deployed worker origin, e.g. wss://saihub-cloud.example.workers.dev. */
+#define CONFIG_CLOUD_URL "ws://192.168.88.190:8787"
+#define CONFIG_CLOUD_MAX_MESSAGE_BYTES (72 * 1024)
+
 #define CONFIG_LOCK_TTL_US (30ULL * 1000 * 1000)
 #define CONFIG_LOCK_MAX_COUNT 16
 #define CONFIG_LOCK_MAX_RESOURCES 16

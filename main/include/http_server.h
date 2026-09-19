@@ -23,6 +23,10 @@ typedef enum {
   HTTP_SERVER_PATCH, HTTP_SERVER_OPTIONS,
 } HttpServer_Method;
 typedef struct { const char* name; const char* value; } HttpServer_Header;
+typedef enum { HTTP_CLOUD_BEGIN, HTTP_CLOUD_CHUNK, HTTP_CLOUD_END, HTTP_CLOUD_ABORT } HttpServer_CloudWriteKind;
+typedef esp_err_t (*HttpServer_CloudWrite)(void* user, HttpServer_CloudWriteKind kind, const void* data, size_t length);
+/** Consumes the JSON envelope on all paths; async dispatch transfers it to AsyncComplete. */
+esp_err_t HttpServer_DispatchCloud(cJSON* request, HttpServer_CloudWrite write, void* user);
 typedef esp_err_t (*HttpServer_Handler)(HttpServer_Context* ctx);
 typedef struct {
   const char* uri;
@@ -34,7 +38,6 @@ typedef struct {
 esp_err_t HttpServer_RegisterRoutes(const HttpServer_Route* routes, size_t count);
 const char* HttpServer_GetUri(const HttpServer_Context* ctx);
 HttpServer_Method HttpServer_GetMethod(const HttpServer_Context* ctx);
-size_t HttpServer_GetContentLength(const HttpServer_Context* ctx);
 const char* HttpServer_GetFrom(const HttpServer_Context* ctx);
 esp_err_t HttpServer_GetHeader(HttpServer_Context* ctx, const char* name, char* out, size_t outLen);
 esp_err_t HttpServer_GetQuery(HttpServer_Context* ctx, char* out, size_t outLen);
@@ -89,7 +92,7 @@ cJSON* HttpServer_SerializeLockResources(const Lock_Resource* resources, size_t 
 void HttpServer_FormatLockConflict(const Lock_Conflict* conflict, char* reason, size_t reasonLen);
 void HttpServer_FormatPinRange(char* out, size_t outLen);
 int64_t HttpServer_NowUs(void);
-esp_err_t HttpServer_ReadBody(HttpServer_Context* ctx, char** outBuf, size_t* outLen);
+/** Returns an owned JSON tree; caller must cJSON_Delete it. Detaches cloud bodies without copying. */
 cJSON* HttpServer_ParseBody(HttpServer_Context* ctx, esp_err_t* errOut);
 
 #endif
