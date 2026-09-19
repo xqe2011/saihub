@@ -23,9 +23,11 @@
 static const char* tag = "SAIHUB-Gpio";
 
 #define GPIO_CTRL_LEDC_SPEED LEDC_LOW_SPEED_MODE
-#define GPIO_CTRL_LEDC_CHANNEL_COUNT SOC_LEDC_CHANNEL_NUM
+#define GPIO_CTRL_LEDC_CHANNEL_COUNT CONFIG_GPIO_PWM_MAX_OUTPUTS
 #define GPIO_CTRL_LEDC_TIMER_COUNT SOC_LEDC_TIMER_NUM
 #define GPIO_CTRL_LEDC_SRC_CLK_HZ 80000000U
+
+_Static_assert(CONFIG_GPIO_PWM_MAX_OUTPUTS <= SOC_LEDC_CHANNEL_NUM, "Configured PWM output limit exceeds hardware channels");
 
 typedef struct {
   GpioCtrl_Mode mode;
@@ -361,6 +363,7 @@ static esp_err_t GpioCtrl_AcquireTimer(uint32_t frequencyHz, int* timerOut)
     if (timers[i].inUse && timers[i].frequencyHz == frequencyHz) {
       timers[i].refCount++;
       *timerOut = i;
+      ESP_LOGI(tag, "PWM timer share: timer=%d frequency=%u refCount=%d", i, (unsigned)frequencyHz, timers[i].refCount);
       return ESP_OK;
     }
   }
@@ -389,6 +392,8 @@ static esp_err_t GpioCtrl_AcquireTimer(uint32_t frequencyHz, int* timerOut)
       timers[i].dutyResolution = resolution;
       timers[i].refCount = 1;
       *timerOut = i;
+      ESP_LOGI(tag, "PWM timer allocate: timer=%d frequency=%u resolution=%u refCount=1", i, (unsigned)frequencyHz,
+               (unsigned)resolution);
       return ESP_OK;
     }
   }
@@ -403,6 +408,7 @@ static void GpioCtrl_ReleaseTimer(int timer)
     timers[timer].refCount--;
   }
   if (timers[timer].refCount == 0) {
+    ESP_LOGI(tag, "PWM timer release: timer=%d frequency=%u refCount=0", timer, (unsigned)timers[timer].frequencyHz);
     ledc_timer_pause(GPIO_CTRL_LEDC_SPEED, (ledc_timer_t)timer);
     ledc_timer_config_t cfg = {
         .speed_mode = GPIO_CTRL_LEDC_SPEED,
@@ -457,6 +463,9 @@ static esp_err_t GpioCtrl_DetachPwm(int logicalPin)
   if (!p->pwmActive) return ESP_OK;
 
   int hw = GpioCtrl_Hw(logicalPin);
+  ESP_LOGI(tag, "PWM detach: pin=%d channel=%d timer=%d frequency=%u timerRefCount=%d", logicalPin,
+           p->ledcChannel, p->ledcTimer, p->ledcTimer >= 0 ? (unsigned)timers[p->ledcTimer].frequencyHz : 0U,
+           p->ledcTimer >= 0 ? timers[p->ledcTimer].refCount : 0);
   if (p->ledcChannel >= 0) {
     ledc_stop(GPIO_CTRL_LEDC_SPEED, (ledc_channel_t)p->ledcChannel, 0);
     GpioCtrl_FreeChannel(p->ledcChannel);
@@ -513,6 +522,8 @@ static esp_err_t GpioCtrl_AttachPwm(int logicalPin, uint32_t frequencyHz, double
     return err;
   }
 
+  ESP_LOGI(tag, "PWM attach: pin=%d channel=%d timer=%d frequency=%u timerRefCount=%d", logicalPin, channel, timer,
+           (unsigned)frequencyHz, timers[timer].refCount);
   p->pwmActive = true;
   p->ledcChannel = channel;
   p->ledcTimer = timer;

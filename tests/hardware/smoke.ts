@@ -536,33 +536,19 @@ async function testPwmResourcesAndTraceRaces(): Promise<void> {
   try {
     // Start from a known allocation state; earlier sections may leave PWM timers/channels active.
     for (const pin of resourcePins) await configureRestPin(pin, "disable");
-    const channelPins = [0, 1, 2, 3, 4, 5];
-    for (const pin of channelPins) {
-      await configureRestPin(pin, "pwmOutput");
-      await requestJson<void>("POST", `/pin/${pin}/pwm`, { frequency: 2000, duty: 20 + pin * 10 }, 204);
-    }
-    const shared = await Promise.all(channelPins.map((pin) => requestJson<PwmState>("GET", `/pin/${pin}/pwm`)));
-    assert(shared.every((state) => Math.abs(state.frequency - 2000) < 4), "Shared-frequency PWM allocation was inconsistent");
-    const channelExhausted = await rawRequest("PUT", "/pin/6", {
+    const pwmPins = [0, 1, 2, 3];
+    for (const pin of pwmPins) await configureRestPin(pin, "pwmOutput");
+    const shared = await Promise.all(pwmPins.map((pin) => requestJson<PwmState>("GET", `/pin/${pin}/pwm`)));
+    assert(shared.every((state) => Math.abs(state.frequency - 1000) < 2), "Shared-frequency PWM allocation was inconsistent");
+    const outputExhausted = await rawRequest("PUT", "/pin/4", {
       mode: "pwmOutput", openDrain: false, pullUp: false, pullDown: false,
     });
-    assert(channelExhausted.status === 422 && channelExhausted.text.includes("resources exhausted"),
-      `Seventh PWM channel returned ${channelExhausted.status}, expected resource exhaustion`);
+    assert(outputExhausted.status === 422 && outputExhausted.text.includes("PWM output limit reached"),
+      `Fifth PWM output returned ${outputExhausted.status}, expected resource exhaustion`);
 
-    for (const pin of channelPins) await configureRestPin(pin, "disable");
-    const frequencyPins = [0, 1, 2, 3, 4];
-    for (const pin of frequencyPins) {
-      await configureRestPin(pin, "pwmOutput");
-      await requestJson<void>("POST", `/pin/${pin}/pwm`, { frequency: 2000, duty: 20 + pin * 10 }, 204);
-    }
-    for (const [pin, frequency] of [[0, 500], [2, 10000], [3, 50000]] as const) {
+    for (const [pin, frequency] of [[0, 500], [1, 2000], [2, 10000], [3, 50000]] as const) {
       await requestJson<void>("POST", `/pin/${pin}/pwm`, { frequency, duty: 40 }, 204);
     }
-    const frequencyExhausted = await rawRequest("POST", "/pin/4/pwm", { frequency: 20000, duty: 40 });
-    assert(frequencyExhausted.status === 422 && frequencyExhausted.text.includes("resources exhausted"),
-      `Fifth distinct PWM frequency returned ${frequencyExhausted.status}, expected resource exhaustion`);
-    await configureRestPin(2, "disable");
-    await requestJson<void>("POST", "/pin/4/pwm", { frequency: 20000, duty: 40 }, 204);
     for (let iteration = 0; iteration < 8; iteration += 1) {
       const frequency = iteration % 2 === 0 ? 1000 : 20000;
       await mcpTool("set_pin_pwms", { pins: [0], frequency, duty: 10 + iteration * 10 });
