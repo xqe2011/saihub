@@ -11,28 +11,67 @@
 
 #include <cJSON.h>
 #include <esp_err.h>
-#include <esp_http_server.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+/** Request-scoped wrapper. Routes must not retain it without AsyncBegin. */
+typedef struct HttpServer_Context HttpServer_Context;
+typedef enum {
+  HTTP_SERVER_UNKNOWN = -1,
+  HTTP_SERVER_GET, HTTP_SERVER_POST, HTTP_SERVER_PUT, HTTP_SERVER_DELETE,
+  HTTP_SERVER_PATCH, HTTP_SERVER_OPTIONS,
+} HttpServer_Method;
+typedef struct { const char* name; const char* value; } HttpServer_Header;
+typedef esp_err_t (*HttpServer_Handler)(HttpServer_Context* ctx);
+typedef struct {
+  const char* uri;
+  HttpServer_Method method;
+  HttpServer_Handler handler;
+} HttpServer_Route;
+
+/** Descriptors and their strings must remain valid for the server lifetime. */
+esp_err_t HttpServer_RegisterRoutes(const HttpServer_Route* routes, size_t count);
+const char* HttpServer_GetUri(const HttpServer_Context* ctx);
+HttpServer_Method HttpServer_GetMethod(const HttpServer_Context* ctx);
+size_t HttpServer_GetContentLength(const HttpServer_Context* ctx);
+const char* HttpServer_GetFrom(const HttpServer_Context* ctx);
+esp_err_t HttpServer_GetHeader(HttpServer_Context* ctx, const char* name, char* out, size_t outLen);
+esp_err_t HttpServer_GetQuery(HttpServer_Context* ctx, char* out, size_t outLen);
+esp_err_t HttpServer_QueryValue(const char* query, const char* name, char* out, size_t outLen);
+/** Headers end with {NULL, NULL}. Send consumes bytes synchronously. */
+esp_err_t HttpServer_Send(HttpServer_Context* ctx, int code, const char* contentType,
+                          const HttpServer_Header* headers, const void* data, size_t length);
+/** Content type and header strings must remain valid through Done.
+ * Begin must precede Chunk/Done; zero-length Chunk is a no-op, only Done terminates.
+ * A failed send prevents further writes. Ordinary Send cannot follow Begin.
+ */
+esp_err_t HttpServer_SendChunkBegin(HttpServer_Context* ctx, int code, const char* contentType,
+                                    const HttpServer_Header* headers);
+esp_err_t HttpServer_SendChunk(HttpServer_Context* ctx, const void* data, size_t length);
+esp_err_t HttpServer_SendChunkDone(HttpServer_Context* ctx);
+/** On success, original context is detached and must no longer be used.
+ * Complete the returned context exactly once, including task-creation/send failures.
+ */
+esp_err_t HttpServer_AsyncBegin(HttpServer_Context* ctx, HttpServer_Context** out);
+esp_err_t HttpServer_AsyncComplete(HttpServer_Context* ctx);
 
 esp_err_t HttpServer_Init(void);
 esp_err_t HttpServer_Start(void);
 esp_err_t HttpServer_StartPairing(void);
 esp_err_t HttpServer_Stop(void);
 
-const char* HttpServer_MethodName(int method);
-void HttpServer_LogCall(httpd_req_t* req);
-void HttpServer_SetCors(httpd_req_t* req);
-esp_err_t HttpServer_SendError(httpd_req_t* req, int status, const char* reason);
-esp_err_t HttpServer_SendJson(httpd_req_t* req, int status, cJSON* root);
-esp_err_t HttpServer_SendEmpty(httpd_req_t* req, int status);
-esp_err_t HttpServer_SendOptions(httpd_req_t* req);
-bool HttpServer_HasJsonContentType(httpd_req_t* req);
-void HttpServer_GetLockHeader(httpd_req_t* req, char* out, size_t outLen);
+const char* HttpServer_MethodName(HttpServer_Method method);
+void HttpServer_LogCall(HttpServer_Context* ctx);
+esp_err_t HttpServer_SendError(HttpServer_Context* ctx, int status, const char* reason);
+esp_err_t HttpServer_SendJson(HttpServer_Context* ctx, int status, cJSON* root);
+esp_err_t HttpServer_SendEmpty(HttpServer_Context* ctx, int status);
+esp_err_t HttpServer_SendOptions(HttpServer_Context* ctx);
+bool HttpServer_HasJsonContentType(HttpServer_Context* ctx);
+void HttpServer_GetLockHeader(HttpServer_Context* ctx, char* out, size_t outLen);
 int HttpServer_LockStatusId(const char* lockId, Lock_Kind kind, int pin, uint8_t methods, char* reasonOut,
                             size_t reasonLen);
-int HttpServer_LockStatus(httpd_req_t* req, Lock_Kind kind, int pin, uint8_t methods, char* lockIdBuf, size_t lockIdLen,
+int HttpServer_LockStatus(HttpServer_Context* ctx, Lock_Kind kind, int pin, uint8_t methods, char* lockIdBuf, size_t lockIdLen,
                     char* reasonOut, size_t reasonLen);
 int HttpServer_ParsePathPin(const char* uri, const char* prefix, const char* suffix, int* pinOut);
 esp_err_t HttpServer_ParsePinsArray(cJSON* root, int* pins, size_t maxPins, size_t* countOut, char* reason, size_t reasonLen);
@@ -50,7 +89,7 @@ cJSON* HttpServer_SerializeLockResources(const Lock_Resource* resources, size_t 
 void HttpServer_FormatLockConflict(const Lock_Conflict* conflict, char* reason, size_t reasonLen);
 void HttpServer_FormatPinRange(char* out, size_t outLen);
 int64_t HttpServer_NowUs(void);
-esp_err_t HttpServer_ReadBody(httpd_req_t* req, char** outBuf, size_t* outLen);
-cJSON* HttpServer_ParseBody(httpd_req_t* req, esp_err_t* errOut);
+esp_err_t HttpServer_ReadBody(HttpServer_Context* ctx, char** outBuf, size_t* outLen);
+cJSON* HttpServer_ParseBody(HttpServer_Context* ctx, esp_err_t* errOut);
 
 #endif

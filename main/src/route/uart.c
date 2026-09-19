@@ -12,7 +12,6 @@
 #include "uart_ctrl.h"
 
 #include <cJSON.h>
-#include <esp_http_server.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,19 +39,19 @@ static int Route_ParseUartPathId(const char* uri, const char* suffix, int* idOut
   return 0;
 }
 
-static esp_err_t Route_UartIdError(httpd_req_t* req, int pr)
+static esp_err_t Route_UartIdError(HttpServer_Context* ctx, int pr)
 {
   if (pr == -2) {
-    return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
+    return HttpServer_SendError(ctx, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
   }
   if (pr == -3) {
     char reason[128];
-    const char* p = strstr(req->uri, "/uart/");
+    const char* p = strstr(HttpServer_GetUri(ctx), "/uart/");
     long raw = p ? strtol(p + 6, NULL, 10) : -1;
     snprintf(reason, sizeof(reason), "UART %ld does not exist. Use an id from GET /uart/.", raw);
-    return HttpServer_SendError(req, 404, reason);
+    return HttpServer_SendError(ctx, 404, reason);
   }
-  return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
+  return HttpServer_SendError(ctx, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
 }
 
 static void Route_AddOptionalPin(cJSON* pins, const char* key, int pin)
@@ -223,10 +222,10 @@ static cJSON* Route_EncodeReceiveData(UartCtrl_Encoding encoding, const uint8_t*
   return arr;
 }
 
-static esp_err_t Route_UartListHandler(httpd_req_t* req)
+static esp_err_t Route_UartListHandler(HttpServer_Context* ctx)
 {
-  HttpServer_LogCall(req);
-  TOOL_CALL_LOG("rest %s %s", HttpServer_MethodName(req->method), req->uri);
+  HttpServer_LogCall(ctx);
+  TOOL_CALL_LOG("rest/%s %s %s", HttpServer_GetFrom(ctx), HttpServer_MethodName(HttpServer_GetMethod(ctx)), HttpServer_GetUri(ctx));
   Lock_SweepExpired();
   cJSON* root = cJSON_CreateObject();
   cJSON* arr = cJSON_CreateArray();
@@ -238,117 +237,117 @@ static esp_err_t Route_UartListHandler(httpd_req_t* req)
   }
   cJSON_AddItemToObject(root, "uarts", arr);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
-  return HttpServer_SendJson(req, 200, root);
+  return HttpServer_SendJson(ctx, 200, root);
 }
 
-static esp_err_t Route_UartPostConfigHandler(httpd_req_t* req)
+static esp_err_t Route_UartPostConfigHandler(HttpServer_Context* ctx)
 {
-  HttpServer_LogCall(req);
+  HttpServer_LogCall(ctx);
   Lock_SweepExpired();
   int id = 0;
-  int pr = Route_ParseUartPathId(req->uri, "/config", &id);
-  if (pr != 0) return Route_UartIdError(req, pr);
+  int pr = Route_ParseUartPathId(HttpServer_GetUri(ctx), "/config", &id);
+  if (pr != 0) return Route_UartIdError(ctx, pr);
 
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasJsonContentType(ctx)) {
+    return HttpServer_SendError(ctx, 415, "Content-Type must be application/json.");
   }
 
   char lockId[64];
   char reason[256];
-  int st = HttpServer_LockStatus(req, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
-  if (st) return HttpServer_SendError(req, st, reason);
+  int st = HttpServer_LockStatus(ctx, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
+  if (st) return HttpServer_SendError(ctx, st, reason);
 
   esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+  cJSON* body = HttpServer_ParseBody(ctx, &perr);
+  if (body == NULL) return HttpServer_SendError(ctx, 400, "invalid_json");
 
   UartCtrl_Config cfg;
   memset(&cfg, 0, sizeof(cfg));
   if (Route_ParseUartConfigBody(body, &cfg, reason, sizeof(reason)) != ESP_OK) {
     cJSON_Delete(body);
-    return HttpServer_SendError(req, 400, reason);
+    return HttpServer_SendError(ctx, 400, reason);
   }
   cJSON_Delete(body);
 
   esp_err_t ret = UartCtrl_SetConfig(id, &cfg, reason, sizeof(reason));
-  if (ret == ESP_ERR_INVALID_ARG) return HttpServer_SendError(req, 400, reason);
-  if (ret == ESP_ERR_INVALID_STATE) return HttpServer_SendError(req, 409, reason);
-  if (ret != ESP_OK) return HttpServer_SendError(req, 500, reason[0] ? reason : "internal");
+  if (ret == ESP_ERR_INVALID_ARG) return HttpServer_SendError(ctx, 400, reason);
+  if (ret == ESP_ERR_INVALID_STATE) return HttpServer_SendError(ctx, 409, reason);
+  if (ret != ESP_OK) return HttpServer_SendError(ctx, 500, reason[0] ? reason : "internal");
 
   Lock_Touch(lockId);
-  return HttpServer_SendEmpty(req, 204);
+  return HttpServer_SendEmpty(ctx, 204);
 }
 
-static esp_err_t Route_UartPostTransmitHandler(httpd_req_t* req)
+static esp_err_t Route_UartPostTransmitHandler(HttpServer_Context* ctx)
 {
-  HttpServer_LogCall(req);
+  HttpServer_LogCall(ctx);
   Lock_SweepExpired();
   int id = 0;
-  int pr = Route_ParseUartPathId(req->uri, "/transmit", &id);
-  if (pr != 0) return Route_UartIdError(req, pr);
+  int pr = Route_ParseUartPathId(HttpServer_GetUri(ctx), "/transmit", &id);
+  if (pr != 0) return Route_UartIdError(ctx, pr);
 
-  if (!HttpServer_HasJsonContentType(req)) {
-    return HttpServer_SendError(req, 415, "Content-Type must be application/json.");
+  if (!HttpServer_HasJsonContentType(ctx)) {
+    return HttpServer_SendError(ctx, 415, "Content-Type must be application/json.");
   }
 
   char lockId[64];
   char reason[256];
-  int st = HttpServer_LockStatus(req, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
-  if (st) return HttpServer_SendError(req, st, reason);
-  if (!Route_UartIsEnabled(id, reason, sizeof(reason))) return HttpServer_SendError(req, 422, reason);
+  int st = HttpServer_LockStatus(ctx, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
+  if (st) return HttpServer_SendError(ctx, st, reason);
+  if (!Route_UartIsEnabled(id, reason, sizeof(reason))) return HttpServer_SendError(ctx, 422, reason);
 
   UartCtrl_Config cfg;
   UartCtrl_GetConfig(id, &cfg);
 
   esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
-  if (body == NULL) return HttpServer_SendError(req, 400, "invalid_json");
+  cJSON* body = HttpServer_ParseBody(ctx, &perr);
+  if (body == NULL) return HttpServer_SendError(ctx, 400, "invalid_json");
 
   uint8_t* data = NULL;
   size_t len = 0;
   esp_err_t parseRet = Route_ParseTransmitData(body, cfg.encoding, &data, &len, reason, sizeof(reason));
   cJSON_Delete(body);
-  if (parseRet == ESP_ERR_INVALID_SIZE) return HttpServer_SendError(req, 400, reason);
-  if (parseRet != ESP_OK) return HttpServer_SendError(req, 400, reason);
+  if (parseRet == ESP_ERR_INVALID_SIZE) return HttpServer_SendError(ctx, 400, reason);
+  if (parseRet != ESP_OK) return HttpServer_SendError(ctx, 400, reason);
 
   esp_err_t ret = UartCtrl_Transmit(id, data, len, reason, sizeof(reason));
   free(data);
-  if (ret == ESP_ERR_INVALID_STATE) return HttpServer_SendError(req, 422, reason);
-  if (ret == ESP_ERR_INVALID_SIZE) return HttpServer_SendError(req, 400, reason);
-  if (ret != ESP_OK) return HttpServer_SendError(req, 500, reason[0] ? reason : "internal");
+  if (ret == ESP_ERR_INVALID_STATE) return HttpServer_SendError(ctx, 422, reason);
+  if (ret == ESP_ERR_INVALID_SIZE) return HttpServer_SendError(ctx, 400, reason);
+  if (ret != ESP_OK) return HttpServer_SendError(ctx, 500, reason[0] ? reason : "internal");
 
   Lock_Touch(lockId);
-  return HttpServer_SendEmpty(req, 204);
+  return HttpServer_SendEmpty(ctx, 204);
 }
 
-static esp_err_t Route_UartGetReceiveHandler(httpd_req_t* req)
+static esp_err_t Route_UartGetReceiveHandler(HttpServer_Context* ctx)
 {
-  HttpServer_LogCall(req);
+  HttpServer_LogCall(ctx);
   Lock_SweepExpired();
   int id = 0;
-  int pr = Route_ParseUartPathId(req->uri, "/receive", &id);
-  if (pr != 0) return Route_UartIdError(req, pr);
+  int pr = Route_ParseUartPathId(HttpServer_GetUri(ctx), "/receive", &id);
+  if (pr != 0) return Route_UartIdError(ctx, pr);
 
   char lockId[64];
   char reason[256];
-  int st = HttpServer_LockStatus(req, LOCK_KIND_UART, id, LOCK_METHOD_READ, lockId, sizeof(lockId), reason, sizeof(reason));
-  if (st) return HttpServer_SendError(req, st, reason);
-  if (!Route_UartIsEnabled(id, reason, sizeof(reason))) return HttpServer_SendError(req, 422, reason);
+  int st = HttpServer_LockStatus(ctx, LOCK_KIND_UART, id, LOCK_METHOD_READ, lockId, sizeof(lockId), reason, sizeof(reason));
+  if (st) return HttpServer_SendError(ctx, st, reason);
+  if (!Route_UartIsEnabled(id, reason, sizeof(reason))) return HttpServer_SendError(ctx, 422, reason);
 
   UartCtrl_Config cfg;
   UartCtrl_GetConfig(id, &cfg);
 
   uint8_t* buf = malloc(CONFIG_UART_MAX_PAYLOAD_BYTES);
-  if (buf == NULL) return HttpServer_SendError(req, 500, "internal");
+  if (buf == NULL) return HttpServer_SendError(ctx, 500, "internal");
   size_t n = 0;
   esp_err_t ret = UartCtrl_Receive(id, buf, CONFIG_UART_MAX_PAYLOAD_BYTES, &n, reason, sizeof(reason));
   if (ret == ESP_ERR_INVALID_STATE) {
     free(buf);
-    return HttpServer_SendError(req, 422, reason);
+    return HttpServer_SendError(ctx, 422, reason);
   }
   if (ret != ESP_OK) {
     free(buf);
-    return HttpServer_SendError(req, 500, reason[0] ? reason : "internal");
+    return HttpServer_SendError(ctx, 500, reason[0] ? reason : "internal");
   }
 
   cJSON* root = cJSON_CreateObject();
@@ -356,47 +355,45 @@ static esp_err_t Route_UartGetReceiveHandler(httpd_req_t* req)
   free(buf);
   if (data == NULL) {
     cJSON_Delete(root);
-    return HttpServer_SendError(req, 500, "internal");
+    return HttpServer_SendError(ctx, 500, "internal");
   }
   cJSON_AddItemToObject(root, "data", data);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
   Lock_Touch(lockId);
-  return HttpServer_SendJson(req, 200, root);
+  return HttpServer_SendJson(ctx, 200, root);
 }
 
-static esp_err_t Route_UartPostFlushHandler(httpd_req_t* req)
+static esp_err_t Route_UartPostFlushHandler(HttpServer_Context* ctx)
 {
-  HttpServer_LogCall(req);
+  HttpServer_LogCall(ctx);
   Lock_SweepExpired();
   int id = 0;
-  int pr = Route_ParseUartPathId(req->uri, "/flush", &id);
-  if (pr != 0) return Route_UartIdError(req, pr);
+  int pr = Route_ParseUartPathId(HttpServer_GetUri(ctx), "/flush", &id);
+  if (pr != 0) return Route_UartIdError(ctx, pr);
 
   char lockId[64];
   char reason[256];
-  int st = HttpServer_LockStatus(req, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
-  if (st) return HttpServer_SendError(req, st, reason);
+  int st = HttpServer_LockStatus(ctx, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
+  if (st) return HttpServer_SendError(ctx, st, reason);
 
   esp_err_t ret = UartCtrl_Flush(id, reason, sizeof(reason));
-  if (ret == ESP_ERR_INVALID_STATE) return HttpServer_SendError(req, 422, reason);
-  if (ret != ESP_OK) return HttpServer_SendError(req, 500, reason[0] ? reason : "internal");
+  if (ret == ESP_ERR_INVALID_STATE) return HttpServer_SendError(ctx, 422, reason);
+  if (ret != ESP_OK) return HttpServer_SendError(ctx, 500, reason[0] ? reason : "internal");
 
   Lock_Touch(lockId);
-  return HttpServer_SendEmpty(req, 204);
+  return HttpServer_SendEmpty(ctx, 204);
 }
 
-static const httpd_uri_t uris[] = {
-    {.uri = "/uart/", .method = HTTP_GET, .handler = Route_UartListHandler},
-    {.uri = "/uart/*/config", .method = HTTP_POST, .handler = Route_UartPostConfigHandler},
-    {.uri = "/uart/*/transmit", .method = HTTP_POST, .handler = Route_UartPostTransmitHandler},
-    {.uri = "/uart/*/receive", .method = HTTP_GET, .handler = Route_UartGetReceiveHandler},
-    {.uri = "/uart/*/flush", .method = HTTP_POST, .handler = Route_UartPostFlushHandler},
+static const HttpServer_Route uris[] = {
+    {.uri = "/uart/", .method = HTTP_SERVER_GET, .handler = Route_UartListHandler},
+    {.uri = "/uart/*/config", .method = HTTP_SERVER_POST, .handler = Route_UartPostConfigHandler},
+    {.uri = "/uart/*/transmit", .method = HTTP_SERVER_POST, .handler = Route_UartPostTransmitHandler},
+    {.uri = "/uart/*/receive", .method = HTTP_SERVER_GET, .handler = Route_UartGetReceiveHandler},
+    {.uri = "/uart/*/flush", .method = HTTP_SERVER_POST, .handler = Route_UartPostFlushHandler},
 };
 
-esp_err_t Route_UartRegister(httpd_handle_t server)
+esp_err_t Route_UartRegister(void)
 {
-  for (size_t i = 0; i < TOOL_GET_ARRAY_LENGTH(uris); i++) {
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_register_uri_handler(server, &uris[i]), "register uart uri failed");
-  }
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(HttpServer_RegisterRoutes(uris, TOOL_GET_ARRAY_LENGTH(uris)), "register uart uri failed");
   return ESP_OK;
 }

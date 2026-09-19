@@ -14,6 +14,7 @@
 
 #include <esp_http_server.h>
 #include <esp_log.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,161 +31,273 @@ int64_t HttpServer_NowUs(void)
   return (int64_t)tv.tv_sec * 1000000LL + (int64_t)tv.tv_usec;
 }
 
-const char* HttpServer_MethodName(int method)
+typedef enum {
+  RESPONSE_IDLE, RESPONSE_STREAMING, RESPONSE_DONE, RESPONSE_FAILED, RESPONSE_DETACHED,
+} HttpServer_ResponseState;
+
+struct HttpServer_Context {
+  httpd_req_t* req;
+  const char* from;
+  HttpServer_ResponseState responseState;
+  bool async;
+  char status[64];
+};
+
+static HttpServer_Method HttpServer_FromEspMethod(httpd_method_t method)
 {
   switch (method) {
-    case HTTP_GET:
-      return "GET";
-    case HTTP_POST:
-      return "POST";
-    case HTTP_PUT:
-      return "PUT";
-    case HTTP_DELETE:
-      return "DELETE";
-    case HTTP_PATCH:
-      return "PATCH";
-    case HTTP_OPTIONS:
-      return "OPTIONS";
-    default:
-      return "?";
+    case HTTP_POST: return HTTP_SERVER_POST;
+    case HTTP_PUT: return HTTP_SERVER_PUT;
+    case HTTP_DELETE: return HTTP_SERVER_DELETE;
+    case HTTP_PATCH: return HTTP_SERVER_PATCH;
+    case HTTP_OPTIONS: return HTTP_SERVER_OPTIONS;
+    case HTTP_GET: return HTTP_SERVER_GET;
+    default: return HTTP_SERVER_UNKNOWN;
   }
 }
 
-void HttpServer_LogCall(httpd_req_t* req)
+static httpd_method_t HttpServer_ToEspMethod(HttpServer_Method method)
+{
+  switch (method) {
+    case HTTP_SERVER_POST: return HTTP_POST;
+    case HTTP_SERVER_PUT: return HTTP_PUT;
+    case HTTP_SERVER_DELETE: return HTTP_DELETE;
+    case HTTP_SERVER_PATCH: return HTTP_PATCH;
+    case HTTP_SERVER_OPTIONS: return HTTP_OPTIONS;
+    default: return HTTP_GET;
+  }
+}
+
+const char* HttpServer_GetUri(const HttpServer_Context* ctx) { return ctx->req->uri; }
+HttpServer_Method HttpServer_GetMethod(const HttpServer_Context* ctx) { return HttpServer_FromEspMethod(ctx->req->method); }
+size_t HttpServer_GetContentLength(const HttpServer_Context* ctx) { return ctx->req->content_len; }
+const char* HttpServer_GetFrom(const HttpServer_Context* ctx) { return ctx->from; }
+
+const char* HttpServer_MethodName(HttpServer_Method method)
+{
+  switch (method) {
+    case HTTP_SERVER_GET: return "GET";
+    case HTTP_SERVER_POST: return "POST";
+    case HTTP_SERVER_PUT: return "PUT";
+    case HTTP_SERVER_DELETE: return "DELETE";
+    case HTTP_SERVER_PATCH: return "PATCH";
+    case HTTP_SERVER_OPTIONS: return "OPTIONS";
+    default: return "?";
+  }
+}
+
+esp_err_t HttpServer_GetHeader(HttpServer_Context* ctx, const char* name, char* out, size_t outLen)
+{
+  if (!ctx || !name || !out || !outLen) return ESP_ERR_INVALID_ARG;
+  out[0] = '\0';
+  return httpd_req_get_hdr_value_str(ctx->req, name, out, outLen);
+}
+
+esp_err_t HttpServer_GetQuery(HttpServer_Context* ctx, char* out, size_t outLen)
+{
+  if (!ctx || !out || !outLen) return ESP_ERR_INVALID_ARG;
+  out[0] = '\0';
+  return httpd_req_get_url_query_str(ctx->req, out, outLen);
+}
+
+esp_err_t HttpServer_QueryValue(const char* query, const char* name, char* out, size_t outLen)
+{
+  if (!query || !name || !out || !outLen) return ESP_ERR_INVALID_ARG;
+  out[0] = '\0';
+  return httpd_query_key_value(query, name, out, outLen);
+}
+
+void HttpServer_LogCall(HttpServer_Context* ctx)
 {
   char lockId[64] = {0};
-  httpd_req_get_hdr_value_str(req, "X-Lock-Id", lockId, sizeof(lockId));
-  if (lockId[0] != '\0') {
-    ESP_LOGI(tag, "Call %s %s content_len=%d X-Lock-Id=%s", HttpServer_MethodName(req->method), req->uri, req->content_len,
-             lockId);
-  } else {
-    ESP_LOGI(tag, "Call %s %s content_len=%d", HttpServer_MethodName(req->method), req->uri, req->content_len);
+  HttpServer_GetLockHeader(ctx, lockId, sizeof(lockId));
+  ESP_LOGI(tag, "Call rest/%s %s %s content_len=%u%s%s", ctx->from,
+           HttpServer_MethodName(HttpServer_GetMethod(ctx)), HttpServer_GetUri(ctx),
+           (unsigned)HttpServer_GetContentLength(ctx), lockId[0] ? " X-Lock-Id=" : "", lockId);
+}
+
+static esp_err_t HttpServer_SetCors(httpd_req_t* req)
+{
+  esp_err_t ret = httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  if (ret == ESP_OK) ret = httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+  if (ret == ESP_OK) ret = httpd_resp_set_hdr(req, "Access-Control-Allow-Headers",
+      "Content-Type, Accept, X-Lock-Id, MCP-Protocol-Version, Mcp-Session-Id");
+  if (ret == ESP_OK) ret = httpd_resp_set_hdr(req, "Access-Control-Expose-Headers", "X-Lock-Id, Mcp-Session-Id, MCP-Protocol-Version");
+  if (ret == ESP_OK) ret = httpd_resp_set_hdr(req, "Access-Control-Max-Age", "86400");
+  return ret;
+}
+
+static const char* HttpServer_StatusReason(int code)
+{
+  switch (code) {
+    case 200: return "OK";
+    case 201: return "Created";
+    case 202: return "Accepted";
+    case 204: return "No Content";
+    case 302: return "Found";
+    case 400: return "Bad Request";
+    case 403: return "Forbidden";
+    case 404: return "Not Found";
+    case 405: return "Method Not Allowed";
+    case 406: return "Not Acceptable";
+    case 409: return "Conflict";
+    case 412: return "Precondition Failed";
+    case 415: return "Unsupported Media Type";
+    case 422: return "Unprocessable Entity";
+    case 423: return "Locked";
+    case 500: return "Internal Server Error";
+    case 503: return "Service Unavailable";
+    default: return "";
   }
 }
 
-void HttpServer_SetCors(httpd_req_t* req)
+static esp_err_t HttpServer_PrepareResponse(HttpServer_Context* ctx, int code, const char* contentType,
+                                           const HttpServer_Header* headers)
 {
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Headers",
-                     "Content-Type, Accept, X-Lock-Id, MCP-Protocol-Version, Mcp-Session-Id");
-  httpd_resp_set_hdr(req, "Access-Control-Expose-Headers", "X-Lock-Id, Mcp-Session-Id, MCP-Protocol-Version");
-  httpd_resp_set_hdr(req, "Access-Control-Max-Age", "86400");
+  if (!ctx || code < 100 || code > 599) return ESP_ERR_INVALID_ARG;
+  if (ctx->responseState != RESPONSE_IDLE) return ESP_ERR_INVALID_STATE;
+  snprintf(ctx->status, sizeof(ctx->status), "%d %s", code, HttpServer_StatusReason(code));
+  esp_err_t ret = httpd_resp_set_status(ctx->req, ctx->status);
+  if (ret == ESP_OK) ret = HttpServer_SetCors(ctx->req);
+  if (ret == ESP_OK && contentType) ret = httpd_resp_set_type(ctx->req, contentType);
+  for (const HttpServer_Header* h = headers; ret == ESP_OK && h && h->name; h++) {
+    ret = h->value ? httpd_resp_set_hdr(ctx->req, h->name, h->value) : ESP_ERR_INVALID_ARG;
+  }
+  if (ret != ESP_OK) ctx->responseState = RESPONSE_FAILED;
+  else ESP_LOGI(tag, "Resp rest/%s %s %s -> %d", ctx->from,
+                HttpServer_MethodName(HttpServer_GetMethod(ctx)), HttpServer_GetUri(ctx), code);
+  return ret;
 }
 
-esp_err_t HttpServer_SendOptions(httpd_req_t* req)
+esp_err_t HttpServer_Send(HttpServer_Context* ctx, int code, const char* contentType,
+                          const HttpServer_Header* headers, const void* data, size_t length)
 {
-  HttpServer_LogCall(req);
-  HttpServer_SetCors(req);
-  httpd_resp_set_status(req, "204 No Content");
-  return httpd_resp_send(req, NULL, 0);
+  if ((!data && length) || length > INT_MAX) return ESP_ERR_INVALID_ARG;
+  esp_err_t ret = HttpServer_PrepareResponse(ctx, code, contentType, headers);
+  if (ret != ESP_OK) return ret;
+  ret = httpd_resp_send(ctx->req, data, (ssize_t)length);
+  ctx->responseState = ret == ESP_OK ? RESPONSE_DONE : RESPONSE_FAILED;
+  return ret;
 }
 
-esp_err_t HttpServer_SendError(httpd_req_t* req, int status, const char* reason)
+esp_err_t HttpServer_SendChunkBegin(HttpServer_Context* ctx, int code, const char* contentType,
+                                    const HttpServer_Header* headers)
 {
-  ESP_LOGW(tag, "Resp %s %s -> %d %s", HttpServer_MethodName(req->method), req->uri, status, reason ? reason : "");
-  HttpServer_SetCors(req);
+  esp_err_t ret = HttpServer_PrepareResponse(ctx, code, contentType, headers);
+  if (ret == ESP_OK) ctx->responseState = RESPONSE_STREAMING;
+  return ret;
+}
+
+esp_err_t HttpServer_SendChunk(HttpServer_Context* ctx, const void* data, size_t length)
+{
+  if (!ctx) return ESP_ERR_INVALID_ARG;
+  if (ctx->responseState != RESPONSE_STREAMING) return ESP_ERR_INVALID_STATE;
+  if ((!data && length) || length > INT_MAX) return ESP_ERR_INVALID_ARG;
+  /* Only Done may send the zero-length terminator. */
+  if (length == 0) return ESP_OK;
+  esp_err_t ret = httpd_resp_send_chunk(ctx->req, data, (ssize_t)length);
+  if (ret != ESP_OK) ctx->responseState = RESPONSE_FAILED;
+  return ret;
+}
+
+esp_err_t HttpServer_SendChunkDone(HttpServer_Context* ctx)
+{
+  if (!ctx) return ESP_ERR_INVALID_ARG;
+  if (ctx->responseState != RESPONSE_STREAMING) return ESP_ERR_INVALID_STATE;
+  esp_err_t ret = httpd_resp_send_chunk(ctx->req, NULL, 0);
+  ctx->responseState = ret == ESP_OK ? RESPONSE_DONE : RESPONSE_FAILED;
+  return ret;
+}
+
+esp_err_t HttpServer_AsyncBegin(HttpServer_Context* ctx, HttpServer_Context** out)
+{
+  if (!ctx || !out) return ESP_ERR_INVALID_ARG;
+  *out = NULL;
+  if (ctx->async || ctx->responseState != RESPONSE_IDLE) return ESP_ERR_INVALID_STATE;
+  HttpServer_Context* copy = calloc(1, sizeof(*copy));
+  if (!copy) return ESP_ERR_NO_MEM;
+  esp_err_t ret = httpd_req_async_handler_begin(ctx->req, &copy->req);
+  if (ret != ESP_OK) { free(copy); return ret; }
+  copy->from = ctx->from;
+  copy->async = true;
+  ctx->responseState = RESPONSE_DETACHED;
+  *out = copy;
+  return ESP_OK;
+}
+
+esp_err_t HttpServer_AsyncComplete(HttpServer_Context* ctx)
+{
+  if (!ctx) return ESP_ERR_INVALID_ARG;
+  if (!ctx->async) return ESP_ERR_INVALID_STATE;
+  esp_err_t ret = httpd_req_async_handler_complete(ctx->req);
+  free(ctx);
+  return ret;
+}
+
+static esp_err_t HttpServer_RouteAdapter(httpd_req_t* req)
+{
+  const HttpServer_Route* route = req->user_ctx;
+  HttpServer_Context ctx = {.req = req, .from = "http"};
+  return route->handler(&ctx);
+}
+
+esp_err_t HttpServer_RegisterRoutes(const HttpServer_Route* routes, size_t count)
+{
+  if (!routes && count) return ESP_ERR_INVALID_ARG;
+  if (!server) return ESP_ERR_INVALID_STATE;
+  for (size_t i = 0; i < count; i++) {
+    if (!routes[i].uri || !routes[i].handler || routes[i].method < HTTP_SERVER_GET ||
+        routes[i].method > HTTP_SERVER_OPTIONS) return ESP_ERR_INVALID_ARG;
+    httpd_uri_t uri = {.uri = routes[i].uri, .method = HttpServer_ToEspMethod(routes[i].method),
+                       .handler = HttpServer_RouteAdapter, .user_ctx = (void*)&routes[i]};
+    esp_err_t ret = httpd_register_uri_handler(server, &uri);
+    if (ret != ESP_OK) return ret;
+  }
+  return ESP_OK;
+}
+
+esp_err_t HttpServer_SendOptions(HttpServer_Context* ctx)
+{
+  HttpServer_LogCall(ctx);
+  return HttpServer_Send(ctx, 204, NULL, NULL, NULL, 0);
+}
+
+esp_err_t HttpServer_SendError(HttpServer_Context* ctx, int status, const char* reason)
+{
+  ESP_LOGW(tag, "Resp rest/%s %s %s -> %d %s", ctx->from,
+           HttpServer_MethodName(HttpServer_GetMethod(ctx)), HttpServer_GetUri(ctx), status, reason ? reason : "");
   cJSON* root = cJSON_CreateObject();
-  cJSON_AddStringToObject(root, "reason", reason ? reason : "internal");
+  if (!root || !cJSON_AddStringToObject(root, "reason", reason ? reason : "internal")) {
+    cJSON_Delete(root);
+    return HttpServer_Send(ctx, 500, "application/json", NULL, "{\"reason\":\"internal\"}", sizeof("{\"reason\":\"internal\"}") - 1);
+  }
+  return HttpServer_SendJson(ctx, status, root);
+}
+
+esp_err_t HttpServer_SendJson(HttpServer_Context* ctx, int status, cJSON* root)
+{
   char* printed = cJSON_PrintUnformatted(root);
   cJSON_Delete(root);
-  if (printed == NULL) {
-    httpd_resp_set_status(req, "500 Internal Server Error");
-    httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, "{\"reason\":\"internal\"}", HTTPD_RESP_USE_STRLEN);
-  }
-  char statusStr[64];
-  snprintf(statusStr, sizeof(statusStr), "%d ", status);
-  switch (status) {
-    case 400:
-      httpd_resp_set_status(req, "400 Bad Request");
-      break;
-    case 404:
-      httpd_resp_set_status(req, "404 Not Found");
-      break;
-    case 405:
-      httpd_resp_set_status(req, "405 Method Not Allowed");
-      break;
-    case 409:
-      httpd_resp_set_status(req, "409 Conflict");
-      break;
-    case 412:
-      httpd_resp_set_status(req, "412 Precondition Failed");
-      break;
-    case 415:
-      httpd_resp_set_status(req, "415 Unsupported Media Type");
-      break;
-    case 422:
-      httpd_resp_set_status(req, "422 Unprocessable Entity");
-      break;
-    case 423:
-      httpd_resp_set_status(req, "423 Locked");
-      break;
-    case 500:
-      httpd_resp_set_status(req, "500 Internal Server Error");
-      break;
-    default:
-      httpd_resp_set_status(req, statusStr);
-      break;
-  }
-  httpd_resp_set_type(req, "application/json");
-  esp_err_t ret = httpd_resp_send(req, printed, strlen(printed));
+  if (!printed) return HttpServer_Send(ctx, 500, "application/json", NULL, "{\"reason\":\"internal\"}", sizeof("{\"reason\":\"internal\"}") - 1);
+  esp_err_t ret = HttpServer_Send(ctx, status, "application/json", NULL, printed, strlen(printed));
   free(printed);
   return ret;
 }
 
-esp_err_t HttpServer_SendJson(httpd_req_t* req, int status, cJSON* root)
+esp_err_t HttpServer_SendEmpty(HttpServer_Context* ctx, int status)
 {
-  ESP_LOGI(tag, "Resp %s %s -> %d", HttpServer_MethodName(req->method), req->uri, status);
-  HttpServer_SetCors(req);
-  char* printed = cJSON_PrintUnformatted(root);
-  cJSON_Delete(root);
-  if (printed == NULL) {
-    return HttpServer_SendError(req, 500, "internal");
-  }
-  switch (status) {
-    case 200:
-      httpd_resp_set_status(req, "200 OK");
-      break;
-    case 201:
-      httpd_resp_set_status(req, "201 Created");
-      break;
-    default:
-      httpd_resp_set_status(req, "200 OK");
-      break;
-  }
-  httpd_resp_set_type(req, "application/json");
-  esp_err_t ret = httpd_resp_send(req, printed, strlen(printed));
-  free(printed);
-  return ret;
+  return HttpServer_Send(ctx, status, "application/json", NULL, NULL, 0);
 }
 
-esp_err_t HttpServer_SendEmpty(httpd_req_t* req, int status)
-{
-  ESP_LOGI(tag, "Resp %s %s -> %d", HttpServer_MethodName(req->method), req->uri, status);
-  HttpServer_SetCors(req);
-  if (status == 204) {
-    httpd_resp_set_status(req, "204 No Content");
-  } else {
-    httpd_resp_set_status(req, "200 OK");
-  }
-  httpd_resp_set_type(req, "application/json");
-  return httpd_resp_send(req, NULL, 0);
-}
-
-bool HttpServer_HasJsonContentType(httpd_req_t* req)
+bool HttpServer_HasJsonContentType(HttpServer_Context* ctx)
 {
   char type[64] = {0};
-  if (httpd_req_get_hdr_value_str(req, "Content-Type", type, sizeof(type)) != ESP_OK) {
-    return false;
-  }
-  return strstr(type, "application/json") != NULL;
+  return HttpServer_GetHeader(ctx, "Content-Type", type, sizeof(type)) == ESP_OK && strstr(type, "application/json") != NULL;
 }
 
-void HttpServer_GetLockHeader(httpd_req_t* req, char* out, size_t outLen)
+void HttpServer_GetLockHeader(HttpServer_Context* ctx, char* out, size_t outLen)
 {
-  out[0] = '\0';
-  httpd_req_get_hdr_value_str(req, "X-Lock-Id", out, outLen);
+  HttpServer_GetHeader(ctx, "X-Lock-Id", out, outLen);
 }
 
 void HttpServer_FormatPinRange(char* out, size_t outLen)
@@ -244,10 +357,10 @@ int HttpServer_LockStatusId(const char* lockId, Lock_Kind kind, int pin, uint8_t
   return 0;
 }
 
-int HttpServer_LockStatus(httpd_req_t* req, Lock_Kind kind, int pin, uint8_t methods, char* lockIdBuf, size_t lockIdLen,
+int HttpServer_LockStatus(HttpServer_Context* ctx, Lock_Kind kind, int pin, uint8_t methods, char* lockIdBuf, size_t lockIdLen,
                     char* reasonOut, size_t reasonLen)
 {
-  HttpServer_GetLockHeader(req, lockIdBuf, lockIdLen);
+  HttpServer_GetLockHeader(ctx, lockIdBuf, lockIdLen);
   return HttpServer_LockStatusId(lockIdBuf, kind, pin, methods, reasonOut, reasonLen);
 }
 
@@ -573,18 +686,21 @@ cJSON* HttpServer_SerializeLockResources(const Lock_Resource* resources, size_t 
   return resArr;
 }
 
-esp_err_t HttpServer_ReadBody(httpd_req_t* req, char** outBuf, size_t* outLen)
+esp_err_t HttpServer_ReadBody(HttpServer_Context* ctx, char** outBuf, size_t* outLen)
 {
-  int total = req->content_len;
-  if (total < 0) total = 0;
+  if (!ctx || !outBuf || !outLen) return ESP_ERR_INVALID_ARG;
+  *outBuf = NULL;
+  *outLen = 0;
+  if (ctx->responseState != RESPONSE_IDLE) return ESP_ERR_INVALID_STATE;
+  size_t total = HttpServer_GetContentLength(ctx);
   if (total > 16 * 1024) {
     return ESP_ERR_INVALID_SIZE;
   }
   char* buf = calloc(1, (size_t)total + 1);
   if (buf == NULL) return ESP_ERR_NO_MEM;
-  int received = 0;
+  size_t received = 0;
   while (received < total) {
-    int r = httpd_req_recv(req, buf + received, total - received);
+    int r = httpd_req_recv(ctx->req, buf + received, total - received);
     if (r <= 0) {
       free(buf);
       return ESP_FAIL;
@@ -596,11 +712,11 @@ esp_err_t HttpServer_ReadBody(httpd_req_t* req, char** outBuf, size_t* outLen)
   return ESP_OK;
 }
 
-cJSON* HttpServer_ParseBody(httpd_req_t* req, esp_err_t* errOut)
+cJSON* HttpServer_ParseBody(HttpServer_Context* ctx, esp_err_t* errOut)
 {
   char* buf = NULL;
   size_t len = 0;
-  esp_err_t ret = HttpServer_ReadBody(req, &buf, &len);
+  esp_err_t ret = HttpServer_ReadBody(ctx, &buf, &len);
   if (ret != ESP_OK) {
     if (errOut) *errOut = ret;
     return NULL;
@@ -611,9 +727,9 @@ cJSON* HttpServer_ParseBody(httpd_req_t* req, esp_err_t* errOut)
     return NULL;
   }
   /* Skip /mcp: JSON-RPC envelope is logged at tools/call instead. */
-  if (strcmp(req->uri, "/mcp") != 0) {
+  if (strcmp(HttpServer_GetUri(ctx), "/mcp") != 0) {
     int n = (int)(len < 512 ? len : 512);
-    TOOL_CALL_LOG("rest %s %s args=%.*s", HttpServer_MethodName(req->method), req->uri, n, buf);
+    TOOL_CALL_LOG("rest/%s %s %s args=%.*s", HttpServer_GetFrom(ctx), HttpServer_MethodName(HttpServer_GetMethod(ctx)), HttpServer_GetUri(ctx), n, buf);
   }
   cJSON* root = cJSON_Parse(buf);
   free(buf);
@@ -628,11 +744,12 @@ cJSON* HttpServer_ParseBody(httpd_req_t* req, esp_err_t* errOut)
 static esp_err_t HttpServer_NotFoundHandler(httpd_req_t* req, httpd_err_code_t err)
 {
   (void)err;
-  HttpServer_LogCall(req);
+  HttpServer_Context ctx = {.req = req, .from = "http"};
+  HttpServer_LogCall(&ctx);
   if (pairingServer) {
-    return HttpServer_SendError(req, 404, "This URL does not exist. Open /wifi/page for Wi-Fi setup.");
+    return HttpServer_SendError(&ctx, 404, "This URL does not exist. Open /wifi/page for Wi-Fi setup.");
   }
-  return HttpServer_SendError(req, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
+  return HttpServer_SendError(&ctx, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
 }
 
 static void HttpServer_OnNtpSynced(void)
@@ -734,6 +851,16 @@ static bool HttpServer_UriMatch(const char* tpl, const char* uri, size_t match_u
   return u == u_end;
 }
 
+static esp_err_t HttpServer_PortalRedirect(httpd_req_t* req)
+{
+  HttpServer_Context ctx = {.req = req, .from = "http"};
+  HttpServer_LogCall(&ctx);
+  static const HttpServer_Header headers[] = {
+      {"Location", CONFIG_WIFI_PORTAL_URL}, {"Cache-Control", "no-store"}, {NULL, NULL},
+  };
+  return HttpServer_Send(&ctx, 302, "text/plain", headers, "Redirecting", 11);
+}
+
 static esp_err_t HttpServer_StartWithConfig(bool pairing)
 {
   if (server) {
@@ -755,20 +882,22 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
   pairingServer = pairing;
 
   if (pairing) {
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PortalRegister(server), "portal routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PortalRegister(), "portal routes failed");
+    static const httpd_uri_t redirect = {.uri = "/*", .method = HTTP_GET, .handler = HttpServer_PortalRedirect};
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_register_uri_handler(server, &redirect), "portal redirect failed");
   } else {
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ControlRegister(server), "control ui route failed");
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_OpenApiRegister(server), "openapi routes failed");
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(server), "pin routes failed");
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_UartRegister(server), "uart routes failed");
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(server), "lock routes failed");
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PowerRegister(server), "power routes failed");
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ScriptRegister(server), "script routes failed");
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_McpRegister(server), "mcp routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ControlRegister(), "control ui route failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_OpenApiRegister(), "openapi routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(), "pin routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_UartRegister(), "uart routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(), "lock routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PowerRegister(), "power routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ScriptRegister(), "script routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_McpRegister(), "mcp routes failed");
   }
 
-  static const httpd_uri_t optionsUri = {.uri = "/*", .method = HTTP_OPTIONS, .handler = HttpServer_SendOptions};
-  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_register_uri_handler(server, &optionsUri), "options cors route failed");
+  static const HttpServer_Route optionsUri = {.uri = "/*", .method = HTTP_SERVER_OPTIONS, .handler = HttpServer_SendOptions};
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(HttpServer_RegisterRoutes(&optionsUri, 1), "options cors route failed");
   httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, HttpServer_NotFoundHandler);
   ESP_LOGI(tag, "HTTP server started on port 80 (%s)", pairing ? "pairing" : "api");
   return ESP_OK;

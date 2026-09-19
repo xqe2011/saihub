@@ -7,17 +7,15 @@
 #define ROUTE_H__
 
 #include <esp_err.h>
-#include <esp_http_server.h>
 
-esp_err_t Route_OpenApiRegister(httpd_handle_t server);
-esp_err_t Route_PinRegister(httpd_handle_t server);
-esp_err_t Route_UartRegister(httpd_handle_t server);
-esp_err_t Route_LockRegister(httpd_handle_t server);
-esp_err_t Route_PowerRegister(httpd_handle_t server);
-esp_err_t Route_McpRegister(httpd_handle_t server);
-esp_err_t Route_ScriptRegister(httpd_handle_t server);
-esp_err_t Route_PortalRegister(httpd_handle_t server);
-esp_err_t Route_PortalSendRedirect(httpd_req_t* req);
-esp_err_t Route_ControlRegister(httpd_handle_t server);
+esp_err_t Route_OpenApiRegister(void);
+esp_err_t Route_PinRegister(void);
+esp_err_t Route_UartRegister(void);
+esp_err_t Route_LockRegister(void);
+esp_err_t Route_PowerRegister(void);
+esp_err_t Route_McpRegister(void);
+esp_err_t Route_ScriptRegister(void);
+esp_err_t Route_PortalRegister(void);
+esp_err_t Route_ControlRegister(void);
 
 #endif

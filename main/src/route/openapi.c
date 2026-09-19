@@ -8,7 +8,6 @@
 #include "http_server.h"
 #include "tool.h"
 
-#include <esp_http_server.h>
 #include <esp_log.h>
 
 static const char* tag = "SAIHUB-Http";
@@ -16,23 +15,19 @@ static const char* tag = "SAIHUB-Http";
 extern const uint8_t openapi_json_start[] asm("_binary_openapi_json_start");
 extern const uint8_t openapi_json_end[] asm("_binary_openapi_json_end");
 
-static esp_err_t Route_OpenApiGetHandler(httpd_req_t* req)
+static esp_err_t Route_OpenApiGetHandler(HttpServer_Context* ctx)
 {
-  HttpServer_LogCall(req);
+  HttpServer_LogCall(ctx);
   size_t len = (size_t)(openapi_json_end - openapi_json_start);
-  HttpServer_SetCors(req);
-  httpd_resp_set_type(req, "application/json");
-  return httpd_resp_send(req, (const char*)openapi_json_start, len);
+  return HttpServer_Send(ctx, 200, "application/json", NULL, openapi_json_start, len);
 }
 
-static const httpd_uri_t uris[] = {
-    {.uri = "/openapi.json", .method = HTTP_GET, .handler = Route_OpenApiGetHandler},
+static const HttpServer_Route uris[] = {
+    {.uri = "/openapi.json", .method = HTTP_SERVER_GET, .handler = Route_OpenApiGetHandler},
 };
 
-esp_err_t Route_OpenApiRegister(httpd_handle_t server)
+esp_err_t Route_OpenApiRegister(void)
 {
-  for (size_t i = 0; i < TOOL_GET_ARRAY_LENGTH(uris); i++) {
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_register_uri_handler(server, &uris[i]), "register openapi uri failed");
-  }
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(HttpServer_RegisterRoutes(uris, TOOL_GET_ARRAY_LENGTH(uris)), "register openapi uri failed");
   return ESP_OK;
 }

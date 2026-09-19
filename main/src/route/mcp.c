@@ -13,7 +13,6 @@
 #include "tool_call.h"
 
 #include <cJSON.h>
-#include <esp_http_server.h>
 #include <esp_log.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,29 +26,29 @@ extern const uint8_t mcp_json_end[] asm("_binary_mcp_json_end");
 #define MCP_PROTOCOL_VERSION "2025-06-18"
 #define MCP_DEFS_REF_PREFIX "#/$defs/"
 
-static bool Route_McpOriginOk(httpd_req_t* req)
+static bool Route_McpOriginOk(HttpServer_Context* ctx)
 {
   char origin[256] = {0};
-  if (httpd_req_get_hdr_value_str(req, "Origin", origin, sizeof(origin)) != ESP_OK) {
+  if (HttpServer_GetHeader(ctx, "Origin", origin, sizeof(origin)) != ESP_OK) {
     return true;
   }
   if (origin[0] == '\0') return true;
   return strncmp(origin, "http:", 5) == 0 || strncmp(origin, "https:", 6) == 0;
 }
 
-static bool Route_McpAcceptOk(httpd_req_t* req)
+static bool Route_McpAcceptOk(HttpServer_Context* ctx)
 {
   char accept[256] = {0};
-  if (httpd_req_get_hdr_value_str(req, "Accept", accept, sizeof(accept)) != ESP_OK) {
+  if (HttpServer_GetHeader(ctx, "Accept", accept, sizeof(accept)) != ESP_OK) {
     return false;
   }
   return strstr(accept, "application/json") != NULL || strstr(accept, "text/event-stream") != NULL;
 }
 
-static bool Route_McpProtocolVersionOk(httpd_req_t* req, bool isInitialize)
+static bool Route_McpProtocolVersionOk(HttpServer_Context* ctx, bool isInitialize)
 {
   char ver[64] = {0};
-  if (httpd_req_get_hdr_value_str(req, "MCP-Protocol-Version", ver, sizeof(ver)) != ESP_OK || ver[0] == '\0') {
+  if (HttpServer_GetHeader(ctx, "MCP-Protocol-Version", ver, sizeof(ver)) != ESP_OK || ver[0] == '\0') {
     return true;
   }
   if (strcmp(ver, "2025-06-18") == 0 || strcmp(ver, "2025-03-26") == 0 || strcmp(ver, "2024-11-05") == 0) {
@@ -59,36 +58,21 @@ static bool Route_McpProtocolVersionOk(httpd_req_t* req, bool isInitialize)
   return false;
 }
 
-static esp_err_t Route_McpSendStatus(httpd_req_t* req, int status, const char* statusLine, const char* body,
+static esp_err_t Route_McpSendStatus(HttpServer_Context* ctx, int status, const char* body,
                                      const char* contentType)
 {
-  HttpServer_SetCors(req);
-  httpd_resp_set_status(req, statusLine);
-  if (contentType) httpd_resp_set_type(req, contentType);
-  if (body == NULL || body[0] == '\0') {
-    return httpd_resp_send(req, NULL, 0);
-  }
-  return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
+  return HttpServer_Send(ctx, status, contentType, NULL, body, body ? strlen(body) : 0);
 }
 
-static esp_err_t Route_McpSendJsonRpc(httpd_req_t* req, int httpStatus, cJSON* root)
+static esp_err_t Route_McpSendJsonRpc(HttpServer_Context* ctx, int httpStatus, cJSON* root)
 {
-  HttpServer_SetCors(req);
   char* printed = cJSON_PrintUnformatted(root);
   cJSON_Delete(root);
   if (printed == NULL) {
-    return Route_McpSendStatus(req, 500, "500 Internal Server Error",
-                               "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"internal\"},\"id\":null}",
+    return Route_McpSendStatus(ctx, 500, "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"internal\"},\"id\":null}",
                                "application/json");
   }
-  const char* statusLine = "200 OK";
-  if (httpStatus == 400) statusLine = "400 Bad Request";
-  else if (httpStatus == 406) statusLine = "406 Not Acceptable";
-  else if (httpStatus == 415) statusLine = "415 Unsupported Media Type";
-  else if (httpStatus == 500) statusLine = "500 Internal Server Error";
-  httpd_resp_set_status(req, statusLine);
-  httpd_resp_set_type(req, "application/json");
-  esp_err_t ret = httpd_resp_send(req, printed, strlen(printed));
+  esp_err_t ret = HttpServer_Send(ctx, httpStatus, "application/json", NULL, printed, strlen(printed));
   free(printed);
   return ret;
 }
@@ -187,13 +171,13 @@ static bool Route_McpCollectDefs(const cJSON* node, const cJSON* allDefs, cJSON*
   return true;
 }
 
-static esp_err_t Route_McpSendToolsList(httpd_req_t* req, cJSON* id)
+static esp_err_t Route_McpSendToolsList(HttpServer_Context* ctx, cJSON* id)
 {
   size_t len = (size_t)(mcp_json_end - mcp_json_start);
   cJSON* inventory = cJSON_ParseWithLength((const char*)mcp_json_start, len);
   if (inventory == NULL) {
     ESP_LOGE(tag, "mcp.json parse failed");
-    return Route_McpSendJsonRpc(req, 500, Route_McpJsonRpcError(id, -32603, "internal"));
+    return Route_McpSendJsonRpc(ctx, 500, Route_McpJsonRpcError(id, -32603, "internal"));
   }
 
   cJSON* defs = cJSON_DetachItemFromObjectCaseSensitive(inventory, "$defs");
@@ -202,13 +186,11 @@ static esp_err_t Route_McpSendToolsList(httpd_req_t* req, cJSON* id)
     ESP_LOGE(tag, "mcp.json tools missing");
     cJSON_Delete(defs);
     cJSON_Delete(inventory);
-    return Route_McpSendJsonRpc(req, 500, Route_McpJsonRpcError(id, -32603, "internal"));
+    return Route_McpSendJsonRpc(ctx, 500, Route_McpJsonRpcError(id, -32603, "internal"));
   }
 
-  HttpServer_SetCors(req);
-  httpd_resp_set_status(req, "200 OK");
-  httpd_resp_set_type(req, "application/json");
-  esp_err_t ret = httpd_resp_send_chunk(req, "{\"jsonrpc\":\"2.0\",\"result\":{\"tools\":[", HTTPD_RESP_USE_STRLEN);
+  esp_err_t ret = HttpServer_SendChunkBegin(ctx, 200, "application/json", NULL);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "{\"jsonrpc\":\"2.0\",\"result\":{\"tools\":[", sizeof("{\"jsonrpc\":\"2.0\",\"result\":{\"tools\":[") - 1);
   bool first = true;
   cJSON* tool = NULL;
   cJSON_ArrayForEach(tool, tools) {
@@ -231,8 +213,8 @@ static esp_err_t Route_McpSendToolsList(httpd_req_t* req, cJSON* id)
 
     char* printed = ret == ESP_OK ? cJSON_PrintUnformatted(tool) : NULL;
     if (ret == ESP_OK && printed == NULL) ret = ESP_ERR_NO_MEM;
-    if (ret == ESP_OK && !first) ret = httpd_resp_send_chunk(req, ",", 1);
-    if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, printed, strlen(printed));
+    if (ret == ESP_OK && !first) ret = HttpServer_SendChunk(ctx, ",", 1);
+    if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, printed, strlen(printed));
     free(printed);
 
     if (selectedDefs != NULL) {
@@ -245,21 +227,21 @@ static esp_err_t Route_McpSendToolsList(httpd_req_t* req, cJSON* id)
 
   char* printedId = ret == ESP_OK && id != NULL ? cJSON_PrintUnformatted(id) : NULL;
   if (ret == ESP_OK && id != NULL && printedId == NULL) ret = ESP_ERR_NO_MEM;
-  if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, "]},\"id\":", HTTPD_RESP_USE_STRLEN);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "]},\"id\":", sizeof("]},\"id\":") - 1);
   if (ret == ESP_OK) {
     const char* idText = printedId != NULL ? printedId : "null";
-    ret = httpd_resp_send_chunk(req, idText, strlen(idText));
+    ret = HttpServer_SendChunk(ctx, idText, strlen(idText));
   }
-  if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, "}", 1);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "}", 1);
   free(printedId);
   cJSON_Delete(defs);
   cJSON_Delete(inventory);
 
-  esp_err_t endRet = httpd_resp_send_chunk(req, NULL, 0);
+  esp_err_t endRet = HttpServer_SendChunkDone(ctx);
   return ret == ESP_OK ? endRet : ret;
 }
 
-static void Route_McpScriptRespond(httpd_req_t* req, Script_Status st, Script_Result* sr, void* userCtx)
+static void Route_McpScriptRespond(HttpServer_Context* ctx, Script_Status st, Script_Result* sr, void* userCtx)
 {
   cJSON* id = (cJSON*)userCtx;
   cJSON* toolResult = NULL;
@@ -280,7 +262,7 @@ static void Route_McpScriptRespond(httpd_req_t* req, Script_Status st, Script_Re
     Script_ResultFree(sr);
     toolResult = Route_McpToolResultOk(payload);
   }
-  Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, toolResult));
+  Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, toolResult));
   cJSON_Delete(id);
 }
 
@@ -375,7 +357,7 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
   return result;
 }
 
-static cJSON* Route_McpHandleToolsCall(cJSON* params)
+static cJSON* Route_McpHandleToolsCall(HttpServer_Context* ctx, cJSON* params)
 {
   if (!cJSON_IsObject(params)) {
     return Route_McpToolResultErr("params are required.");
@@ -392,20 +374,22 @@ static cJSON* Route_McpHandleToolsCall(cJSON* params)
   bool ownedArgs = (cJSON_GetObjectItem(params, "arguments") == NULL);
   const char* name = nameItem->valuestring;
 
-  ToolCall_Result tr = ToolCall_Invoke("mcp", name, args);
+  char from[48];
+  snprintf(from, sizeof(from), "mcp/%s", HttpServer_GetFrom(ctx));
+  ToolCall_Result tr = ToolCall_Invoke(from, name, args);
   cJSON* out = !tr.ok ? Route_McpToolResultErr(tr.reason) : Route_McpToolResultOk(tr.payload);
   if (ownedArgs) cJSON_Delete(args);
   return out;
 }
 
-static esp_err_t Route_McpDispatchTrace(httpd_req_t* req, cJSON* id, cJSON* params)
+static esp_err_t Route_McpDispatchTrace(HttpServer_Context* ctx, cJSON* id, cJSON* params)
 {
   if (!cJSON_IsObject(params)) {
-    return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("params are required.")));
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("params are required.")));
   }
   cJSON* args = cJSON_GetObjectItem(params, "arguments");
   if (args != NULL && !cJSON_IsObject(args)) {
-    return Route_McpSendJsonRpc(req, 200,
+    return Route_McpSendJsonRpc(ctx, 200,
                                 Route_McpJsonRpcResult(id, Route_McpToolResultErr("arguments must be an object.")));
   }
   if (args == NULL) args = cJSON_CreateObject();
@@ -415,15 +399,12 @@ static esp_err_t Route_McpDispatchTrace(httpd_req_t* req, cJSON* id, cJSON* para
   ToolCall_Result result = ToolCall_TraceCapture(args, &events, &eventCount);
   if (ownedArgs) cJSON_Delete(args);
   if (!result.ok) {
-    return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr(result.reason)));
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr(result.reason)));
   }
 
-  HttpServer_SetCors(req);
-  httpd_resp_set_status(req, "200 OK");
-  httpd_resp_set_type(req, "application/json");
-  esp_err_t ret = httpd_resp_send_chunk(
-      req, "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"events\\\":[",
-      HTTPD_RESP_USE_STRLEN);
+  esp_err_t ret = HttpServer_SendChunkBegin(ctx, 200, "application/json", NULL);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(
+      ctx, "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"events\\\":[", sizeof("{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"events\\\":[") - 1);
   char item[160];
   for (size_t i = 0; ret == ESP_OK && i < eventCount; i++) {
     int len = snprintf(item, sizeof(item),
@@ -433,27 +414,27 @@ static esp_err_t Route_McpDispatchTrace(httpd_req_t* req, cJSON* id, cJSON* para
       ret = ESP_ERR_INVALID_SIZE;
       break;
     }
-    ret = httpd_resp_send_chunk(req, item, (size_t)len);
+    ret = HttpServer_SendChunk(ctx, item, (size_t)len);
   }
-  if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, "]}\"}]},\"id\":", HTTPD_RESP_USE_STRLEN);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "]}\"}]},\"id\":", sizeof("]}\"}]},\"id\":") - 1);
   char* printedId = ret == ESP_OK && id != NULL ? cJSON_PrintUnformatted(id) : NULL;
   if (ret == ESP_OK && id != NULL && printedId == NULL) ret = ESP_ERR_NO_MEM;
-  if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, printedId != NULL ? printedId : "null", HTTPD_RESP_USE_STRLEN);
-  if (ret == ESP_OK) ret = httpd_resp_send_chunk(req, "}", 1);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, printedId != NULL ? printedId : "null", printedId != NULL ? strlen(printedId) : 4);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "}", 1);
   free(printedId);
   free(events);
-  esp_err_t endRet = httpd_resp_send_chunk(req, NULL, 0);
+  esp_err_t endRet = HttpServer_SendChunkDone(ctx);
   return ret == ESP_OK ? endRet : ret;
 }
 
-static esp_err_t Route_McpDispatchRunScript(httpd_req_t* req, cJSON* id, cJSON* params)
+static esp_err_t Route_McpDispatchRunScript(HttpServer_Context* ctx, cJSON* id, cJSON* params)
 {
   if (!cJSON_IsObject(params)) {
-    return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("params are required.")));
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("params are required.")));
   }
   cJSON* args = cJSON_GetObjectItem(params, "arguments");
   if (args != NULL && !cJSON_IsObject(args)) {
-    return Route_McpSendJsonRpc(req, 200,
+    return Route_McpSendJsonRpc(ctx, 200,
                                 Route_McpJsonRpcResult(id, Route_McpToolResultErr("arguments must be an object.")));
   }
 
@@ -463,23 +444,23 @@ static esp_err_t Route_McpDispatchRunScript(httpd_req_t* req, cJSON* id, cJSON* 
   const char* lockId = NULL;
   cJSON* parseErr = Route_McpParseRunScriptArgs(args, &script, &maxCalls, &timeoutUs, &lockId);
   if (parseErr != NULL) {
-    return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, parseErr));
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, parseErr));
   }
 
-  TOOL_CALL_LOG("mcp run_script(maxCalls=%u, timeout=%llu, lockId=%s, script_len=%u)", (unsigned)maxCalls,
+  TOOL_CALL_LOG("mcp/%s run_script(maxCalls=%u, timeout=%llu, lockId=%s, script_len=%u)", HttpServer_GetFrom(ctx), (unsigned)maxCalls,
                 (unsigned long long)timeoutUs, lockId != NULL ? lockId : "", (unsigned)strlen(script));
 
   /* Heap-copy id: respond frees it after the JSON-RPC envelope is sent. */
   cJSON* idCopy = id != NULL ? cJSON_Duplicate(id, 1) : NULL;
   /* Script source is copied inside Script_RunAsync before this returns. */
-  return Script_RunAsync(req, script, maxCalls, timeoutUs, lockId, Route_McpScriptRespond, idCopy);
+  return Script_RunAsync(ctx, script, maxCalls, timeoutUs, lockId, Route_McpScriptRespond, idCopy);
 }
 
-static esp_err_t Route_McpDispatch(httpd_req_t* req, cJSON* msg)
+static esp_err_t Route_McpDispatch(HttpServer_Context* ctx, cJSON* msg)
 {
   cJSON* jsonrpc = cJSON_GetObjectItem(msg, "jsonrpc");
   if (!cJSON_IsString(jsonrpc) || strcmp(jsonrpc->valuestring, "2.0") != 0) {
-    return Route_McpSendJsonRpc(req, 400, Route_McpJsonRpcError(NULL, -32600, "Invalid Request"));
+    return Route_McpSendJsonRpc(ctx, 400, Route_McpJsonRpcError(NULL, -32600, "Invalid Request"));
   }
 
   cJSON* id = cJSON_GetObjectItem(msg, "id");
@@ -490,120 +471,115 @@ static esp_err_t Route_McpDispatch(httpd_req_t* req, cJSON* msg)
   /* Client JSON-RPC response (has id, no method) or notification (method, no id) */
   if (!hasMethod) {
     if (!hasId) {
-      return Route_McpSendJsonRpc(req, 400, Route_McpJsonRpcError(NULL, -32600, "Invalid Request"));
+      return Route_McpSendJsonRpc(ctx, 400, Route_McpJsonRpcError(NULL, -32600, "Invalid Request"));
     }
-    return Route_McpSendStatus(req, 202, "202 Accepted", NULL, NULL);
+    return Route_McpSendStatus(ctx, 202, NULL, NULL);
   }
 
   const char* method = methodItem->valuestring;
   if (!hasId) {
     /* notification */
     if (strcmp(method, "notifications/initialized") == 0 || strcmp(method, "notifications/cancelled") == 0) {
-      return Route_McpSendStatus(req, 202, "202 Accepted", NULL, NULL);
+      return Route_McpSendStatus(ctx, 202, NULL, NULL);
     }
-    return Route_McpSendStatus(req, 202, "202 Accepted", NULL, NULL);
+    return Route_McpSendStatus(ctx, 202, NULL, NULL);
   }
 
   Lock_SweepExpired();
   cJSON* params = cJSON_GetObjectItem(msg, "params");
 
   if (strcmp(method, "initialize") == 0) {
-    return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, Route_McpHandleInitialize(params)));
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpHandleInitialize(params)));
   }
   if (strcmp(method, "ping") == 0) {
-    return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, cJSON_CreateObject()));
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, cJSON_CreateObject()));
   }
   if (strcmp(method, "tools/list") == 0) {
-    return Route_McpSendToolsList(req, id);
+    return Route_McpSendToolsList(ctx, id);
   }
   if (strcmp(method, "tools/call") == 0) {
     if (cJSON_IsObject(params)) {
       cJSON* nameItem = cJSON_GetObjectItem(params, "name");
       if (cJSON_IsString(nameItem) && nameItem->valuestring != NULL) {
-        if (strcmp(nameItem->valuestring, "run_script") == 0) return Route_McpDispatchRunScript(req, id, params);
-        if (strcmp(nameItem->valuestring, "trace_pins") == 0) return Route_McpDispatchTrace(req, id, params);
+        if (strcmp(nameItem->valuestring, "run_script") == 0) return Route_McpDispatchRunScript(ctx, id, params);
+        if (strcmp(nameItem->valuestring, "trace_pins") == 0) return Route_McpDispatchTrace(ctx, id, params);
       }
     }
-    return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcResult(id, Route_McpHandleToolsCall(params)));
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpHandleToolsCall(ctx, params)));
   }
 
-  return Route_McpSendJsonRpc(req, 200, Route_McpJsonRpcError(id, -32601, "Method not found"));
+  return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcError(id, -32601, "Method not found"));
 }
 
-static esp_err_t Route_McpPostHandler(httpd_req_t* req)
+static esp_err_t Route_McpPostHandler(HttpServer_Context* ctx)
 {
-  HttpServer_LogCall(req);
-  HttpServer_SetCors(req);
+  HttpServer_LogCall(ctx);
 
-  if (!Route_McpOriginOk(req)) {
-    return Route_McpSendStatus(req, 403, "403 Forbidden", NULL, NULL);
+  if (!Route_McpOriginOk(ctx)) {
+    return Route_McpSendStatus(ctx, 403, NULL, NULL);
   }
-  if (!Route_McpAcceptOk(req)) {
-    return Route_McpSendJsonRpc(req, 406,
+  if (!Route_McpAcceptOk(ctx)) {
+    return Route_McpSendJsonRpc(ctx, 406,
                                 Route_McpJsonRpcError(NULL, -32600, "Accept must include application/json or text/event-stream"));
   }
-  if (!HttpServer_HasJsonContentType(req)) {
-    return Route_McpSendJsonRpc(req, 415, Route_McpJsonRpcError(NULL, -32600, "Content-Type must be application/json"));
+  if (!HttpServer_HasJsonContentType(ctx)) {
+    return Route_McpSendJsonRpc(ctx, 415, Route_McpJsonRpcError(NULL, -32600, "Content-Type must be application/json"));
   }
-  if (!Route_McpProtocolVersionOk(req, false)) {
-    return Route_McpSendJsonRpc(req, 400, Route_McpJsonRpcError(NULL, -32600, "Unsupported MCP-Protocol-Version"));
+  if (!Route_McpProtocolVersionOk(ctx, false)) {
+    return Route_McpSendJsonRpc(ctx, 400, Route_McpJsonRpcError(NULL, -32600, "Unsupported MCP-Protocol-Version"));
   }
 
   esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(req, &perr);
+  cJSON* body = HttpServer_ParseBody(ctx, &perr);
   if (body == NULL) {
-    return Route_McpSendJsonRpc(req, 400, Route_McpJsonRpcError(NULL, -32700, "Parse error"));
+    return Route_McpSendJsonRpc(ctx, 400, Route_McpJsonRpcError(NULL, -32700, "Parse error"));
   }
   if (cJSON_IsArray(body)) {
     cJSON_Delete(body);
-    return Route_McpSendJsonRpc(req, 400, Route_McpJsonRpcError(NULL, -32600, "JSON-RPC batch not supported"));
+    return Route_McpSendJsonRpc(ctx, 400, Route_McpJsonRpcError(NULL, -32600, "JSON-RPC batch not supported"));
   }
   if (!cJSON_IsObject(body)) {
     cJSON_Delete(body);
-    return Route_McpSendJsonRpc(req, 400, Route_McpJsonRpcError(NULL, -32600, "Invalid Request"));
+    return Route_McpSendJsonRpc(ctx, 400, Route_McpJsonRpcError(NULL, -32600, "Invalid Request"));
   }
 
-  esp_err_t ret = Route_McpDispatch(req, body);
+  esp_err_t ret = Route_McpDispatch(ctx, body);
   cJSON_Delete(body);
   return ret;
 }
 
-static esp_err_t Route_McpGetHandler(httpd_req_t* req)
+static esp_err_t Route_McpGetHandler(HttpServer_Context* ctx)
 {
-  HttpServer_LogCall(req);
-  HttpServer_SetCors(req);
-  if (!Route_McpOriginOk(req)) {
-    return Route_McpSendStatus(req, 403, "403 Forbidden", NULL, NULL);
+  HttpServer_LogCall(ctx);
+  if (!Route_McpOriginOk(ctx)) {
+    return Route_McpSendStatus(ctx, 403, NULL, NULL);
   }
-  return Route_McpSendStatus(req, 405, "405 Method Not Allowed", NULL, NULL);
+  return Route_McpSendStatus(ctx, 405, NULL, NULL);
 }
 
-static esp_err_t Route_McpDeleteHandler(httpd_req_t* req)
+static esp_err_t Route_McpDeleteHandler(HttpServer_Context* ctx)
 {
-  HttpServer_LogCall(req);
-  HttpServer_SetCors(req);
-  if (!Route_McpOriginOk(req)) {
-    return Route_McpSendStatus(req, 403, "403 Forbidden", NULL, NULL);
+  HttpServer_LogCall(ctx);
+  if (!Route_McpOriginOk(ctx)) {
+    return Route_McpSendStatus(ctx, 403, NULL, NULL);
   }
-  return Route_McpSendStatus(req, 405, "405 Method Not Allowed", NULL, NULL);
+  return Route_McpSendStatus(ctx, 405, NULL, NULL);
 }
 
-static esp_err_t Route_McpOptionsHandler(httpd_req_t* req)
+static esp_err_t Route_McpOptionsHandler(HttpServer_Context* ctx)
 {
-  return HttpServer_SendOptions(req);
+  return HttpServer_SendOptions(ctx);
 }
 
-static const httpd_uri_t uris[] = {
-    {.uri = "/mcp", .method = HTTP_POST, .handler = Route_McpPostHandler},
-    {.uri = "/mcp", .method = HTTP_GET, .handler = Route_McpGetHandler},
-    {.uri = "/mcp", .method = HTTP_DELETE, .handler = Route_McpDeleteHandler},
-    {.uri = "/mcp", .method = HTTP_OPTIONS, .handler = Route_McpOptionsHandler},
+static const HttpServer_Route uris[] = {
+    {.uri = "/mcp", .method = HTTP_SERVER_POST, .handler = Route_McpPostHandler},
+    {.uri = "/mcp", .method = HTTP_SERVER_GET, .handler = Route_McpGetHandler},
+    {.uri = "/mcp", .method = HTTP_SERVER_DELETE, .handler = Route_McpDeleteHandler},
+    {.uri = "/mcp", .method = HTTP_SERVER_OPTIONS, .handler = Route_McpOptionsHandler},
 };
 
-esp_err_t Route_McpRegister(httpd_handle_t server)
+esp_err_t Route_McpRegister(void)
 {
-  for (size_t i = 0; i < TOOL_GET_ARRAY_LENGTH(uris); i++) {
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_register_uri_handler(server, &uris[i]), "register mcp uri failed");
-  }
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(HttpServer_RegisterRoutes(uris, TOOL_GET_ARRAY_LENGTH(uris)), "register mcp uri failed");
   return ESP_OK;
 }

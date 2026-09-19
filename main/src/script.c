@@ -10,7 +10,6 @@
 #include "tool_call.h"
 
 #include <cJSON.h>
-#include <esp_http_server.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -832,13 +831,13 @@ static void Script_FillInternal(Script_Result* out)
 }
 
 typedef struct {
-  httpd_req_t* req;
+  HttpServer_Context* ctx;
   char* script;
   uint32_t maxCalls;
   uint64_t timeoutUs;
   char lockId[SCRIPT_LOCK_ID_MAX];
   bool hasLockId;
-  Script_HttpRespondFn respond;
+  Script_RespondFn respond;
   void* userCtx;
 } Script_WaiterJob;
 
@@ -847,22 +846,22 @@ static void Script_WaiterTask(void* arg)
   Script_WaiterJob* job = (Script_WaiterJob*)arg;
   Script_Result sr;
   Script_Status st = Script_Run(job->script, job->maxCalls, job->timeoutUs, job->hasLockId ? job->lockId : NULL, &sr);
-  job->respond(job->req, st, &sr, job->userCtx);
-  httpd_req_async_handler_complete(job->req);
+  job->respond(job->ctx, st, &sr, job->userCtx);
+  HttpServer_AsyncComplete(job->ctx);
   free(job->script);
   free(job);
   vTaskDelete(NULL);
 }
 
-esp_err_t Script_RunAsync(httpd_req_t* req, const char* script, uint32_t maxCalls, uint64_t timeoutUs,
-                          const char* defaultLockId, Script_HttpRespondFn respond, void* userCtx)
+esp_err_t Script_RunAsync(HttpServer_Context* ctx, const char* script, uint32_t maxCalls, uint64_t timeoutUs,
+                          const char* defaultLockId, Script_RespondFn respond, void* userCtx)
 {
-  if (req == NULL || script == NULL || respond == NULL) return ESP_ERR_INVALID_ARG;
+  if (ctx == NULL || script == NULL || respond == NULL) return ESP_ERR_INVALID_ARG;
 
   if (Script_IsBusy()) {
     Script_Result sr;
     Script_FillBusy(&sr);
-    respond(req, SCRIPT_ERR_BUSY, &sr, userCtx);
+    respond(ctx, SCRIPT_ERR_BUSY, &sr, userCtx);
     return ESP_OK;
   }
 
@@ -870,7 +869,7 @@ esp_err_t Script_RunAsync(httpd_req_t* req, const char* script, uint32_t maxCall
   if (job == NULL) {
     Script_Result sr;
     Script_FillInternal(&sr);
-    respond(req, SCRIPT_ERR_INTERNAL, &sr, userCtx);
+    respond(ctx, SCRIPT_ERR_INTERNAL, &sr, userCtx);
     return ESP_OK;
   }
 
@@ -880,7 +879,7 @@ esp_err_t Script_RunAsync(httpd_req_t* req, const char* script, uint32_t maxCall
     free(job);
     Script_Result sr;
     Script_FillInternal(&sr);
-    respond(req, SCRIPT_ERR_INTERNAL, &sr, userCtx);
+    respond(ctx, SCRIPT_ERR_INTERNAL, &sr, userCtx);
     return ESP_OK;
   }
   memcpy(job->script, script, scriptLen + 1);
@@ -893,16 +892,16 @@ esp_err_t Script_RunAsync(httpd_req_t* req, const char* script, uint32_t maxCall
   job->respond = respond;
   job->userCtx = userCtx;
 
-  httpd_req_t* copy = NULL;
-  if (httpd_req_async_handler_begin(req, &copy) != ESP_OK) {
+  HttpServer_Context* copy = NULL;
+  if (HttpServer_AsyncBegin(ctx, &copy) != ESP_OK) {
     free(job->script);
     free(job);
     Script_Result sr;
     Script_FillInternal(&sr);
-    respond(req, SCRIPT_ERR_INTERNAL, &sr, userCtx);
+    respond(ctx, SCRIPT_ERR_INTERNAL, &sr, userCtx);
     return ESP_OK;
   }
-  job->req = copy;
+  job->ctx = copy;
 
   BaseType_t created =
       xTaskCreate(Script_WaiterTask, "saihub_scwait", CONFIG_SCRIPT_WAITER_STACK_BYTES / sizeof(StackType_t), job, 5,
@@ -911,7 +910,7 @@ esp_err_t Script_RunAsync(httpd_req_t* req, const char* script, uint32_t maxCall
     Script_Result sr;
     Script_FillInternal(&sr);
     respond(copy, SCRIPT_ERR_INTERNAL, &sr, userCtx);
-    httpd_req_async_handler_complete(copy);
+    HttpServer_AsyncComplete(copy);
     free(job->script);
     free(job);
     return ESP_OK;

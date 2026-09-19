@@ -8,7 +8,6 @@
 #include "http_server.h"
 #include "tool.h"
 
-#include <esp_http_server.h>
 #include <esp_log.h>
 
 static const char* tag = "SAIHUB-Control";
@@ -17,26 +16,23 @@ static const char* tag = "SAIHUB-Control";
 extern const uint8_t control_html_gz_start[] asm("_binary_control_html_gz_start");
 extern const uint8_t control_html_gz_end[] asm("_binary_control_html_gz_end");
 
-static esp_err_t Control_GetIndexHandler(httpd_req_t* req)
+static esp_err_t Control_GetIndexHandler(HttpServer_Context* ctx)
 {
-  HttpServer_LogCall(req);
-  HttpServer_SetCors(req);
+  HttpServer_LogCall(ctx);
   size_t len = (size_t)(control_html_gz_end - control_html_gz_start);
-  httpd_resp_set_type(req, "text/html");
-  httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
-  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-  return httpd_resp_send(req, (const char*)control_html_gz_start, len);
+  static const HttpServer_Header headers[] = {
+      {"Content-Encoding", "gzip"}, {"Cache-Control", "no-store"}, {NULL, NULL},
+  };
+  return HttpServer_Send(ctx, 200, "text/html", headers, control_html_gz_start, len);
 }
 
-static const httpd_uri_t uris[] = {
-    {.uri = "/", .method = HTTP_GET, .handler = Control_GetIndexHandler},
+static const HttpServer_Route uris[] = {
+    {.uri = "/", .method = HTTP_SERVER_GET, .handler = Control_GetIndexHandler},
 };
 
-esp_err_t Route_ControlRegister(httpd_handle_t server)
+esp_err_t Route_ControlRegister(void)
 {
-  for (size_t i = 0; i < TOOL_GET_ARRAY_LENGTH(uris); i++) {
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_register_uri_handler(server, &uris[i]), "register control uri failed");
-  }
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(HttpServer_RegisterRoutes(uris, TOOL_GET_ARRAY_LENGTH(uris)), "register control uri failed");
   ESP_LOGI(tag, "Control UI registered at /");
   return ESP_OK;
 }

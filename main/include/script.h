@@ -6,9 +6,10 @@
 #ifndef SCRIPT_H__
 #define SCRIPT_H__
 
+#include "http_server.h"
+
 #include <cJSON.h>
 #include <esp_err.h>
-#include <esp_http_server.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -46,19 +47,19 @@ Script_Status Script_Run(const char* script, uint32_t maxCalls, uint64_t timeout
 
 /**
  * Called by Script_RunAsync when the run finishes (or immediately if busy / setup fails).
- * Must send the HTTP response and call Script_ResultFree(result).
- * On the async path, req is an async copy; the helper completes it after this returns.
+ * Must send the response and call Script_ResultFree(result).
+ * On the async path, ctx is a detached context; the helper completes it after this returns.
  */
-typedef void (*Script_HttpRespondFn)(httpd_req_t* req, Script_Status status, Script_Result* result, void* userCtx);
+typedef void (*Script_RespondFn)(HttpServer_Context* ctx, Script_Status status, Script_Result* result, void* userCtx);
 
 /**
  * Offload Script_Run so the HTTP server can accept other requests.
- * If already busy: invoke respond on req with SCRIPT_ERR_BUSY (sync), no waiter.
- * Otherwise: detach req, spawn a short-lived waiter, return ESP_OK; respond runs later.
+ * If already busy: invoke respond on ctx with SCRIPT_ERR_BUSY (sync), no waiter.
+ * Otherwise: detach the context, spawn a short-lived waiter, return ESP_OK; respond runs later.
  * Always invokes respond exactly once (including setup failures).
  */
-esp_err_t Script_RunAsync(httpd_req_t* req, const char* script, uint32_t maxCalls, uint64_t timeoutUs,
-                          const char* defaultLockId, Script_HttpRespondFn respond, void* userCtx);
+esp_err_t Script_RunAsync(HttpServer_Context* ctx, const char* script, uint32_t maxCalls, uint64_t timeoutUs,
+                          const char* defaultLockId, Script_RespondFn respond, void* userCtx);
 
 void Script_ResultFree(Script_Result* out);
 
