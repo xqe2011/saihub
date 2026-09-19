@@ -14,7 +14,6 @@
 #include <esp_rom_sys.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
-#include <freertos/queue.h>
 #include <freertos/task.h>
 #include <math.h>
 #include <string.h>
@@ -44,15 +43,11 @@ typedef struct {
 } GpioPinRuntime;
 
 typedef struct {
-  int logicalPin;
-  int64_t timeUs;
-  int level;
-  bool raising;
-} TraceIsrEvent;
-
-typedef struct {
-  QueueHandle_t queue;
   GpioCtrl_Edge edge;
+  GpioCtrl_TraceEvent* events;
+  size_t capacity;
+  volatile size_t count;
+  bool includePin;
 } TraceContext;
 
 typedef struct {
@@ -269,27 +264,24 @@ static void IRAM_ATTR GpioCtrl_IsrHandler(void* arg)
   int logicalPin = (int)(intptr_t)arg;
   if (!GpioCtrl_IsValidLogicalPin(logicalPin)) return;
 
-  BaseType_t hp = pdFALSE;
   portENTER_CRITICAL_ISR(&traceMux);
   TraceContext* context = traceOwners[logicalPin];
-  if (context != NULL) {
+  if (context != NULL && context->count < context->capacity) {
     int level = gpio_get_level(GpioCtrl_Hw(logicalPin));
     bool raising = level != 0;
     bool accepted = context->edge == GPIO_CTRL_EDGE_BOTH ||
                     (context->edge == GPIO_CTRL_EDGE_RAISING && raising) ||
                     (context->edge == GPIO_CTRL_EDGE_FALLING && !raising);
     if (accepted) {
-      TraceIsrEvent ev = {
-          .logicalPin = logicalPin,
-          .timeUs = GpioCtrl_NowUs(),
-          .level = level,
-          .raising = raising,
-      };
-      xQueueSendFromISR(context->queue, &ev, &hp);
+      GpioCtrl_TraceEvent* event = &context->events[context->count];
+      event->pin = context->includePin ? logicalPin : -1;
+      event->edge = raising ? "raising" : "falling";
+      event->level = level;
+      event->time = GpioCtrl_NowUs();
+      context->count++;
     }
   }
   portEXIT_CRITICAL_ISR(&traceMux);
-  if (hp) portYIELD_FROM_ISR();
 }
 
 static esp_err_t GpioCtrl_InitPowerRail(int hwPin, bool* enableOut)
@@ -760,35 +752,25 @@ esp_err_t GpioCtrl_Trace(const int* logicalPins, size_t pinCount, GpioCtrl_Edge 
   }
 
   TraceContext context = {
-      .queue = xQueueCreate(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(TraceIsrEvent)),
       .edge = edge,
+      .events = eventsOut,
+      .capacity = maxEvents,
+      .count = 0,
+      .includePin = includePin,
   };
-  if (context.queue == NULL) return ESP_ERR_NO_MEM;
 
   esp_err_t result = GpioCtrl_ClaimTracePins(logicalPins, pinCount, &context);
-  if (result != ESP_OK) {
-    vQueueDelete(context.queue);
-    return result;
-  }
+  if (result != ESP_OK) return result;
 
   size_t enabledCount = 0;
-  size_t count = 0;
   for (; enabledCount < pinCount; enabledCount++) {
     result = GpioCtrl_EnableTraceInterrupt(logicalPins[enabledCount], edge);
     if (result != ESP_OK) goto cleanup;
   }
 
   int64_t endUs = esp_timer_get_time() + (int64_t)durationUs;
-  while (esp_timer_get_time() < endUs) {
-    TraceIsrEvent ev;
-    TickType_t wait = pdMS_TO_TICKS(20);
-    if (xQueueReceive(context.queue, &ev, wait) == pdTRUE && count < maxEvents) {
-      eventsOut[count].pin = includePin ? ev.logicalPin : -1;
-      eventsOut[count].edge = ev.raising ? "raising" : "falling";
-      eventsOut[count].level = ev.level;
-      eventsOut[count].time = ev.timeUs;
-      count++;
-    }
+  while (esp_timer_get_time() < endUs && context.count < context.capacity) {
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 
 cleanup:
@@ -796,7 +778,6 @@ cleanup:
     GpioCtrl_DisableTraceInterrupt(logicalPins[i]);
   }
   GpioCtrl_ReleaseTracePins(logicalPins, pinCount, &context);
-  vQueueDelete(context.queue);
-  *eventCountOut = count;
+  *eventCountOut = context.count;
   return result;
 }
