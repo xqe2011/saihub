@@ -531,24 +531,32 @@ async function collectMcpUart(marker: number[]): Promise<number[]> {
 }
 
 async function testPwmResourcesAndTraceRaces(): Promise<void> {
-  log("PWM resource sharing, frequency churn, trace saturation, and overlapping traces");
-  const resourcePins = [0, 1, 2, 3, 4, 5, 6];
+  log("independent PWM resources, frequency churn, trace saturation, and overlapping traces");
+  const resourcePins = [0, 1, 2, 3, 4, 5, 6, 7];
   try {
     // Start from a known allocation state; earlier sections may leave PWM timers/channels active.
     for (const pin of resourcePins) await configureRestPin(pin, "disable");
     const pwmPins = [0, 1, 2, 3];
-    for (const pin of pwmPins) await configureRestPin(pin, "pwmOutput");
-    const shared = await Promise.all(pwmPins.map((pin) => requestJson<PwmState>("GET", `/pin/${pin}/pwm`)));
-    assert(shared.every((state) => Math.abs(state.frequency - 1000) < 2), "Shared-frequency PWM allocation was inconsistent");
+    for (const pin of pwmPins) {
+      await configureRestPin(pin, "pwmOutput");
+      await requestJson<void>("POST", `/pin/${pin}/pwm`, { frequency: 2000, duty: 20 + pin * 10 }, 204);
+    }
+    const independent = await Promise.all(pwmPins.map((pin) => requestJson<PwmState>("GET", `/pin/${pin}/pwm`)));
+    assert(independent.every((state) => Math.abs(state.frequency - 2000) < 4),
+      "Independent PWM allocations returned inconsistent frequencies");
     const outputExhausted = await rawRequest("PUT", "/pin/4", {
       mode: "pwmOutput", openDrain: false, pullUp: false, pullDown: false,
     });
     assert(outputExhausted.status === 422 && outputExhausted.text.includes("PWM output limit reached"),
       `Fifth PWM output returned ${outputExhausted.status}, expected resource exhaustion`);
 
-    for (const [pin, frequency] of [[0, 500], [1, 2000], [2, 10000], [3, 50000]] as const) {
+    const independentConditions = [[0, 500], [1, 2000], [2, 10000], [3, 50000]] as const;
+    for (const [pin, frequency] of independentConditions) {
       await requestJson<void>("POST", `/pin/${pin}/pwm`, { frequency, duty: 40 }, 204);
     }
+    const distinct = await Promise.all(pwmPins.map((pin) => requestJson<PwmState>("GET", `/pin/${pin}/pwm`)));
+    assert(distinct.every((state, index) => Math.abs(state.frequency - independentConditions[index]![1]) < 4),
+      "Independent PWM frequency updates affected another output");
     for (let iteration = 0; iteration < 8; iteration += 1) {
       const frequency = iteration % 2 === 0 ? 1000 : 20000;
       await mcpTool("set_pin_pwms", { pins: [0], frequency, duty: 10 + iteration * 10 });
@@ -926,14 +934,29 @@ async function testSoak(): Promise<void> {
   }
 }
 
-async function runSection(name: string, action: () => Promise<void>): Promise<void> {
+async function runSection(name: string, action: () => Promise<void>, after?: () => Promise<void>): Promise<void> {
   try {
     await action();
   } catch (error) {
     const message = `${name}: ${error instanceof Error ? error.message : String(error)}`;
     deferredFailures.push(message);
     log(`continuing after section failure: ${message}`);
+  } finally {
+    if (after !== undefined) {
+      try {
+        await after();
+      } catch (error) {
+        const message = `${name} cleanup: ${error instanceof Error ? error.message : String(error)}`;
+        deferredFailures.push(message);
+        log(`continuing after section cleanup failure: ${message}`);
+      }
+    }
   }
+}
+
+async function disableTestPins(): Promise<void> {
+  await configureRestPin(OUTPUT_A, "disable");
+  await configureRestPin(OUTPUT_B, "disable");
 }
 
 async function cleanup(): Promise<void> {
@@ -991,8 +1014,8 @@ async function main(): Promise<void> {
   await runSection("inventory", () => testInventorySurfaces(snapshot!));
   await runSection("power", () => testPower(snapshot!));
   await runSection("disable UART", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
-  await runSection("REST pins", testRestPins);
-  await runSection("MCP pins", testMcpPins);
+  await runSection("REST pins", testRestPins, disableTestPins);
+  await runSection("MCP pins", testMcpPins, disableTestPins);
   await runSection("PWM resources and trace races", testPwmResourcesAndTraceRaces);
   await runSection("REST UART", testRestUart);
   await runSection("reset after REST UART", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
