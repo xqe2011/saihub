@@ -54,6 +54,9 @@ export class Device implements DurableObject {
     if (url.pathname === "/proxy") {
       return this.#handleProxy(request);
     }
+    if (url.pathname === "/online") {
+      return this.#handleOnline();
+    }
     return jsonError(404, "not found");
   }
 
@@ -187,6 +190,11 @@ export class Device implements DurableObject {
       authenticated: attachment?.authenticated === true,
       challenge: attachment?.challenge ? base64UrlToBytes(attachment.challenge) : null,
     };
+  }
+
+  #handleOnline(): Response {
+    const online = this.#socket !== null && this.#socketState?.authenticated === true;
+    return Response.json({ online }, { headers: { "cache-control": "no-store" } });
   }
 
   #handleWebSocket(request: Request, digest: string): Response {

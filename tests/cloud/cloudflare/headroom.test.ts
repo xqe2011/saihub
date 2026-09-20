@@ -120,6 +120,31 @@ describe("cloud heartbeat", () => {
     expect((await response).status).toBe(200);
   });
 
+  test("online is true for an authenticated socket and false after eviction", async () => {
+    const now = spyOn(Date, "now").mockReturnValue(100_000);
+    try {
+      const f = fixture("10000", 33_000);
+      const live = await f.device.fetch(new Request("https://cloud/online"));
+      expect(live.status).toBe(200);
+      expect(live.headers.get("cache-control")).toBe("no-store");
+      expect((await live.json()) as { online: boolean }).toEqual({ online: true });
+      now.mockReturnValue(100_001);
+      expect((await (await f.device.fetch(new Request("https://cloud/online"))).json()) as { online: boolean }).toEqual({ online: false });
+      expect(f.closed()).toBe(1);
+    } finally { now.mockRestore(); }
+  });
+
+  test("online is false when no socket is attached", async () => {
+    const ctx = {
+      setWebSocketAutoResponse: () => {},
+      getWebSocketAutoResponseTimestamp: () => null,
+      getWebSockets: () => [],
+      storage: { deleteAlarm: async () => {} },
+    } as unknown as DurableObjectState;
+    const device = new Device(ctx, {} as Env);
+    expect((await (await device.fetch(new Request("https://cloud/online"))).json()) as { online: boolean }).toEqual({ online: false });
+  });
+
   test("a new event evicts stale socket and resolves pending and queued requests", async () => {
     const f = fixture();
     const responses = Array.from({ length: 10 }, (_, i) => f.request(i));

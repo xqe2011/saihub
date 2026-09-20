@@ -1,6 +1,7 @@
 import { openRoutingToken } from "./crypto.ts";
 import { Device } from "./device.ts";
 import type { Env } from "./env.ts";
+import { handleLandingOnline, handleLandingPage } from "./landing.ts";
 import { handleOauthRedirectPage, handleProtectedResourceMetadata, handleRegister, handleToken, handleWellKnown, unauthorized } from "./oauth.ts";
 import { handlePairingSession, handlePairingToken } from "./pairing.ts";
 import { isDigest, isJsonContentType, unsupportedContentType, selectForwardHeaders, jsonError } from "./protocol.ts";
@@ -10,6 +11,7 @@ export { Device };
 
 const DEVICE_WS_RE = /^\/cloud\/device\/([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,33})$/;
 const DEVICE_HTTP_RE = /^\/device\/([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,33})(\/.*)?$/;
+const LANDING_RE = /^\/cloud\/landing\/([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,33})\/(page|online)$/;
 const PROTECTED_RESOURCE_RE = /^\/\.well-known\/oauth-protected-resource(?:\/.*)?$/;
 
 export default {
@@ -37,6 +39,15 @@ export default {
     }
     if (pathname === "/cloud/pairing/token") {
       return handlePairingToken(request, env);
+    }
+
+    const landingMatch = LANDING_RE.exec(pathname);
+    if (landingMatch) {
+      const digest = landingMatch[1]!;
+      if (landingMatch[2] === "page") {
+        return handleLandingPage(request, digest);
+      }
+      return handleLandingOnline(request, env, digest);
     }
 
     const wsMatch = DEVICE_WS_RE.exec(pathname);

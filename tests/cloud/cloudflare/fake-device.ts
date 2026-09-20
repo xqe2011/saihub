@@ -231,6 +231,7 @@ async function main(): Promise<void> {
   const wsUrl = CLOUD.replace(/^http/, "ws") + `/cloud/device/${digest}`;
   console.log(`digest: ${digest}`);
   console.log(`mcp: ${CLOUD}/device/${digest}/mcp`);
+  console.log(`landing: ${CLOUD}/cloud/landing/${digest}/page`);
   console.log(
     `pairing: ${CLOUD}/cloud/oauth/redirect?devicePublicKeyDigest=${digest}&redirect_uri=${encodeURIComponent("http://127.0.0.1:9999/cb")}&state=test`,
   );

@@ -651,7 +651,11 @@ static void Cloud_RelayTask(void* arg)
         bool success = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "success"));
         atomic_store(&authenticated, success);
         if (!success) Cloud_RequestRestart("cloud authentication rejected");
-        ESP_LOGI(tag, "cloud authentication %s", success ? "ready" : "rejected");
+        if (success) {
+          ESP_LOGI(tag, "cloud authentication ready, access landing page at http%s/cloud/landing/%s/page", &CONFIG_CLOUD_URL[0] + 2, Cloud_GetPublicKeyDigest());
+        } else {
+          ESP_LOGW(tag, "cloud authentication rejected");
+        }
       } else if (strcmp(type->valuestring, "request") == 0 && atomic_load(&authenticated)) {
         /* Match the local HTTP server: dispatch synchronously on the relay task.
          * Cloud-side timeout handling bounds how long this can occupy the relay. */

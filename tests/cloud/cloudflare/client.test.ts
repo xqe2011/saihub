@@ -354,6 +354,46 @@ describe("cloudflare device proxy e2e", () => {
     expect(await ok.text()).toContain(digest);
   }, 30_000);
 
+  test("landing page and online status do not require a bearer token", async () => {
+    const digest = PLACEHOLDER.a;
+    const missing = await fetch(`${baseUrl}/cloud/landing/${digest}/page`, { method: "POST" });
+    expect(missing.status).toBe(405);
+
+    const page = await fetch(`${baseUrl}/cloud/landing/${digest}/page`);
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type") ?? "").toContain("text/html");
+    const html = await page.text();
+    expect(html).toContain(`${baseUrl}/device/${digest}/mcp`);
+    expect(html).toContain(`${baseUrl}/device/${digest}/openapi.json`);
+    expect(html).toContain(`value="${baseUrl}/device/${digest}"`);
+    expect(html).toContain(`/cloud/landing/${digest}/online`);
+
+    const offline = await fetch(`${baseUrl}/cloud/landing/${digest}/online`);
+    expect(offline.status).toBe(200);
+    expect(offline.headers.get("cache-control")).toBe("no-store");
+    expect((await offline.json()) as { online: boolean }).toEqual({ online: false });
+
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    try {
+      const authRequest = await waitForMessage(ws, (msg): msg is AuthRequestMessage => msg.type === "authRequest");
+      expect((await (await fetch(`${baseUrl}/cloud/landing/${other.digest}/online`)).json()) as { online: boolean }).toEqual({ online: false });
+      ws.send(JSON.stringify({
+        type: "authResponse",
+        devicePublicKey: other.publicKeyB64,
+        devicePublicKeyDigest: other.digest,
+        version: "test-1.0.0",
+        response: await signChallenge(other.privateKey, authRequest.challenge),
+      }));
+      expect((await waitForMessage(ws, (msg): msg is AuthResultMessage => msg.type === "authResult")).success).toBe(true);
+      expect((await (await fetch(`${baseUrl}/cloud/landing/${other.digest}/online`)).json()) as { online: boolean }).toEqual({ online: true });
+    } finally {
+      ws.close();
+    }
+    await Bun.sleep(300);
+    expect((await (await fetch(`${baseUrl}/cloud/landing/${other.digest}/online`)).json()) as { online: boolean }).toEqual({ online: false });
+  }, 60_000);
+
   test("oauth redirect page requires digest and redirect_uri", async () => {
     const missing = await fetch(`${baseUrl}/cloud/oauth/redirect`);
     expect(missing.status).toBe(400);
