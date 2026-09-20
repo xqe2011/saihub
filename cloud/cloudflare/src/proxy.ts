@@ -18,8 +18,7 @@ export function proxyToDevice(
     new Request(forwardUrl, {
       method,
       headers: requestHeaders,
-      // An empty string makes Request synthesize text/plain even for bodyless requests.
-      body: method === "GET" || method === "HEAD" || body === "" ? undefined : body,
+      body: body === "" ? undefined : body,
     }),
   );
 }

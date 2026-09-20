@@ -277,7 +277,7 @@ export class Device implements DurableObject {
       requestId,
       method: request.method,
       path,
-      headers: { ...selectForwardHeaders(request), "content-type": "application/json" },
+      headers: selectForwardHeaders(request),
       body: jsonBody,
     };
 

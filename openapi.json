@@ -637,27 +637,18 @@
         "description": "digitalOutput returns the last written latch. Other modes sample the pad input.",
         "parameters": [
           {
+            "name": "pins",
+            "in": "query",
+            "required": true,
+            "description": "Pin numbers; repeat the parameter for multiple pins.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
             "$ref": "#/components/parameters/XLockId"
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "pins"
-                ],
-                "properties": {
-                  "pins": {
-                    "$ref": "#/components/schemas/Pins"
-                  }
-                }
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Levels in pins order",
@@ -884,36 +875,35 @@
         "summary": "Batch edge capture",
         "parameters": [
           {
+            "name": "pins",
+            "in": "query",
+            "required": true,
+            "description": "Pin numbers; repeat the parameter for multiple pins.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "edge",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/Edge"
+            }
+          },
+          {
+            "name": "duration",
+            "in": "query",
+            "description": "Microseconds.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60000000
+            }
+          },
+          {
             "$ref": "#/components/parameters/XLockId"
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "pins"
-                ],
-                "properties": {
-                  "pins": {
-                    "$ref": "#/components/schemas/Pins"
-                  },
-                  "edge": {
-                    "$ref": "#/components/schemas/Edge"
-                  },
-                  "duration": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 60000000,
-                    "description": "Microseconds"
-                  }
-                }
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Events with pin",

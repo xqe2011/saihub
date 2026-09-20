@@ -24,6 +24,26 @@ static const char* tag = "SAIHUB-Http";
 #define TRACE_DEFAULT_DURATION_US 1000000ULL
 
 static const int pinLogicalToHw[] = CONFIG_GPIO_LOGICAL_TO_HW;
+/* Parse GET query parameters used by batch read endpoints.  Repeated pins
+ * (pins=1&pins=2) and comma-separated pins (pins=1,2) are both accepted. */
+static cJSON* Route_PinQueryObject(HttpServer_Context* ctx)
+{
+  char query[256] = {0};
+  if (HttpServer_GetQuery(ctx, query, sizeof(query)) != ESP_OK) return NULL;
+  cJSON* root = cJSON_CreateObject();
+  cJSON* pins = cJSON_CreateArray();
+  char* save = NULL;
+  for (char* part = strtok_r(query, "&", &save); part; part = strtok_r(NULL, "&", &save)) {
+    char* eq = strchr(part, '='); if (!eq) continue; *eq++ = '\0';
+    if (strcmp(part, "pins") == 0) {
+      char* ps = NULL;
+      for (char* v = strtok_r(eq, ",", &ps); v; v = strtok_r(NULL, ",", &ps)) cJSON_AddItemToArray(pins, cJSON_CreateNumber(strtol(v, NULL, 10)));
+    } else if (strcmp(part, "edge") == 0) cJSON_AddStringToObject(root, "edge", eq);
+    else if (strcmp(part, "duration") == 0) cJSON_AddNumberToObject(root, "duration", strtoull(eq, NULL, 10));
+  }
+  cJSON_AddItemToObject(root, "pins", pins);
+  return root;
+}
 static esp_err_t Route_PinSendTraceEvents(HttpServer_Context* ctx, const GpioCtrl_TraceEvent* events, size_t count, bool includePin);
 
 typedef struct { HttpServer_Context* ctx; int* pins; size_t pinCount; GpioCtrl_Edge edge; uint64_t duration; bool includePin; char lockId[64]; } PinTraceJob;
@@ -481,11 +501,7 @@ static esp_err_t Route_PinBatchGetLevelHandler(HttpServer_Context* ctx)
 {
   HttpServer_LogCall(ctx);
   Lock_SweepExpired();
-  if (!HttpServer_HasJsonContentType(ctx)) {
-    return HttpServer_SendError(ctx, 415, "Content-Type must be application/json.");
-  }
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(ctx, &perr);
+  cJSON* body = Route_PinQueryObject(ctx);
   if (body == NULL) return HttpServer_SendError(ctx, 400, "invalid_json");
 
   int maxPins = GpioCtrl_GetLogicalCount();
@@ -678,11 +694,7 @@ static esp_err_t Route_PinBatchGetTraceHandler(HttpServer_Context* ctx)
 {
   HttpServer_LogCall(ctx);
   Lock_SweepExpired();
-  if (!HttpServer_HasJsonContentType(ctx)) {
-    return HttpServer_SendError(ctx, 415, "Content-Type must be application/json.");
-  }
-  esp_err_t perr = ESP_OK;
-  cJSON* body = HttpServer_ParseBody(ctx, &perr);
+  cJSON* body = Route_PinQueryObject(ctx);
   if (body == NULL) return HttpServer_SendError(ctx, 400, "invalid_json");
 
   int maxPins = GpioCtrl_GetLogicalCount();

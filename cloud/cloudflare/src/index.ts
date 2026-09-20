@@ -93,17 +93,15 @@ async function handleDeviceHttp(
   if (isMcp && (request.method === "GET" || request.method === "DELETE")) {
     return new Response(null, { status: 405, headers: { Allow: "POST, OPTIONS" } });
   }
-  // Validate writes before the device relay adds its JSON transport header.
-  const requiresJson = ["POST", "PUT", "PATCH"].includes(request.method);
-  if ((contentType !== null || requiresJson) && !isJsonContentType(contentType)) return unsupportedContentType(contentType);
+  const body = await request.text();
+  // Bodyless operations do not require a media type.
+  if ((contentType !== null || body.length > 0) && !isJsonContentType(contentType)) return unsupportedContentType(contentType);
   const accept = request.headers.get("accept");
   if (accept && !accept.split(",").some((part) => /^(application\/json|application\/\*|\*\/\*)$/i.test(part.split(";", 1)[0]!.trim()) && !/;\s*q=0(?:\.0*)?\s*(?:;|$)/i.test(part))) {
     return unsupportedContentType(accept, 406);
   }
   const headers = selectForwardHeaders(request);
 
-  const body =
-    request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
   return proxyToDevice(env, digest, request.method, path, body, headers);
 }
 

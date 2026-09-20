@@ -106,6 +106,15 @@ function log(message: string): void {
 }
 
 async function rawRequest(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<HttpResult> {
+  if (method === "GET" && body !== undefined) {
+    const url = targetUrl(path);
+    for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+      if (Array.isArray(value)) for (const item of value) url.searchParams.append(key, String(item));
+      else url.searchParams.set(key, String(value));
+    }
+    path += url.search;
+    body = undefined;
+  }
   const serialized = body === undefined ? undefined : JSON.stringify(body);
   const headers: Record<string, string> = { Accept: "application/json", ...extraHeaders };
   if (routingToken) headers.Authorization = `Bearer ${routingToken}`;
@@ -958,6 +967,21 @@ async function runSection(name: string, action: () => Promise<void>, after?: () 
   }
 }
 
+async function releaseTestLocks(): Promise<void> {
+  const results = await Promise.allSettled([
+    ...Array.from(createdRestLocks, async (id) => {
+      await requestJson<void>("DELETE", `/lock/${encodeURIComponent(id)}`, undefined, 204);
+      createdRestLocks.delete(id);
+    }),
+    ...Array.from(createdMcpLocks, async (id) => {
+      await mcpTool("delete_lock", { id });
+      createdMcpLocks.delete(id);
+    }),
+  ]);
+  const errors = results.flatMap((result) => result.status === "rejected" ? [result.reason] : []);
+  if (errors.length > 0) throw new AggregateError(errors, "Failed to release test locks");
+}
+
 async function disableTestPins(): Promise<void> {
   await configureRestPin(OUTPUT_A, "disable");
   await configureRestPin(OUTPUT_B, "disable");
@@ -1028,9 +1052,9 @@ async function main(): Promise<void> {
   await runSection("UART payloads and races", testUartPayloadsAndRaces);
   await runSection("reset after UART stress", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
   await runSection("scripts", testScripts);
-  await runSection("concurrency", testConcurrency);
-  await runSection("lock methods and peripheral races", testLockMethodsAndPeripheralRaces);
-  await runSection("locks", testLocks);
+  await runSection("concurrency", testConcurrency, releaseTestLocks);
+  await runSection("lock methods and peripheral races", testLockMethodsAndPeripheralRaces, releaseTestLocks);
+  await runSection("locks", testLocks, releaseTestLocks);
   await runSection("soak", testSoak);
   await runSection("overlapping trace race", testOverlappingTraceRace);
   if (deferredFailures.length > 0) {

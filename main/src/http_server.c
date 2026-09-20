@@ -5,6 +5,7 @@
  */
 #include "http_server.h"
 
+#include "cJSON.h"
 #include "config.h"
 #include "gpio_ctrl.h"
 #include "ntp.h"
@@ -979,7 +980,7 @@ esp_err_t HttpServer_DispatchCloud(cJSON* request, HttpServer_CloudWrite write, 
   }
   HttpServer_Context ctx = {.from = "cloud", .cloudRequest = request, .cloudWrite = write, .cloudUser = user};
   esp_err_t ret;
-  if (!HttpServer_HasJsonContentType(&ctx)) {
+  if (!cJSON_IsNull(body) && !HttpServer_HasJsonContentType(&ctx)) {
     ret = HttpServer_SendError(&ctx, 415, "cloud relay not support non-JSON content-type currently, use application/json instead");
     goto cleanup;
   }

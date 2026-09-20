@@ -661,17 +661,49 @@ describe("cloudflare device proxy e2e", () => {
     }
   }, 30_000);
 
+  test("forwards bodyless writes and JSON GET bodies", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    expect((await authenticateDevice(ws, other)).success).toBe(true);
+    const token = await bearerFor(other.digest);
+    try {
+      for (const [method, path] of [["POST", "/uart/0/flush"], ["PUT", "/lock/test"], ["PATCH", "/pin/6"]] as const) {
+        const pending = waitForMessage(ws, (msg): msg is RequestMessage => msg.type === "request");
+        const response = fetch(`${baseUrl}/device/${other.digest}${path}`, {
+          method, headers: { authorization: `Bearer ${token}` },
+        });
+        const request = await pending;
+        expect(request.method).toBe(method);
+        expect(request.path).toBe(path);
+        expect(request.body).toBeNull();
+        replyJson(ws, request.requestId, 200, { ok: true });
+        expect((await response).status).toBe(200);
+      }
+      // curl permits GET bodies, unlike the client-side Fetch API.
+      const pending = waitForMessage(ws, (msg): msg is RequestMessage => msg.type === "request");
+      const client = spawn(["curl", "--noproxy", "*", "--silent", "--show-error", "--max-time", "10",
+        "--request", "GET", `${baseUrl}/device/${other.digest}/pin/level`,
+        "--header", `Authorization: Bearer ${token}`, "--header", "Content-Type: application/json",
+        "--data-binary", JSON.stringify({ pins: [6, 7] })], { stdout: "pipe", stderr: "pipe" });
+      const request = await pending;
+      expect(request.method).toBe("GET");
+      expect(request.path).toBe("/pin/level");
+      expect(request.body).toEqual({ pins: [6, 7] });
+      replyJson(ws, request.requestId, 200, { levels: [0, 1] });
+      expect(await new Response(client.stdout).json() as unknown).toEqual({ levels: [0, 1] });
+      expect(await client.exited).toBe(0);
+
+      const missingType = spawn(["curl", "--noproxy", "*", "--silent", "--show-error", "--max-time", "10",
+        "--request", "POST", `${baseUrl}/device/${other.digest}/pin/level`,
+        "--header", `Authorization: Bearer ${token}`, "--header", "Content-Type:",
+        "--data-binary", "{}", "--write-out", "%{http_code}"], { stdout: "pipe", stderr: "pipe" });
+      expect(await new Response(missingType.stdout).text()).toContain("415");
+      expect(await missingType.exited).toBe(0);
+    } finally { ws.close(); }
+  }, 30_000);
+
   test("rejects non-JSON media and handles MCP SSE on the cloud", async () => {
     const token = await bearerFor(PLACEHOLDER.a);
-    for (const method of ["POST", "PUT", "PATCH"]) {
-      const res = await fetch(`${baseUrl}/device/${PLACEHOLDER.a}/pin/6`, {
-        method, headers: { authorization: `Bearer ${token}` },
-      });
-      expect(res.status).toBe(415);
-      expect(await res.json() as unknown).toEqual({
-        reason: "cloud relay not support missing content-type currently, use application/json instead",
-      });
-    }
     for (const contentType of ["text/plain", "application/jsonp", "application/octet-stream"]) {
       const res = await fetch(`${baseUrl}/device/${PLACEHOLDER.a}/pin/1`, {
         method: "PUT", headers: { authorization: `Bearer ${token}`, "content-type": contentType }, body: "{}",
