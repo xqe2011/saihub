@@ -718,7 +718,7 @@ describe("cloudflare device proxy e2e", () => {
     }
   }, 30_000);
 
-  test("forwards bodyless writes and JSON GET bodies", async () => {
+  test("forwards bodyless writes and GET query parameters", async () => {
     const other = await generateDeviceIdentity();
     const ws = await openDeviceSocket(baseUrl, other.digest);
     expect((await authenticateDevice(ws, other)).success).toBe(true);
@@ -736,19 +736,19 @@ describe("cloudflare device proxy e2e", () => {
         replyJson(ws, request.requestId, 200, { ok: true });
         expect((await response).status).toBe(200);
       }
-      // curl permits GET bodies, unlike the client-side Fetch API.
       const pending = waitForMessage(ws, (msg): msg is RequestMessage => msg.type === "request");
-      const client = spawn(["curl", "--noproxy", "*", "--silent", "--show-error", "--max-time", "10",
-        "--request", "GET", `${baseUrl}/device/${other.digest}/pin/level`,
-        "--header", `Authorization: Bearer ${token}`, "--header", "Content-Type: application/json",
-        "--data-binary", JSON.stringify({ pins: [6, 7] })], { stdout: "pipe", stderr: "pipe" });
+      const response = fetch(`${baseUrl}/device/${other.digest}/pin/level?pins=6&pins=7`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
       const request = await pending;
       expect(request.method).toBe("GET");
-      expect(request.path).toBe("/pin/level");
-      expect(request.body).toEqual({ pins: [6, 7] });
+      expect(request.path).toBe("/pin/level?pins=6&pins=7");
+      expect(request.body).toBeNull();
+      expect(request.headers["content-type"]).toBeUndefined();
       replyJson(ws, request.requestId, 200, { levels: [0, 1] });
-      expect(await new Response(client.stdout).json() as unknown).toEqual({ levels: [0, 1] });
-      expect(await client.exited).toBe(0);
+      const result = await response;
+      expect(result.status).toBe(200);
+      expect(await result.json() as unknown).toEqual({ levels: [0, 1] });
 
       const missingType = spawn(["curl", "--noproxy", "*", "--silent", "--show-error", "--max-time", "10",
         "--request", "POST", `${baseUrl}/device/${other.digest}/pin/level`,

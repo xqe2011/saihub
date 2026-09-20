@@ -17,7 +17,7 @@ ws.on("message", async (raw) => {
     if (!message.success) process.exit(1);
     console.log("ready");
   } else if (message.type === "request") {
-    if (message.body !== null || message.headers["content-type"] !== "application/json") process.exit(1);
+    if (message.body !== null || message.headers["content-type"] !== undefined) process.exit(1);
     const prefix = JSON.stringify({ type: "response", requestId: message.requestId, status: 200, headers: { "content-type": "application/json" } });
     ws.send(prefix.slice(0, -1) + ',"body":', { fin: false });
     ws.send('{"events":[', { fin: false });
