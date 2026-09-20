@@ -450,6 +450,12 @@ static SemaphoreHandle_t sendMutex;
 static atomic_uint generation;
 static atomic_bool authenticated;
 static atomic_bool restart;
+
+static void Cloud_RequestRestart(const char* reason)
+{
+  ESP_LOGW(tag, "relay restart requested: %s", reason);
+  atomic_store(&restart, true);
+}
 static _Atomic(TaskHandle_t) streamOwner;
 static char* receiveBuffer;
 static size_t receiveLength;
@@ -477,7 +483,7 @@ static esp_err_t Cloud_Write(void* user, HttpServer_CloudWriteKind kind, const v
   TaskHandle_t self = xTaskGetCurrentTaskHandle();
   if (kind == HTTP_CLOUD_ABORT) {
     if (streamOwner == self) {
-      atomic_store(&restart, true);
+      Cloud_RequestRestart("cloud stream aborted");
       streamOwner = NULL;
       xSemaphoreGive(sendMutex);
     }
@@ -521,7 +527,7 @@ static bool Cloud_Base64Encode(const uint8_t* data, size_t length, char* out, si
 static void Cloud_Authenticate(cJSON* message, unsigned expected)
 {
   cJSON* challenge = cJSON_GetObjectItemCaseSensitive(message, "challenge");
-  if (!cJSON_IsString(challenge) || strlen(challenge->valuestring) != 43) { atomic_store(&restart, true); return; }
+  if (!cJSON_IsString(challenge) || strlen(challenge->valuestring) != 43) { Cloud_RequestRestart("invalid authentication challenge"); return; }
   char encoded[45];
   memcpy(encoded, challenge->valuestring, 43);
   for (size_t i = 0; i < 43; i++) {
@@ -534,7 +540,7 @@ static void Cloud_Authenticate(cJSON* message, unsigned expected)
   size_t length = 0;
   if (mbedtls_base64_decode(bytes, sizeof(bytes), &length, (unsigned char*)encoded, 44) != 0 || length != 32 ||
       Cloud_SignChallenge(bytes, length, signature, NULL) != ESP_OK || Cloud_GetPublicKey(publicKey, NULL) != ESP_OK) {
-    atomic_store(&restart, true);
+    Cloud_RequestRestart("authentication challenge signing failed");
     return;
   }
   char signatureText[89], publicKeyText[89];
@@ -552,9 +558,9 @@ static void Cloud_Authenticate(cJSON* message, unsigned expected)
   if (!text) return;
   if (xSemaphoreTake(sendMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
     if (Cloud_ConnectionCurrent(expected) && esp_websocket_client_send_text(client, text, strlen(text), pdMS_TO_TICKS(10000)) < 0)
-      atomic_store(&restart, true);
+      Cloud_RequestRestart("cloud authentication response send failed");
     xSemaphoreGive(sendMutex);
-  } else atomic_store(&restart, true);
+  } else Cloud_RequestRestart("cloud authentication response send lock timeout");
   free(text);
 }
 
@@ -566,7 +572,7 @@ static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* e
     atomic_fetch_add(&generation, 1);
     atomic_store(&authenticated, false);
     Cloud_ResetReceive();
-    if (event == WEBSOCKET_EVENT_CLOSED) atomic_store(&restart, true);
+    if (event == WEBSOCKET_EVENT_CLOSED) Cloud_RequestRestart("cloud socket closed");
     return;
   }
   if (event != WEBSOCKET_EVENT_DATA) return;
@@ -579,18 +585,18 @@ static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* e
   }
   if (!receiveBuffer || data->data_len < 0 || receiveLength + data->data_len > CONFIG_CLOUD_MAX_MESSAGE_BYTES) {
     Cloud_ResetReceive();
-    atomic_store(&restart, true);
+    Cloud_RequestRestart("cloud message buffer invalid or too large");
     return;
   }
   char* grown = realloc(receiveBuffer, receiveLength + data->data_len + 1);
-  if (!grown) { Cloud_ResetReceive(); atomic_store(&restart, true); return; }
+  if (!grown) { Cloud_ResetReceive(); Cloud_RequestRestart("cloud message buffer allocation failed"); return; }
   receiveBuffer = grown;
   memcpy(receiveBuffer + receiveLength, data->data_ptr, data->data_len);
   receiveLength += data->data_len;
   receiveBuffer[receiveLength] = '\0';
   if (!data->fin || data->payload_offset + data->data_len != data->payload_len) return;
   Cloud_Message message = {.text = receiveBuffer, .generation = receiveGeneration};
-  if (xQueueSend(incoming, &message, 0) != pdTRUE) { free(message.text); atomic_store(&restart, true); }
+  if (xQueueSend(incoming, &message, 0) != pdTRUE) { free(message.text); Cloud_RequestRestart("cloud message queue full"); }
   receiveBuffer = NULL;
   receiveLength = 0;
 }
@@ -627,7 +633,7 @@ static void Cloud_RelayTask(void* arg)
       else if (strcmp(type->valuestring, "authResult") == 0) {
         bool success = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "success"));
         atomic_store(&authenticated, success);
-        if (!success) atomic_store(&restart, true);
+        if (!success) Cloud_RequestRestart("cloud authentication rejected");
         ESP_LOGI(tag, "cloud authentication %s", success ? "ready" : "rejected");
       } else if (strcmp(type->valuestring, "request") == 0 && atomic_load(&authenticated)) {
         /* Match the local HTTP server: dispatch synchronously on the relay task.
@@ -636,7 +642,7 @@ static void Cloud_RelayTask(void* arg)
           HttpServer_DispatchCloud(root, Cloud_Write, (void*)(uintptr_t)message.generation);
           dispatched = true;
         }
-        if (!dispatched) atomic_store(&restart, true);
+        if (!dispatched) Cloud_RequestRestart("cloud request dispatch failed");
       }
     }
     if (!dispatched) cJSON_Delete(root);

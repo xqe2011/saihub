@@ -329,7 +329,7 @@ esp_err_t HttpServer_AsyncComplete(HttpServer_Context* ctx)
 static esp_err_t HttpServer_RouteAdapter(httpd_req_t* req)
 {
   const HttpServer_Route* route = req->user_ctx;
-  HttpServer_Context ctx = {.req = req, .from = "http"};
+  HttpServer_Context ctx = {.req = req, .from = "local"};
   return route->handler(&ctx);
 }
 
@@ -858,7 +858,7 @@ cJSON* HttpServer_ParseBody(HttpServer_Context* ctx, esp_err_t* errOut)
 static esp_err_t HttpServer_NotFoundHandler(httpd_req_t* req, httpd_err_code_t err)
 {
   (void)err;
-  HttpServer_Context ctx = {.req = req, .from = "http"};
+  HttpServer_Context ctx = {.req = req, .from = "local"};
   HttpServer_LogCall(&ctx);
   if (pairingServer) {
     return HttpServer_SendError(&ctx, 404, "This URL does not exist. Open /wifi/page for Wi-Fi setup.");
@@ -1014,7 +1014,7 @@ cleanup:
 
 static esp_err_t HttpServer_PortalRedirect(httpd_req_t* req)
 {
-  HttpServer_Context ctx = {.req = req, .from = "http"};
+  HttpServer_Context ctx = {.req = req, .from = "local"};
   HttpServer_LogCall(&ctx);
   static const HttpServer_Header headers[] = {
       {"Location", CONFIG_WIFI_PORTAL_URL}, {"Cache-Control", "no-store"}, {NULL, NULL},

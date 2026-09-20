@@ -2,6 +2,13 @@ import { DEFAULT_AUTH_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS, parseTimeoutMs, ty
 import { base64UrlToBytes, bytesToBase64Url, randomChallenge, verifyDeviceAuth } from "./crypto.ts";
 import { isJsonContentType, unsupportedContentType, jsonError, MAX_BODY_BYTES, MAX_PATH_LEN, parseDeviceMessage, selectForwardHeaders, type AuthRequestMessage, type AuthResultMessage, type RequestMessage } from "./protocol.ts";
 
+const MAX_PENDING_REQUESTS = 8;
+
+type HeadroomRequest = {
+  message: RequestMessage;
+  resolve: (response: Response) => void;
+};
+
 type PendingRequest = {
   resolve: (response: Response) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -22,6 +29,7 @@ export class Device implements DurableObject {
   readonly #ctx: DurableObjectState;
   readonly #env: Env;
   readonly #pending = new Map<string, PendingRequest>();
+  readonly #headroom: HeadroomRequest[] = [];
   #seq = 0;
   #socket: WebSocket | null = null;
   #socketState: SocketState | null = null;
@@ -281,22 +289,36 @@ export class Device implements DurableObject {
       body: jsonBody,
     };
 
-    const timeoutMs = parseTimeoutMs(this.#env.REQUEST_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS);
-
-    try {
-      this.#socket.send(JSON.stringify(message));
-    } catch {
-      return jsonError(503, "device offline");
-    }
-
-    // In-flight fetch keeps the DO awake, so setTimeout is sufficient here.
     return new Promise<Response>((resolve) => {
+      this.#headroom.push({ message, resolve });
+      this.#drainHeadroom();
+    });
+  }
+
+  #drainHeadroom(): void {
+    if (!this.#socket || !this.#socketState?.authenticated) {
+      this.#rejectAllPending("device offline");
+      return;
+    }
+    while (this.#pending.size < MAX_PENDING_REQUESTS && this.#headroom.length > 0) {
+      const { message, resolve } = this.#headroom.shift()!;
+      const { requestId } = message;
+      // Start the device timeout only when admitted; queued fetches keep the DO awake.
+      const timeoutMs = parseTimeoutMs(this.#env.REQUEST_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS);
       const timer = setTimeout(() => {
-        this.#pending.delete(requestId);
-        resolve(jsonError(504, "device timeout"));
+        this.#completePending(requestId, jsonError(504, "device timeout"));
       }, timeoutMs);
       this.#pending.set(requestId, { resolve, timer });
-    });
+      try {
+        this.#socket.send(JSON.stringify(message));
+      } catch {
+        clearTimeout(timer);
+        this.#pending.delete(requestId);
+        resolve(jsonError(503, "device offline"));
+        this.#rejectAllPending("device offline");
+        return;
+      }
+    }
   }
 
   #nextRequestId(): string {
@@ -328,6 +350,7 @@ export class Device implements DurableObject {
     }
     await this.#clearAuthAlarm();
     await this.#clearSocket();
+    this.#rejectAllPending("device offline");
   }
 
   async #clearSocket(): Promise<void> {
@@ -343,6 +366,7 @@ export class Device implements DurableObject {
     clearTimeout(pending.timer);
     this.#pending.delete(requestId);
     pending.resolve(response);
+    this.#drainHeadroom();
   }
 
   #rejectAllPending(reason: string): void {
@@ -350,6 +374,9 @@ export class Device implements DurableObject {
       clearTimeout(pending.timer);
       pending.resolve(jsonError(503, reason));
       this.#pending.delete(id);
+    }
+    for (const { resolve } of this.#headroom.splice(0)) {
+      resolve(jsonError(503, reason));
     }
   }
 
