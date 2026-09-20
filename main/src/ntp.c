@@ -11,7 +11,7 @@
 #include <sys/time.h>
 #include <time.h>
 
-static const char* tag = "SAIHUB-Ntp";
+static const char* tag = "SAIHub-Ntp";
 static bool isSynced = false;
 static volatile bool wantSync = false;
 static TaskHandle_t syncTask = NULL;

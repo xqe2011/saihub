@@ -13,7 +13,7 @@
 #include <esp_log.h>
 #include <string.h>
 
-static const char* tag = "SAIHUB-Portal";
+static const char* tag = "SAIHub-Portal";
 
 /* EMBED_FILES "embed/portal.html.gz" → portal_html_gz (IDF uses the basename) */
 extern const uint8_t portal_html_gz_start[] asm("_binary_portal_html_gz_start");

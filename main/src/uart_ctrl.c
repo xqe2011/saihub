@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char* tag = "SAIHUB-Uart";
+static const char* tag = "SAIHub-Uart";
 
 static const int uartIdToNum[] = CONFIG_UART_ID_TO_NUM;
 

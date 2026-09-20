@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char* tag = "SAIHUB-Mcp";
+static const char* tag = "SAIHub-Mcp";
 
 extern const uint8_t mcp_json_start[] asm("_binary_mcp_json_start");
 extern const uint8_t mcp_json_end[] asm("_binary_mcp_json_end");
@@ -349,7 +349,7 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
   cJSON_AddItemToObject(result, "serverInfo", info);
   cJSON_AddStringToObject(
       result, "instructions",
-      "Saihub hub: logical pins 0-7, UART ids from list_uarts, times in microseconds, optional lockId for contested "
+      "SAIHub: logical pins 0-7, UART ids from list_uarts, times in microseconds, optional lockId for contested "
       "resources. Use plural pin tools (configure_pins, get_pin_levels, …) and always pass pins even for one pin "
       "(pins:[1]). Power tools use rail=3v3|5v. UART tools use configure_uart, uart_transmit, uart_receive, uart_flush. "
       "create_lock resources use type pin with pins, type power with rails, or type uart with ids. "

@@ -19,7 +19,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-static const char* tag = "SAIHUB-Http";
+static const char* tag = "SAIHub-Http";
 
 #define TRACE_DEFAULT_DURATION_US 1000000ULL
 

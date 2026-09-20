@@ -10,7 +10,7 @@
 
 #include <esp_log.h>
 
-static const char* tag = "SAIHUB-Http";
+static const char* tag = "SAIHub-Http";
 
 extern const uint8_t openapi_json_start[] asm("_binary_openapi_json_start");
 extern const uint8_t openapi_json_end[] asm("_binary_openapi_json_end");

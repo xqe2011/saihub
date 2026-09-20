@@ -14,7 +14,7 @@
 #include <esp_log.h>
 #include <string.h>
 
-static const char* tag = "SAIHUB-Http";
+static const char* tag = "SAIHub-Http";
 
 static Lock_Kind Route_PowerLockKind(GpioCtrl_PowerRail rail)
 {

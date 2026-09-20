@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char* tag = "SAIHUB-Script";
+static const char* tag = "SAIHub-Script";
 
 #define SCRIPT_HOOK_INTERVAL 1000
 #define SCRIPT_SLEEP_CHUNK_US 10000ULL

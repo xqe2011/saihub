@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char* tag = "SAIHUB-Lock";
+static const char* tag = "SAIHub-Lock";
 
 static esp_err_t Route_LockCreateHandler(HttpServer_Context* ctx)
 {

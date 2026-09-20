@@ -19,7 +19,7 @@
 #include <stdint.h>
 #include <string.h>
 
-static const char* tag = "SAIHUB-Dns";
+static const char* tag = "SAIHub-Dns";
 
 #define DNS_PORT 53
 #define DNS_MAX_LEN 512

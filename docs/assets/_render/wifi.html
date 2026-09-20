@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>SAIHUB</title>
+<style>
+:root{
+  --md-sys-color-primary:#006b54;
+  --md-sys-color-on-primary:#ffffff;
+  --md-sys-color-primary-container:#89f8d2;
+  --md-sys-color-on-primary-container:#002117;
+  --md-sys-color-secondary:#4c635a;
+  --md-sys-color-on-secondary:#ffffff;
+  --md-sys-color-secondary-container:#cee9dc;
+  --md-sys-color-on-secondary-container:#072019;
+  --md-sys-color-surface:#f5fbf7;
+  --md-sys-color-surface-dim:#d5dbd7;
+  --md-sys-color-surface-container:#e9efeb;
+  --md-sys-color-surface-container-high:#e3e9e5;
+  --md-sys-color-surface-container-highest:#dee4e0;
+  --md-sys-color-surface-container-lowest:#ffffff;
+  --md-sys-color-on-surface:#171d1b;
+  --md-sys-color-on-surface-variant:#3f4945;
+  --md-sys-color-outline:#6f7975;
+  --md-sys-color-outline-variant:#bfc9c3;
+  --md-sys-color-error:#ba1a1a;
+  --md-sys-color-on-error:#ffffff;
+  --md-sys-color-error-container:#ffdad6;
+  --md-sys-color-on-error-container:#410002;
+  --md-sys-shape-corner-small:8px;
+  --md-sys-shape-corner-medium:12px;
+  --md-sys-shape-corner-large:16px;
+  --md-sys-shape-corner-extra-large:28px;
+  --md-sys-elevation-1:0 1px 2px rgba(0,0,0,.16),0 1px 3px 1px rgba(0,0,0,.08);
+  --md-sys-elevation-2:0 1px 2px rgba(0,0,0,.16),0 2px 6px 2px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  min-height:100%;
+  overflow-x:hidden;
+  width:390px;
+}
+body{
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  color:var(--md-sys-color-on-surface);
+  background:
+    radial-gradient(900px 480px at 0% -5%, rgba(137,248,210,.55) 0%, transparent 60%),
+    radial-gradient(700px 420px at 100% 0%, rgba(206,233,220,.7) 0%, transparent 55%),
+    var(--md-sys-color-surface);
+  background-attachment:fixed;
+  -webkit-font-smoothing:antialiased;
+}
+.app{
+  width:100%;
+  max-width:26rem;
+  margin:0 auto;
+  padding:max(1.25rem, env(safe-area-inset-top)) 1rem max(2rem, env(safe-area-inset-bottom));
+}
+.top{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+  margin-bottom:1.5rem;
+  animation:enter .45s cubic-bezier(.2,0,0,1) both;
+}
+.brand-block{min-width:0;flex:1}
+.brand{
+  margin:0;
+  font-size:clamp(2rem,8vw,2.5rem);
+  font-weight:700;
+  letter-spacing:-.02em;
+  line-height:1.1;
+  color:var(--md-sys-color-primary);
+}
+.subtitle{
+  margin:.4rem 0 0;
+  font-size:.95rem;
+  line-height:1.4;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.icon-btn{
+  flex:none;
+  width:2.75rem;
+  height:2.75rem;
+  border:0;
+  border-radius:999px;
+  background:var(--md-sys-color-secondary-container);
+  color:var(--md-sys-color-on-secondary-container);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+  transition:background .15s, box-shadow .15s, transform .15s;
+}
+.icon-btn:active{transform:scale(.96)}
+.icon-btn:hover{box-shadow:var(--md-sys-elevation-1)}
+.icon-btn svg{width:1.35rem;height:1.35rem}
+.sheet{
+  background:var(--md-sys-color-surface-container-lowest);
+  border-radius:var(--md-sys-shape-corner-extra-large);
+  box-shadow:var(--md-sys-elevation-1);
+  padding:1.25rem 1rem 1.25rem;
+  animation:enter .5s .05s cubic-bezier(.2,0,0,1) both;
+  overflow:hidden;
+}
+.section-label{
+  margin:0 0 .65rem .35rem;
+  font-size:.72rem;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.list{
+  display:flex;
+  flex-direction:column;
+  gap:.35rem;
+  max-height:min(42vh, 22rem);
+  overflow-y:auto;
+  overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  margin:0 -.25rem;
+  padding:.15rem .25rem .35rem;
+}
+.net{
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center;
+  gap:.85rem;
+  width:100%;
+  min-width:0;
+  text-align:left;
+  border:0;
+  border-radius:var(--md-sys-shape-corner-large);
+  background:var(--md-sys-color-surface-container);
+  color:inherit;
+  padding:.9rem 1rem;
+  font:inherit;
+  cursor:pointer;
+  transition:background .15s, box-shadow .15s;
+}
+.net:hover{background:var(--md-sys-color-surface-container-high)}
+.net.selected{
+  background:var(--md-sys-color-primary-container);
+  color:var(--md-sys-color-on-primary-container);
+  box-shadow:inset 0 0 0 2px var(--md-sys-color-primary);
+}
+.net-icon{
+  width:2.5rem;
+  height:2.5rem;
+  border-radius:999px;
+  display:grid;
+  place-items:center;
+  background:rgba(0,107,84,.1);
+  color:var(--md-sys-color-primary);
+  flex:none;
+}
+.net.selected .net-icon{
+  background:var(--md-sys-color-primary);
+  color:var(--md-sys-color-on-primary);
+}
+.net-icon svg{width:1.25rem;height:1.25rem}
+.net-text{min-width:0}
+.net-ssid{
+  display:block;
+  font-weight:600;
+  font-size:.98rem;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.net-sub{
+  display:block;
+  margin-top:.15rem;
+  font-size:.78rem;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.net.selected .net-sub{color:rgba(0,33,23,.72)}
+.net-trail{
+  display:flex;
+  align-items:center;
+  gap:.45rem;
+  color:var(--md-sys-color-on-surface-variant);
+  flex:none;
+}
+.net.selected .net-trail{color:var(--md-sys-color-on-primary-container)}
+.bars{display:inline-flex;gap:2px;align-items:flex-end;height:14px}
+.bars i{display:block;width:3px;border-radius:1px;background:currentColor;opacity:.28}
+.bars i.on{opacity:1}
+.bars i:nth-child(1){height:4px}
+.bars i:nth-child(2){height:8px}
+.bars i:nth-child(3){height:12px}
+.form{
+  margin-top:1.1rem;
+  display:flex;
+  flex-direction:column;
+  gap:.85rem;
+}
+.field{
+  position:relative;
+  width:100%;
+  min-width:0;
+}
+.field input{
+  width:100%;
+  min-width:0;
+  appearance:none;
+  border:1px solid var(--md-sys-color-outline);
+  border-radius:var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-small) 0 0;
+  border-bottom-width:2px;
+  background:var(--md-sys-color-surface-container-highest);
+  color:var(--md-sys-color-on-surface);
+  padding:1.35rem 1rem .55rem;
+  font:inherit;
+  font-size:1rem;
+  outline:none;
+  transition:border-color .15s, background .15s;
+}
+.field input:focus{
+  border-color:var(--md-sys-color-primary);
+  background:var(--md-sys-color-surface-container-high);
+}
+.field label{
+  position:absolute;
+  left:1rem;
+  top:50%;
+  transform:translateY(-50%);
+  font-size:1rem;
+  color:var(--md-sys-color-on-surface-variant);
+  pointer-events:none;
+  transition:top .15s, font-size .15s, color .15s;
+}
+.field input:focus + label,
+.field input:not(:placeholder-shown) + label{
+  top:.55rem;
+  transform:none;
+  font-size:.72rem;
+  font-weight:600;
+  color:var(--md-sys-color-primary);
+}
+.btn{
+  width:100%;
+  min-height:3rem;
+  border:0;
+  border-radius:999px;
+  padding:.85rem 1.5rem;
+  font:inherit;
+  font-size:1rem;
+  font-weight:650;
+  letter-spacing:.02em;
+  cursor:pointer;
+  transition:box-shadow .15s, opacity .15s, transform .12s;
+}
+.btn:active{transform:scale(.985)}
+.btn-filled{
+  background:var(--md-sys-color-primary);
+  color:var(--md-sys-color-on-primary);
+  box-shadow:var(--md-sys-elevation-1);
+}
+.btn-filled:hover{box-shadow:var(--md-sys-elevation-2)}
+.btn-filled:disabled{
+  opacity:.42;
+  cursor:not-allowed;
+  box-shadow:none;
+  transform:none;
+}
+.status{
+  min-height:1.35rem;
+  margin-top:.15rem;
+  font-size:.88rem;
+  line-height:1.35;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.status.busy{color:var(--md-sys-color-primary);font-weight:600}
+.status.ok{color:var(--md-sys-color-primary);font-weight:600}
+.snack{
+  position:fixed;
+  left:50%;
+  bottom:max(1.25rem, env(safe-area-inset-bottom));
+  z-index:40;
+  width:min(24rem, calc(100% - 2rem));
+  transform:translate(-50%, calc(100% + 1.5rem));
+  opacity:0;
+  pointer-events:none;
+  padding:1rem 1.15rem;
+  border-radius:var(--md-sys-shape-corner-medium);
+  background:var(--md-sys-color-error-container);
+  color:var(--md-sys-color-on-error-container);
+  box-shadow:var(--md-sys-elevation-2);
+  font-size:.92rem;
+  font-weight:600;
+  line-height:1.35;
+  transition:transform .28s cubic-bezier(.2,0,0,1), opacity .28s cubic-bezier(.2,0,0,1);
+}
+.snack.show{
+  transform:translate(-50%, 0);
+  opacity:1;
+  pointer-events:auto;
+}
+.ip-card{
+  display:none;
+  margin-top:.35rem;
+  padding:1rem 1.1rem;
+  border-radius:var(--md-sys-shape-corner-medium);
+  background:var(--md-sys-color-primary-container);
+  color:var(--md-sys-color-on-primary-container);
+}
+.ip-card.show{display:block;animation:enter .35s cubic-bezier(.2,0,0,1) both}
+.ip-card .label{
+  font-size:.72rem;
+  font-weight:700;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  opacity:.8;
+}
+.ip-card .value{
+  margin-top:.25rem;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:1.15rem;
+  font-weight:650;
+  word-break:break-all;
+}
+.empty{
+  padding:1.5rem 1rem;
+  text-align:center;
+  color:var(--md-sys-color-on-surface-variant);
+  font-size:.92rem;
+}
+@keyframes enter{
+  from{opacity:0;transform:translateY(10px)}
+  to{opacity:1;transform:none}
+}
+@media (max-width:360px){
+  .app{padding-left:.75rem;padding-right:.75rem}
+  .sheet{padding:1rem .75rem 1.1rem}
+}
+*{animation:none !important}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="top">
+    <div class="brand-block">
+      <h1 class="brand">SAIHUB</h1>
+      <p class="subtitle">Select a Wi‑Fi network to finish setup.</p>
+    </div>
+    <button class="icon-btn" type="button" id="refresh" aria-label="Refresh networks" title="Refresh">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+    </button>
+  </header>
+
+  <section class="sheet" aria-label="Wi-Fi setup">
+    <h2 class="section-label">Available networks</h2>
+    <div class="list" id="list" role="listbox" aria-label="Wi-Fi networks">
+      <div class="empty">Scanning for networks…</div>
+    </div>
+
+    <div class="form">
+      <div class="field">
+        <input id="password" type="password" placeholder=" " autocomplete="current-password"/>
+        <label for="password">Password</label>
+      </div>
+      <button class="btn btn-filled" type="button" id="connect" disabled>Connect</button>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+      <div class="ip-card" id="ip">
+        <div class="label">Device IP</div>
+        <div class="value" id="ipValue"></div>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="snack" id="snack" role="alert" aria-live="assertive"></div>
+<script>
+const listEl=document.getElementById('list');
+const statusEl=document.getElementById('status');
+const snackEl=document.getElementById('snack');
+const ipEl=document.getElementById('ip');
+const ipValueEl=document.getElementById('ipValue');
+const passEl=document.getElementById('password');
+const connectBtn=document.getElementById('connect');
+let selected=null, pollTimer=null, snackTimer=null;
+
+function showError(text){
+  clearTimeout(snackTimer);
+  snackEl.textContent=text||'Something went wrong.';
+  snackEl.classList.add('show');
+  snackTimer=setTimeout(()=>snackEl.classList.remove('show'),4200);
+}
+
+const iconWifi='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 18.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm-4.24-2.12 1.41 1.41A5.95 5.95 0 0 1 12 16.5c1.1 0 2.1.3 2.83.79l1.41-1.41A7.93 7.93 0 0 0 12 14.5c-1.66 0-3.18.51-4.24 1.38zM4.93 12.9l1.41 1.41A9.94 9.94 0 0 1 12 12.5c2.12 0 4.07.66 5.66 1.81l1.41-1.41A11.93 11.93 0 0 0 12 10.5c-2.76 0-5.26.93-7.07 2.4zM1.42 9.4l1.41 1.41C5.55 8.45 8.61 7.5 12 7.5s6.45.95 9.17 3.31l1.41-1.41C19.27 6.52 15.84 5.5 12 5.5S4.73 6.52 1.42 9.4z"/></svg>';
+const iconLock='<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M18 8h-1V6a5 5 0 0 0-10 0v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6a3 3 0 0 1 6 0v2H9V6zm9 14H6V10h12v10z"/></svg>';
+
+function bars(rssi){
+  const n=rssi>-55?3:rssi>-70?2:1;
+  return '<span class="bars" aria-hidden="true">'+[1,2,3].map(i=>'<i class="'+(i<=n?'on':'')+'"></i>').join('')+'</span>';
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadNetworks(){
+  statusEl.className='status busy';
+  statusEl.textContent='Scanning…';
+  ipEl.className='ip-card';
+  try{
+    const j={networks:[
+      {ssid:'Home-5G',rssi:-42,secure:true},
+      {ssid:'Lab-IoT',rssi:-58,secure:true},
+      {ssid:'Cafe-Guest',rssi:-71,secure:false}
+    ]};
+    const nets=j.networks||[];
+    if(!nets.length){
+      listEl.innerHTML='<div class="empty">No networks found nearby.</div>';
+      statusEl.className='status';
+      statusEl.textContent='';
+      return;
+    }
+    listEl.innerHTML='';
+    nets.sort((a,b)=>b.rssi-a.rssi).forEach(n=>{
+      const b=document.createElement('button');
+      b.type='button';
+      b.className='net'+(selected===n.ssid?' selected':'');
+      b.setAttribute('role','option');
+      b.setAttribute('aria-selected', selected===n.ssid?'true':'false');
+      const sub=n.secure?'Secured network':'Open network';
+      b.innerHTML=
+        '<span class="net-icon">'+iconWifi+'</span>'+
+        '<span class="net-text"><span class="net-ssid">'+escapeHtml(n.ssid)+'</span><span class="net-sub">'+sub+'</span></span>'+
+        '<span class="net-trail">'+(n.secure?iconLock:'')+bars(n.rssi)+'</span>';
+      b.onclick=()=>{
+        selected=n.ssid;
+        passEl.value='';
+        [...listEl.querySelectorAll('.net')].forEach(x=>{
+          x.classList.remove('selected');
+          x.setAttribute('aria-selected','false');
+        });
+        b.classList.add('selected');
+        b.setAttribute('aria-selected','true');
+        connectBtn.disabled=false;
+        statusEl.className='status';
+        statusEl.textContent='';
+        ipEl.className='ip-card';
+        if(!n.secure) passEl.focus();
+        else passEl.focus();
+      };
+      listEl.appendChild(b);
+    });
+    statusEl.className='status';
+    statusEl.textContent='';
+    const first=listEl.querySelector('.net');
+    if(first) first.click();
+    passEl.value='wifi-password';
+    passEl.dispatchEvent(new Event('input'));
+  }catch(e){
+    listEl.innerHTML='<div class="empty">Could not scan. Tap refresh to try again.</div>';
+    statusEl.className='status';
+    statusEl.textContent='';
+    showError('Scan failed.');
+  }
+}
+
+async function connect(){
+  if(!selected)return;
+  connectBtn.disabled=true;
+  statusEl.className='status busy';
+  statusEl.textContent='Connecting…';
+  ipEl.className='ip-card';
+  try{
+    const r=await fetch('/wifi/connect',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ssid:selected,password:passEl.value||''})
+    });
+    if(!r.ok){
+      const j=await r.json().catch(()=>({}));
+      throw new Error(j.reason||'Request failed');
+    }
+    pollStatus();
+  }catch(e){
+    statusEl.className='status';
+    statusEl.textContent='';
+    showError(e.message||'Could not start connection.');
+    connectBtn.disabled=false;
+  }
+}
+
+async function pollStatus(){
+  clearTimeout(pollTimer);
+  try{
+    const r=await fetch('/wifi/status');
+    const j=await r.json();
+    if(j.state==='connected'){
+      statusEl.className='status ok';
+      statusEl.textContent='Connected. Setup network will close shortly.';
+      if(j.ip){
+        ipValueEl.textContent=j.ip;
+        ipEl.className='ip-card show';
+      }
+      return;
+    }
+    if(j.state==='failed'){
+      statusEl.className='status';
+      statusEl.textContent='';
+      showError(j.reason||'Connection failed.');
+      connectBtn.disabled=false;
+      return;
+    }
+    statusEl.className='status busy';
+    statusEl.textContent=j.state==='connecting'?'Connecting…':'Waiting…';
+  }catch(e){
+    statusEl.className='status busy';
+    statusEl.textContent='Waiting for device…';
+  }
+  pollTimer=setTimeout(pollStatus,1200);
+}
+
+document.getElementById('refresh').onclick=loadNetworks;
+connectBtn.onclick=connect;
+loadNetworks();
+</script>
+</body>
+</html>

@@ -16,7 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char* tag = "SAIHUB-Uart";
+static const char* tag = "SAIHub-Uart";
 
 static int Route_ParseUartPathId(const char* uri, const char* suffix, int* idOut)
 {

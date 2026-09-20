@@ -10,7 +10,7 @@
 
 #include <esp_log.h>
 
-static const char* tag = "SAIHUB-Control";
+static const char* tag = "SAIHub-Control";
 
 /* EMBED_FILES "embed/control.html.gz" → control_html_gz (IDF uses the basename) */
 extern const uint8_t control_html_gz_start[] asm("_binary_control_html_gz_start");

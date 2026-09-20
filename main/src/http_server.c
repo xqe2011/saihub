@@ -22,7 +22,7 @@
 #include <strings.h>
 #include <sys/time.h>
 
-static const char* tag = "SAIHUB-Http";
+static const char* tag = "SAIHub-Http";
 static httpd_handle_t server = NULL;
 static bool pairingServer = false;
 static const HttpServer_Route* cloudRoutes[48];

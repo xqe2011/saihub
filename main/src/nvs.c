@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char* tag = "SAIHUB-Nvs";
+static const char* tag = "SAIHub-Nvs";
 
 esp_err_t Nvs_Erase(void)
 {

@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char* tag = "SAIHUB-Wifi";
+static const char* tag = "SAIHub-Wifi";
 
 #define WIFI_PAIR_AP_CLOSE_DELAY_MS 5000
 #define WIFI_SCAN_MAX_AP 32
@@ -97,7 +97,7 @@ static void Wifi_BuildApSsid(void)
   if (esp_wifi_get_mac(WIFI_IF_STA, mac) != ESP_OK) {
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
   }
-  snprintf(pairingApSsid, sizeof(pairingApSsid), "SAIHUB-%02x%02x%02x", mac[3], mac[4], mac[5]);
+  snprintf(pairingApSsid, sizeof(pairingApSsid), "SAIHub-%02x%02x%02x", mac[3], mac[4], mac[5]);
 }
 
 static esp_err_t Wifi_ApplyStaConfig(const char* ssid, const char* password)

@@ -40,7 +40,7 @@
 #error "Cloud identity requires CONFIG_MBEDTLS_ECDSA_DETERMINISTIC"
 #endif
 
-static const char* tag = "SAIHUB-Cloud";
+static const char* tag = "SAIHub-Cloud";
 
 #define CLOUD_HASH_BYTES 32
 #define CLOUD_KEY_GENERATION_ATTEMPTS 8

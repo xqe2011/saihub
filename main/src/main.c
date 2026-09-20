@@ -15,7 +15,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-static const char* tag = "SAIHUB-Main";
+static const char* tag = "SAIHub-Main";
 
 void app_main(void)
 {

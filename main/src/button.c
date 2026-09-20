@@ -15,7 +15,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-static const char* tag = "SAIHUB-Button";
+static const char* tag = "SAIHub-Button";
 
 #define BUTTON_DEBOUNCE_US 50000
 #define BUTTON_POLL_MS 20

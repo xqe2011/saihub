@@ -16,7 +16,7 @@
 #include <string.h>
 #include <sys/time.h>
 
-static const char* tag = "SAIHUB-Lock";
+static const char* tag = "SAIHub-Lock";
 
 typedef struct {
   char owner[32];

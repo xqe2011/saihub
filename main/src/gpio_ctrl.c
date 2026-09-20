@@ -19,7 +19,7 @@
 #include <string.h>
 #include <sys/time.h>
 
-static const char* tag = "SAIHUB-Gpio";
+static const char* tag = "SAIHub-Gpio";
 
 #define GPIO_CTRL_LEDC_SPEED LEDC_LOW_SPEED_MODE
 #define GPIO_CTRL_LEDC_CHANNEL_COUNT CONFIG_GPIO_PWM_MAX_OUTPUTS

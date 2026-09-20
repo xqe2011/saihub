@@ -15,7 +15,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char* tag = "SAIHUB-Script";
+static const char* tag = "SAIHub-Script";
 
 static void Route_ScriptRespond(HttpServer_Context* ctx, Script_Status st, Script_Result* sr, void* userCtx)
 {
