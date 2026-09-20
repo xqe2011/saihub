@@ -13,6 +13,7 @@
 #include "tool_call.h"
 
 #include <cJSON.h>
+#include <esp_app_desc.h>
 #include <esp_log.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -345,7 +346,7 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
   cJSON_AddItemToObject(result, "capabilities", caps);
   cJSON* info = cJSON_CreateObject();
   cJSON_AddStringToObject(info, "name", "saihub");
-  cJSON_AddStringToObject(info, "version", "1.0.0");
+  cJSON_AddStringToObject(info, "version", esp_app_get_description()->version);
   cJSON_AddItemToObject(result, "serverInfo", info);
   cJSON_AddStringToObject(
       result, "instructions",

@@ -1,0 +1,60 @@
+name: Firmware release
+
+on:
+  push:
+    tags:
+      - '**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.0.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and merge ESP32-C5 firmware
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          echo "$GITHUB_REF_NAME" > version.txt
+          idf.py set-target esp32c5
+          idf.py build
+          idf.py merge-bin --output saihub-esp32c5-merged.bin
+          mkdir -p release
+          cp build/saihub-esp32c5-merged.bin release/
+          cd release
+          sha256sum saihub-esp32c5-merged.bin > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-release
+          path: release/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware-release
+          path: release
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" \
+              --generate-notes --notes 'ESP32-C5 merged firmware: flash saihub-esp32c5-merged.bin at address 0x0. Verify with SHA256SUMS.'
+          fi
+          gh release upload "$RELEASE_TAG" release/saihub-esp32c5-merged.bin release/SHA256SUMS --clobber
