@@ -484,6 +484,23 @@ describe("cloudflare device proxy e2e", () => {
     expect(mismatch.headers.get("www-authenticate") ?? "").toContain("Bearer");
   }, 30_000);
 
+  test("automatically responds to device text heartbeats", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    try {
+      expect((await authenticateDevice(ws, other)).success).toBe(true);
+      const pong = new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("pong timeout")), 2000);
+        ws.addEventListener("message", (event) => {
+          clearTimeout(timer);
+          resolve(String(event.data));
+        }, { once: true });
+      });
+      ws.send("ping");
+      expect(await pong).toBe("pong");
+    } finally { ws.close(); }
+  });
+
   test("authenticates device and forwards http request/response", async () => {
     const ws = await openDeviceSocket(baseUrl, identity.digest);
     const result = await authenticateDevice(ws, identity);

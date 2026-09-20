@@ -1,19 +1,29 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { Device } from "../../../cloud/cloudflare/src/device.ts";
 import type { Env } from "../../../cloud/cloudflare/src/env.ts";
 import type { RequestMessage } from "../../../cloud/cloudflare/src/protocol.ts";
 
-function fixture(timeout = "10000") {
+Object.assign(globalThis, { WebSocketRequestResponsePair: class {
+  constructor(public request: string, public response: string) {}
+} });
+
+function fixture(timeout = "10000", age = 0, noPing = false, closeThrows = false) {
+  let lastSeen = Date.now() - age;
+  let closed = 0;
   const sent: RequestMessage[] = [];
   let failSend = false;
   const socket = {
-    deserializeAttachment: () => ({ authenticated: true }),
+    readyState: WebSocket.OPEN,
+    deserializeAttachment: () => ({ authenticated: true, connectedAt: lastSeen }),
+    close: () => { closed++; if (closeThrows) throw new Error("edge closed"); },
     send: (data: string) => {
       if (failSend) throw new Error("offline");
       sent.push(JSON.parse(data) as RequestMessage);
     },
   } as unknown as WebSocket;
   const ctx = {
+    setWebSocketAutoResponse: () => {},
+    getWebSocketAutoResponseTimestamp: () => noPing ? null : new Date(lastSeen),
     getWebSockets: () => [socket],
     storage: { deleteAlarm: async () => {} },
   } as unknown as DurableObjectState;
@@ -23,7 +33,7 @@ function fixture(timeout = "10000") {
     type: "response", requestId: sent[index]!.requestId, status: 200,
     headers: { "content-type": "application/json" }, body: { ok: true },
   }));
-  return { device, socket, sent, request, reply, fail: () => { failSend = true; } };
+  return { device, socket, sent, request, reply, closed: () => closed, stale: () => { lastSeen = Date.now() - 33_001; }, fail: () => { failSend = true; } };
 }
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -74,5 +84,50 @@ describe("cloud headroom", () => {
     await f.reply(0);
     expect((await responses[0]!).status).toBe(200);
     expect((await Promise.all(responses.slice(1))).every((r) => r.status === 503)).toBe(true);
+  });
+});
+
+
+describe("cloud heartbeat", () => {
+  test("keeps a socket at exactly 33 seconds and expires it one millisecond later", async () => {
+    const now = spyOn(Date, "now").mockReturnValue(100_000);
+    try {
+      const f = fixture("10000", 33_000);
+      expect((await f.device.fetch(new Request("https://cloud/unknown"))).status).toBe(404);
+      expect(f.closed()).toBe(0);
+      now.mockReturnValue(100_001);
+      expect((await f.request(0)).status).toBe(503);
+      expect(f.closed()).toBe(1);
+    } finally { now.mockRestore(); }
+  });
+
+  test("stale socket is evicted on public fetch even when edge close throws", async () => {
+    const f = fixture("10000", 33_001, false, true);
+    expect((await f.request(0)).status).toBe(503);
+    expect((await f.request(1)).status).toBe(503);
+    expect(f.closed()).toBe(1);
+    expect(f.sent).toHaveLength(0);
+  });
+
+  test("no first ping uses persisted connection time", async () => {
+    const f = fixture("10000", 33_001, true);
+    expect((await f.request(0)).status).toBe(503);
+    expect(f.closed()).toBe(1);
+    const fresh = fixture("10000", 0, true);
+    const response = fresh.request(0);
+    await tick();
+    await fresh.reply(0);
+    expect((await response).status).toBe(200);
+  });
+
+  test("a new event evicts stale socket and resolves pending and queued requests", async () => {
+    const f = fixture();
+    const responses = Array.from({ length: 10 }, (_, i) => f.request(i));
+    await tick();
+    f.stale();
+    await f.device.alarm();
+    expect((await Promise.all(responses)).every((r) => r.status === 503)).toBe(true);
+    expect(f.sent).toHaveLength(8);
+    expect(f.closed()).toBe(1);
   });
 });

@@ -238,14 +238,17 @@ async function main(): Promise<void> {
 
   const connect = (): void => {
     const ws = new WebSocket(wsUrl);
+    const heartbeat = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send("ping"); }, 10_000);
     ws.addEventListener("open", () => console.log("ws open"));
     ws.addEventListener("close", (e) => {
+      clearInterval(heartbeat);
       console.log(`ws close code=${e.code} reason=${e.reason}; reconnecting in 1s`);
       setTimeout(connect, 1000);
     });
     ws.addEventListener("error", () => console.error("ws error"));
 
     ws.addEventListener("message", async (event) => {
+      if (event.data === "pong") return;
       let msg: Record<string, unknown>;
       try {
         msg = JSON.parse(String(event.data)) as Record<string, unknown>;

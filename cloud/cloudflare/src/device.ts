@@ -3,6 +3,7 @@ import { base64UrlToBytes, bytesToBase64Url, randomChallenge, verifyDeviceAuth }
 import { isJsonContentType, unsupportedContentType, jsonError, MAX_BODY_BYTES, MAX_PATH_LEN, parseDeviceMessage, selectForwardHeaders, type AuthRequestMessage, type AuthResultMessage, type RequestMessage } from "./protocol.ts";
 
 const MAX_PENDING_REQUESTS = 8;
+const HEARTBEAT_TIMEOUT_MS = 33_000;
 
 type HeadroomRequest = {
   message: RequestMessage;
@@ -20,6 +21,7 @@ type SocketState = {
 };
 
 type SocketAttachment = {
+  connectedAt: number;
   digest: string;
   authenticated: boolean;
   challenge?: string;
@@ -30,6 +32,7 @@ export class Device implements DurableObject {
   readonly #env: Env;
   readonly #pending = new Map<string, PendingRequest>();
   readonly #headroom: HeadroomRequest[] = [];
+  readonly #discarded = new WeakSet<WebSocket>();
   #seq = 0;
   #socket: WebSocket | null = null;
   #socketState: SocketState | null = null;
@@ -37,10 +40,11 @@ export class Device implements DurableObject {
   constructor(ctx: DurableObjectState, env: Env) {
     this.#ctx = ctx;
     this.#env = env;
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
   }
 
   async fetch(request: Request): Promise<Response> {
-    this.#restoreSocket();
+    await this.#validateSocket();
     const url = new URL(request.url);
 
     if (url.pathname === "/websocket") {
@@ -54,7 +58,7 @@ export class Device implements DurableObject {
   }
 
   async alarm(): Promise<void> {
-    this.#restoreSocket();
+    await this.#validateSocket();
     if (this.#socket && this.#socketState && !this.#socketState.authenticated) {
       await this.#failAuth(this.#socket, "authentication timeout");
       return;
@@ -63,7 +67,7 @@ export class Device implements DurableObject {
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    this.#restoreSocket();
+    await this.#validateSocket();
     if (ws !== this.#socket) {
       try {
         ws.close(1008, "stale connection");
@@ -130,6 +134,7 @@ export class Device implements DurableObject {
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
+    await this.#validateSocket();
     if (this.#socket !== null && ws !== this.#socket) {
       return;
     }
@@ -148,11 +153,30 @@ export class Device implements DurableObject {
     await this.webSocketClose(ws);
   }
 
+  async #validateSocket(): Promise<void> {
+    this.#restoreSocket();
+    const ws = this.#socket;
+    if (!ws) return;
+    const attachment = ws.deserializeAttachment() as SocketAttachment;
+    const lastSeen = this.#ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? attachment.connectedAt;
+    if (Date.now() - lastSeen <= HEARTBEAT_TIMEOUT_MS) return;
+    this.#discarded.add(ws);
+    this.#socket = null;
+    this.#socketState = null;
+    this.#rejectAllPending("device offline");
+    try {
+      ws.close(1001, "heartbeat timeout");
+    } catch {
+      // The edge may already have closed the socket while the object slept.
+    }
+    await this.#clearAuthAlarm();
+  }
+
   #restoreSocket(): void {
     if (this.#socket) {
       return;
     }
-    const sockets = this.#ctx.getWebSockets();
+    const sockets = this.#ctx.getWebSockets().filter((ws) => !this.#discarded.has(ws) && ws.readyState === WebSocket.OPEN);
     if (sockets.length === 0) {
       return;
     }
@@ -169,7 +193,6 @@ export class Device implements DurableObject {
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return jsonError(426, "websocket upgrade required");
     }
-    this.#restoreSocket();
     if (this.#socket !== null) {
       return jsonError(409, "device already connected");
     }
@@ -182,7 +205,7 @@ export class Device implements DurableObject {
     const challenge = randomChallenge();
     const challengeB64 = bytesToBase64Url(challenge);
     const authTimeout = parseTimeoutMs(this.#env.AUTH_TIMEOUT_MS, DEFAULT_AUTH_TIMEOUT_MS);
-    server.serializeAttachment({ digest, authenticated: false, challenge: challengeB64 } satisfies SocketAttachment);
+    server.serializeAttachment({ digest, connectedAt: Date.now(), authenticated: false, challenge: challengeB64 } satisfies SocketAttachment);
     void this.#setAuthAlarm(Date.now() + authTimeout);
 
     this.#socket = server;
@@ -211,7 +234,7 @@ export class Device implements DurableObject {
       return;
     }
 
-    const attachment = ws.deserializeAttachment() as SocketAttachment | null;
+    const attachment = ws.deserializeAttachment() as SocketAttachment;
     const expectedDigest = attachment?.digest ?? "";
     if (!expectedDigest) {
       await this.#failAuth(ws, "missing digest");
@@ -241,7 +264,7 @@ export class Device implements DurableObject {
 
     state.challenge = null;
     state.authenticated = true;
-    ws.serializeAttachment({ digest: expectedDigest, authenticated: true } satisfies SocketAttachment);
+    ws.serializeAttachment({ digest: expectedDigest, connectedAt: attachment.connectedAt, authenticated: true } satisfies SocketAttachment);
     await this.#clearAuthAlarm();
 
     const result: AuthResultMessage = { type: "authResult", success: true };

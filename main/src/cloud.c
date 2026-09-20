@@ -16,6 +16,7 @@
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
+#include <freertos/timers.h>
 #include <mbedtls/base64.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -447,6 +448,7 @@ esp_err_t Cloud_SignChallenge(const uint8_t* challenge, size_t challengeLen,
 static esp_websocket_client_handle_t client;
 static QueueHandle_t incoming;
 static SemaphoreHandle_t sendMutex;
+static TimerHandle_t heartbeatTimer;
 static atomic_uint generation;
 static atomic_bool authenticated;
 static atomic_bool restart;
@@ -601,9 +603,23 @@ static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* e
   receiveLength = 0;
 }
 
+/* Timer callbacks must not wait on a streamed response or network writes. */
+static void Cloud_HeartbeatTimer(TimerHandle_t timer)
+{
+  (void)timer;
+  unsigned expected = atomic_load(&generation);
+  if (!Cloud_ConnectionCurrent(expected)) return;
+  if (xSemaphoreTake(sendMutex, 0) != pdTRUE) return;
+  if (Cloud_ConnectionCurrent(expected) &&
+      esp_websocket_client_send_text(client, "ping", 4, 0) != 4)
+    Cloud_RequestRestart("cloud heartbeat send failed");
+  xSemaphoreGive(sendMutex);
+}
+
 static void Cloud_RelayTask(void* arg)
 {
   (void)arg;
+  xTimerStart(heartbeatTimer, portMAX_DELAY);
   bool running = false;
   for (;;) {
     bool ready = Wifi_IsConnected() && !Wifi_IsPairing() && Ntp_IsSynced();
@@ -625,6 +641,7 @@ static void Cloud_RelayTask(void* arg)
     Cloud_Message message;
     if (xQueueReceive(incoming, &message, pdMS_TO_TICKS(200)) != pdTRUE) continue;
     if (!Cloud_ConnectionCurrent(message.generation)) { free(message.text); continue; }
+    if (strcmp(message.text, "pong") == 0) { free(message.text); continue; }
     cJSON* root = cJSON_Parse(message.text);
     cJSON* type = cJSON_GetObjectItemCaseSensitive(root, "type");
     bool dispatched = false;
@@ -671,9 +688,12 @@ static esp_err_t Cloud_StartRelay(void)
   client = esp_websocket_client_init(&config);
   if (!client) goto failed;
   if (esp_websocket_register_events(client, WEBSOCKET_EVENT_ANY, Cloud_Event, NULL) != ESP_OK) goto failed;
+  heartbeatTimer = xTimerCreate("cloud-heartbeat", pdMS_TO_TICKS(10000), pdTRUE, NULL, Cloud_HeartbeatTimer);
+  if (!heartbeatTimer) goto failed;
   if (xTaskCreate(Cloud_RelayTask, "cloud-relay", 6144, NULL, 5, NULL) != pdPASS) goto failed;
   return ESP_OK;
 failed:
+  if (heartbeatTimer) { xTimerDelete(heartbeatTimer, portMAX_DELAY); heartbeatTimer = NULL; }
   if (client) esp_websocket_client_destroy(client);
   if (incoming) vQueueDelete(incoming);
   if (sendMutex) vSemaphoreDelete(sendMutex);
