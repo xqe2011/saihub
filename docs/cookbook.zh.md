@@ -42,7 +42,7 @@ Saihub-Mini 采用原生 USB，BOOT 键（GPIO28）位于 USB-C 旁边，板上�
 4. 选择你的 Wi-Fi，输入密码，点 **Connect**，等页面显示出 **Device IP**。
 5. 记下这个 IP。配对成功几秒后，热点会自动关闭。想取消配对，再按一下 BOOT 即可。
 
-![Saihub Wi-Fi 配对页](assets/wifi-pairing.png)
+<img src="assets/wifi-pairing.webp" alt="Saihub Wi-Fi 配对页" style="display:block;max-height:720px;width:auto;margin:0 auto">
 
 之后每次开机都会自动重连已保存的网络。需要更换 Wi-Fi 时，随时按一下 BOOT。
 
@@ -74,7 +74,7 @@ Saihub-Mini 采用原生 USB，BOOT 键（GPIO28）位于 USB-C 旁边，板上�
 }
 ```
 
-![Cursor MCP 设置 — 截图占位](assets/placeholder-cursor-mcp.png)
+![Cursor MCP 设置 — 截图占位](assets/placeholder-cursor-mcp.webp)
 
 ### Claude Code
 
@@ -89,7 +89,7 @@ claude mcp list
 claude mcp add --scope project --transport http saihub http://DEVICE_IP/mcp
 ```
 
-![Claude Code MCP — 截图占位](assets/placeholder-claude-mcp.png)
+![Claude Code MCP — 截图占位](assets/placeholder-claude-mcp.webp)
 
 ### Codex CLI
 
@@ -106,7 +106,7 @@ url = "http://DEVICE_IP/mcp"
 
 在 TUI 中输入 `/mcp` 可查看服务器是否在线。
 
-![Codex CLI MCP — 截图占位](assets/placeholder-codex-mcp.png)
+![Codex CLI MCP — 截图占位](assets/placeholder-codex-mcp.webp)
 
 ### 智能体可用的工具
 
@@ -124,18 +124,21 @@ UART：`list_uarts`、`configure_uart`、`uart_transmit`、`uart_receive`、`uar
 
 **从我们这里购买**的板子自带托管 Cloudflare 中继。板子连上 Wi-Fi 后，会与云端保持一条 WebSocket 长连接；之后你在咖啡馆、另一间办公室甚至 CI 里都能用 Saihub，不受局域网限制。
 
-1. 扫描配对 / 云页面上的二维码（或打开随板提供的网址）。
-2. 复制 MCP 地址，形如：
+1. 云端鉴权成功后，串口日志会打印落地页地址：
 
-   `https://<托管域名>/device/<digest>/mcp`
+   `https://<托管域名>/cloud/landing/<digest>/page`
 
-3. 像填局域网地址一样，把它填进 Cursor、Claude Code 或 Codex CLI。客户端会自动在浏览器完成 OAuth 授权，无需手动粘贴长期 token。
+2. 打开该地址。页面会显示板子是否在线，并提供一键复制：
 
-![云 MCP 二维码页 — 截图占位](assets/placeholder-cloud-qr.png)
+   - MCP 地址 — `https://<托管域名>/device/<digest>/mcp`
+   - REST API 基址 — `https://<托管域名>/device/<digest>`
+   - `openapi.json` — `https://<托管域名>/device/<digest>/openapi.json`
 
-二维码页面尚未并入本仓库，上图为占位图，待页面上线后替换为实际截图。
+3. 像填局域网地址一样，把 MCP 地址填进 Cursor、Claude Code 或 Codex CLI。客户端会自动在浏览器完成 OAuth 授权，无需手动粘贴长期 token。
 
-自行部署的 Worker 使用相同的 URL 格式，见下一节。
+<img src="assets/cloud-landing.webp" alt="Saihub 云落地页" style="display:block;max-height:720px;width:auto;margin:0 auto">
+
+自行部署的 Worker 使用相同的 URL 格式；串口日志会打印指向你自己源站的落地页。见下一节。
 
 ## 5. 自行部署 Cloudflare 中继
 
@@ -183,7 +186,7 @@ MCP 客户端则使用：
 
 `https://<源站>/device/<digest>/mcp`
 
-`<digest>` 是板子的 Base58Check 设备 ID（由硬件 ECDSA 公钥派生）。托管二维码页面会直接显示；在此之前，可从串口日志中查看——云身份初始化时会打印该 digest。
+`<digest>` 是板子的 Base58Check 设备 ID（由硬件 ECDSA 公钥派生）。板子鉴权成功后，串口日志会打印落地页 `https://<源站>/cloud/landing/<digest>/page`，打开即可复制 MCP、REST 和 OpenAPI 地址。
 
 `ROUTING_TOKEN_SECRET` 只能存放在 Wrangler secrets 中，切勿提交进仓库。
 
@@ -191,7 +194,7 @@ Worker 的路由表、本地模拟设备联调和测试方法见[构建指南](b
 
 ## 6. 引脚、电源和示例
 
-![Saihub-Mini J2 排针](assets/pinout.png)
+![Saihub-Mini J2 排针](assets/pinout.webp)
 
 速查——俯视板子、排针朝上时，J2 从左到右：`1:3V3_SW  2:GND  3:5V_SW  4:GND  5:IO0 … 12:IO7`；IO0–IO7 对应 ESP32-C5 GPIO **10、1、0、23、4、5、6、24**；两路电源默认**关闭**。完整引脚表、电源规格和测试点见[硬件文档](hardware.zh.md)。
 

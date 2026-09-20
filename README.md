@@ -66,6 +66,8 @@ The LAN URL is all you need at the bench. To reach the board from anywhere, put 
 | Traffic path | Direct to the board | Through your Cloudflare account | Through our Cloudflare account |
 | Cost | Free | Cloudflare free tier | Included with the board |
 
+After the board authenticates with the relay, the serial log prints its landing page — `https://<origin>/cloud/landing/<digest>/page` — with live online status and copyable MCP, REST, and OpenAPI URLs.
+
 The relay protocol is server-agnostic — the Cloudflare Worker in this repo is the reference implementation ([design notes](docs/design-notes.md)).
 
 ## Capabilities

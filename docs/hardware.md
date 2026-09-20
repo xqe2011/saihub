@@ -4,7 +4,7 @@ A 48 × 28 mm, two-layer ESP32-C5 IO board: USB-C, one BOOT button, a 12-pin rig
 
 [中文](hardware.zh.md) · [README](../README.md) · [Cookbook](cookbook.md) · [Bring your own board](bring-your-own-board.md) · [KiCad project](../hardware/README.md)
 
-![Saihub-Mini J2 header pinout](assets/pinout.png)
+![Saihub-Mini J2 header pinout](assets/pinout.webp)
 
 ## Front edge
 

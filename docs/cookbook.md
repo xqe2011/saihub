@@ -42,7 +42,7 @@ Empty boards often enumerate in download mode already — try connecting first, 
 4. Pick your network, enter the password, tap **Connect**. Wait until it shows **Device IP**.
 5. Write that IP down. The pairing AP closes a few seconds after a successful join. Click BOOT again if you need to cancel pairing.
 
-![Saihub Wi-Fi pairing page](assets/wifi-pairing.png)
+<img src="assets/wifi-pairing.webp" alt="Saihub Wi-Fi pairing page" style="display:block;max-height:720px;width:auto;margin:0 auto">
 
 The board reconnects to the saved network on later boots. Click BOOT any time you need to change Wi-Fi.
 
@@ -74,7 +74,7 @@ Settings → **Tools & MCP**, or edit `~/.cursor/mcp.json` / `.cursor/mcp.json`:
 }
 ```
 
-![Cursor MCP settings — screenshot placeholder](assets/placeholder-cursor-mcp.png)
+![Cursor MCP settings — screenshot placeholder](assets/placeholder-cursor-mcp.webp)
 
 ### Claude Code
 
@@ -89,7 +89,7 @@ Project-wide (writes `.mcp.json`):
 claude mcp add --scope project --transport http saihub http://DEVICE_IP/mcp
 ```
 
-![Claude Code MCP — screenshot placeholder](assets/placeholder-claude-mcp.png)
+![Claude Code MCP — screenshot placeholder](assets/placeholder-claude-mcp.webp)
 
 ### Codex CLI
 
@@ -106,7 +106,7 @@ url = "http://DEVICE_IP/mcp"
 
 In the TUI, `/mcp` shows whether the server is live.
 
-![Codex CLI MCP — screenshot placeholder](assets/placeholder-codex-mcp.png)
+![Codex CLI MCP — screenshot placeholder](assets/placeholder-codex-mcp.webp)
 
 ### Tools the agent can call
 
@@ -124,18 +124,21 @@ Full schemas: [`mcp.json`](../mcp.json). REST twin: [`openapi.json`](../openapi.
 
 If you **buy a board from us**, we host the Cloudflare relay. After the board is on Wi-Fi it keeps a WebSocket to the cloud. You can use Saihub from a cafe, another office, or a CI runner — not only the local LAN.
 
-1. Scan the QR on the pairing / cloud page (or open the printed URL).
-2. Copy the MCP URL, which looks like:
+1. After cloud authentication succeeds, the serial log prints the landing page URL:
 
-   `https://<hosted-origin>/device/<digest>/mcp`
+   `https://<hosted-origin>/cloud/landing/<digest>/page`
 
-3. Paste that URL into Cursor, Claude Code, or Codex CLI the same way as the LAN URL. The client runs OAuth in the browser; you do not paste a long-lived token by hand.
+2. Open that URL. It shows whether the board is online, and has copy buttons for:
 
-![Cloud MCP QR page — screenshot placeholder](assets/placeholder-cloud-qr.png)
+   - MCP URL — `https://<hosted-origin>/device/<digest>/mcp`
+   - REST API base — `https://<hosted-origin>/device/<digest>`
+   - `openapi.json` — `https://<hosted-origin>/device/<digest>/openapi.json`
 
-The QR page is not in this repo yet — the image above is a placeholder. Swap it when the page ships.
+3. Paste the MCP URL into Cursor, Claude Code, or Codex CLI the same way as the LAN URL. The client runs OAuth in the browser; you do not paste a long-lived token by hand.
 
-Self-hosted workers use the same URL shape; see the next section.
+<img src="assets/cloud-landing.webp" alt="Saihub cloud landing page" style="display:block;max-height:720px;width:auto;margin:0 auto">
+
+Self-hosted workers use the same URL shape; the serial log prints the landing page for your origin. See the next section.
 
 ## 5. Self-host the Cloudflare relay
 
@@ -183,7 +186,7 @@ MCP clients use:
 
 `https://<origin>/device/<digest>/mcp`
 
-`<digest>` is the board’s Base58Check device id (from the hardware ECDSA public key). The hosted QR page will show it; until then, the serial log prints the digest when cloud identity comes up.
+`<digest>` is the board’s Base58Check device id (from the hardware ECDSA public key). After the board authenticates, the serial log prints the landing page at `https://<origin>/cloud/landing/<digest>/page` — open that to copy the MCP, REST, and OpenAPI URLs.
 
 `ROUTING_TOKEN_SECRET` never leaves Wrangler secrets. Do not commit it.
 
@@ -191,7 +194,7 @@ Worker routes, local dev with a fake device, and tests: [build.md](build.md).
 
 ## 6. Pins, power, and example jobs
 
-![Saihub-Mini J2 header](assets/pinout.png)
+![Saihub-Mini J2 header](assets/pinout.webp)
 
 Quick reference — J2 left to right: `1:3V3_SW  2:GND  3:5V_SW  4:GND  5:IO0 … 12:IO7`; IO0–IO7 map to ESP32-C5 GPIO **10, 1, 0, 23, 4, 5, 6, 24**; both rails default **off**. Full pinout table, power budget, and test points: [hardware.md](hardware.md).
 

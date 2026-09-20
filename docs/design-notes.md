@@ -134,7 +134,16 @@ Browser pairing flow (`/cloud/oauth/redirect`, page served by `oauth.ts`):
 2. `POST /cloud/pairing/token` with `{devicePublicKeyDigest, sessionToken}` → proxied to the device's `/pairing/token` → device returns `{grantSecret}`.
 3. The relay seals `{devicePublicKeyDigest, grantSecret}` into a routing token and redirects to `redirect_uri?code=<routingToken>&state=…`.
 
-> **Status**: the worker side is implemented; the device-side `/pairing/session` and `/pairing/token` endpoints and the button-approval UX are **not yet in the firmware**, and the hosted QR page has not shipped (the cookbook shows a placeholder).
+> **Status**: the worker side is implemented, including the public landing page at `/cloud/landing/<digest>/page`. The device-side `/pairing/session` and `/pairing/token` endpoints and the button-approval UX are **not yet in the firmware**.
+
+## Landing page (reference worker)
+
+Public HTML for humans, no bearer token. Firmware logs this URL after a successful `authResult` (`http` + `CONFIG_CLOUD_URL` without the leading `ws`).
+
+- `GET /cloud/landing/<digest>/page` — copyable MCP URL (`/device/<digest>/mcp`), REST API base (`/device/<digest>`), and `openapi.json`. The page polls `/online`.
+- `GET /cloud/landing/<digest>/online` — `{ "online": true | false }`. Online means an authenticated WebSocket is currently attached to that digest (heartbeat still valid). Unauthenticated or disconnected sockets are offline.
+
+These routes do not grant API access. MCP and REST still require a routing token.
 
 ## Device-side implementation notes (`main/src/cloud.c`)
 

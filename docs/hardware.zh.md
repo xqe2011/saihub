@@ -4,7 +4,7 @@
 
 [English](hardware.md) · [README](../README.zh.md) · [使用手册](cookbook.zh.md) · [自备开发板](bring-your-own-board.zh.md) · [KiCad 工程](../hardware/README.md)
 
-![Saihub-Mini J2 排针定义](assets/pinout.png)
+![Saihub-Mini J2 排针定义](assets/pinout.webp)
 
 ## 板子前缘
 

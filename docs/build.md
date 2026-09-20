@@ -68,5 +68,7 @@ bun run fake-device     # defaults to http://127.0.0.1:8787; pass another origin
 | `POST /register`, `POST /token` | MCP OAuth — static client, routing-token code exchange |
 | `GET /cloud/oauth/redirect` | Browser pairing page / OAuth redirect |
 | `POST /cloud/pairing/session`, `POST /cloud/pairing/token` | Button pairing flow, proxied to the device |
+| `GET /cloud/landing/{digest}/page` | Public landing page with MCP, REST, and OpenAPI URLs |
+| `GET /cloud/landing/{digest}/online` | `{ "online": true or false }` — authenticated WebSocket attached |
 | `GET /cloud/device/{digest}` | Device WebSocket — no bearer; the challenge handshake authenticates |
 | `/device/{digest}/…` | Proxied REST + `/mcp` — bearer routing token, JSON only |
