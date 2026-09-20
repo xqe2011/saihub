@@ -447,7 +447,6 @@ esp_err_t Cloud_SignChallenge(const uint8_t* challenge, size_t challengeLen,
 static esp_websocket_client_handle_t client;
 static QueueHandle_t incoming;
 static SemaphoreHandle_t sendMutex;
-static SemaphoreHandle_t requestSlots;
 static atomic_uint generation;
 static atomic_bool authenticated;
 static atomic_bool restart;
@@ -457,7 +456,6 @@ static size_t receiveLength;
 static unsigned receiveGeneration;
 
 typedef struct { char* text; unsigned generation; } Cloud_Message;
-typedef struct { cJSON* root; unsigned generation; } Cloud_Request;
 
 static void Cloud_ResetReceive(void)
 {
@@ -560,18 +558,6 @@ static void Cloud_Authenticate(cJSON* message, unsigned expected)
   free(text);
 }
 
-static void Cloud_RequestTask(void* arg)
-{
-  Cloud_Request* message = arg;
-  cJSON* root = message->root;
-  if (root && Cloud_ConnectionCurrent(message->generation) && atomic_load(&authenticated))
-    HttpServer_DispatchCloud(root, Cloud_Write, (void*)(uintptr_t)message->generation);
-  else cJSON_Delete(root);
-  free(message);
-  xSemaphoreGive(requestSlots);
-  vTaskDelete(NULL);
-}
-
 static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* eventData)
 {
   (void)arg;
@@ -644,14 +630,11 @@ static void Cloud_RelayTask(void* arg)
         if (!success) atomic_store(&restart, true);
         ESP_LOGI(tag, "cloud authentication %s", success ? "ready" : "rejected");
       } else if (strcmp(type->valuestring, "request") == 0 && atomic_load(&authenticated)) {
-        if (xSemaphoreTake(requestSlots, 0) == pdTRUE) {
-          Cloud_Request* copy = malloc(sizeof(*copy));
-          if (copy) {
-            *copy = (Cloud_Request){.root = root, .generation = message.generation};
-            dispatched = xTaskCreate(Cloud_RequestTask, "cloud-request", 8192, copy, 5, NULL) == pdPASS;
-            if (!dispatched) free(copy);
-          }
-          if (!dispatched) xSemaphoreGive(requestSlots);
+        /* Match the local HTTP server: dispatch synchronously on the relay task.
+         * Cloud-side timeout handling bounds how long this can occupy the relay. */
+        if (Cloud_ConnectionCurrent(message.generation)) {
+          HttpServer_DispatchCloud(root, Cloud_Write, (void*)(uintptr_t)message.generation);
+          dispatched = true;
         }
         if (!dispatched) atomic_store(&restart, true);
       }
@@ -674,8 +657,7 @@ static esp_err_t Cloud_StartRelay(void)
   if (length < 0 || length >= sizeof(uri)) return ESP_ERR_INVALID_SIZE;
   incoming = xQueueCreate(8, sizeof(Cloud_Message));
   sendMutex = xSemaphoreCreateMutex();
-  requestSlots = xSemaphoreCreateCounting(4, 4);
-  if (!incoming || !sendMutex || !requestSlots) goto failed;
+  if (!incoming || !sendMutex) goto failed;
   esp_websocket_client_config_t config = {
     .uri = uri, .crt_bundle_attach = esp_crt_bundle_attach, .buffer_size = 2048,
     .task_stack = 6144, .reconnect_timeout_ms = 3000, .network_timeout_ms = 10000,
@@ -689,6 +671,5 @@ failed:
   if (client) esp_websocket_client_destroy(client);
   if (incoming) vQueueDelete(incoming);
   if (sendMutex) vSemaphoreDelete(sendMutex);
-  if (requestSlots) vSemaphoreDelete(requestSlots);
   return ESP_ERR_NO_MEM;
 }
