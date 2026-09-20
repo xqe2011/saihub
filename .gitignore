@@ -76,6 +76,7 @@ Desktop.ini
 tests/cloud/cloudflare/.fake-device-key.json
 
 # User-specific configuration files
+.vscode/settings.json
 *.user
 *.workspace # General workspace files, can be from various tools
 *.suo       # Visual Studio Solution User Options
