@@ -541,6 +541,12 @@ body{
   word-break:break-all;
   color:var(--md-sys-color-on-surface-variant);
 }
+.grant-created{
+  display:block;
+  margin-top:.15rem;
+  font-size:.72rem;
+  color:var(--md-sys-color-on-surface-variant);
+}
 .grant-item .btn{width:auto;flex:none;min-width:6.5rem}
 .empty{
   margin:0;
@@ -954,6 +960,14 @@ async function refresh(force){
   }
 }
 
+function formatCreatedAt(us){
+  const ms=Number(us)/1000;
+  if(!Number.isFinite(ms)||ms<=0) return '';
+  const d=new Date(ms);
+  if(Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0,19).replace('T',' ')+' UTC';
+}
+
 function renderGrants(list){
   if(!list.length){
     grantsEl.innerHTML='<p class="empty">No cloud grants. Pair an MCP client from the landing page, then hold BOOT for 3 seconds.</p>';
@@ -962,9 +976,12 @@ function renderGrants(list){
   grantsEl.innerHTML='<ul class="grant-list">'+list.map(g=>{
     const name=escapeHtml(g.name||'Unnamed');
     const secret=escapeHtml(g.grantSecret||'');
+    const created=formatCreatedAt(g.createdAt);
     return '<li class="grant-item">'+
       '<div class="grant-meta"><span class="grant-name">'+name+'</span>'+
-      '<span class="grant-secret">'+secret+'</span></div>'+
+      '<span class="grant-secret">'+secret+'</span>'+
+      (created?'<span class="grant-created">Created '+created+'</span>':'')+
+      '</div>'+
       '<button class="btn btn-tonal" type="button" data-revoke="'+secret+'">Revoke</button>'+
       '</li>';
   }).join('')+'</ul>';

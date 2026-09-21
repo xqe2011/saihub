@@ -61,9 +61,9 @@ static bool Cloud_AddGrantSecret(const char* name, const char* secret);
 static void Cloud_LoadGrantSecrets(void);
 
 #define CLOUD_GRANTS_NVS_KEY "cloud.grants"
-#define CLOUD_GRANTS_JSON_MAX 2048
 
 typedef struct {
+  int64_t createdAtUs;
   char name[CONFIG_CLOUD_GRANT_NAME_MAX + 1];
   char grantSecret[CONFIG_CLOUD_GRANT_SECRET_LEN + 1];
 } Cloud_Grant;
@@ -673,53 +673,32 @@ static bool Cloud_RandomToken(char out[CONFIG_CLOUD_GRANT_SECRET_LEN + 1])
 
 static bool Cloud_SaveGrantSecrets(void)
 {
-  cJSON* list = cJSON_CreateArray();
-  if (!list) return false;
-  for (size_t i = 0; i < grantCount; i++) {
-    cJSON* item = cJSON_CreateObject();
-    if (!item || !cJSON_AddStringToObject(item, "name", grants[i].name) ||
-        !cJSON_AddStringToObject(item, "grantSecret", grants[i].grantSecret)) {
-      cJSON_Delete(item);
-      cJSON_Delete(list);
-      return false;
-    }
-    cJSON_AddItemToArray(list, item);
-  }
-  char* text = cJSON_PrintUnformatted(list);
-  cJSON_Delete(list);
-  if (!text) return false;
-  esp_err_t err = Nvs_SetString(CLOUD_GRANTS_NVS_KEY, text);
-  free(text);
-  return err == ESP_OK;
+  if (grantCount == 0) return Nvs_EraseKey(CLOUD_GRANTS_NVS_KEY) == ESP_OK;
+  return Nvs_SetBlob(CLOUD_GRANTS_NVS_KEY, grants, grantCount * sizeof(Cloud_Grant)) == ESP_OK;
 }
 
 static void Cloud_LoadGrantSecrets(void)
 {
-  char json[CLOUD_GRANTS_JSON_MAX];
-  if (Nvs_GetString(CLOUD_GRANTS_NVS_KEY, json, sizeof(json)) != ESP_OK) return;
-  cJSON* list = cJSON_Parse(json);
-  if (!cJSON_IsArray(list)) {
-    cJSON_Delete(list);
-    return;
-  }
   xSemaphoreTake(grantMutex, portMAX_DELAY);
   grantCount = 0;
-  cJSON* item = NULL;
-  cJSON_ArrayForEach(item, list) {
-    if (grantCount >= CONFIG_CLOUD_GRANT_MAX) break;
-    cJSON* name = cJSON_GetObjectItemCaseSensitive(item, "name");
-    cJSON* secret = cJSON_GetObjectItemCaseSensitive(item, "grantSecret");
-    if (!cJSON_IsString(name) || !cJSON_IsString(secret) || !name->valuestring[0] ||
-        strlen(name->valuestring) > CONFIG_CLOUD_GRANT_NAME_MAX ||
-        strlen(secret->valuestring) != CONFIG_CLOUD_GRANT_SECRET_LEN) {
-      continue;
-    }
-    snprintf(grants[grantCount].name, sizeof(grants[grantCount].name), "%s", name->valuestring);
-    memcpy(grants[grantCount].grantSecret, secret->valuestring, CONFIG_CLOUD_GRANT_SECRET_LEN + 1);
-    grantCount++;
+  memset(grants, 0, sizeof(grants));
+  size_t n = 0;
+  if (Nvs_GetBlob(CLOUD_GRANTS_NVS_KEY, grants, sizeof(grants), &n) != ESP_OK || n % sizeof(Cloud_Grant) != 0) {
+    memset(grants, 0, sizeof(grants));
+    xSemaphoreGive(grantMutex);
+    return;
   }
+  size_t count = n / sizeof(Cloud_Grant);
+  size_t w = 0;
+  for (size_t i = 0; i < count; i++) {
+    grants[i].name[CONFIG_CLOUD_GRANT_NAME_MAX] = '\0';
+    grants[i].grantSecret[CONFIG_CLOUD_GRANT_SECRET_LEN] = '\0';
+    if (!grants[i].name[0] || strlen(grants[i].grantSecret) != CONFIG_CLOUD_GRANT_SECRET_LEN) continue;
+    if (w != i) grants[w] = grants[i];
+    w++;
+  }
+  grantCount = w;
   xSemaphoreGive(grantMutex);
-  cJSON_Delete(list);
 }
 
 static bool Cloud_AddGrantSecret(const char* name, const char* secret)
@@ -728,6 +707,8 @@ static bool Cloud_AddGrantSecret(const char* name, const char* secret)
   for (size_t i = 0; i < grantCount; i++) {
     if (memcmp(grants[i].grantSecret, secret, CONFIG_CLOUD_GRANT_SECRET_LEN) == 0) return true;
   }
+  memset(&grants[grantCount], 0, sizeof(grants[grantCount]));
+  grants[grantCount].createdAtUs = HttpServer_NowUs();
   snprintf(grants[grantCount].name, sizeof(grants[grantCount].name), "%s", name);
   memcpy(grants[grantCount].grantSecret, secret, CONFIG_CLOUD_GRANT_SECRET_LEN + 1);
   grantCount++;
@@ -767,7 +748,8 @@ cJSON* Cloud_ListGrantSecrets(void)
   for (size_t i = 0; i < grantCount; i++) {
     cJSON* item = cJSON_CreateObject();
     if (!item || !cJSON_AddStringToObject(item, "name", grants[i].name) ||
-        !cJSON_AddStringToObject(item, "grantSecret", grants[i].grantSecret)) {
+        !cJSON_AddStringToObject(item, "grantSecret", grants[i].grantSecret) ||
+        !cJSON_AddNumberToObject(item, "createdAt", (double)grants[i].createdAtUs)) {
       cJSON_Delete(item);
       continue;
     }

@@ -14,6 +14,9 @@ esp_err_t Nvs_Init(void);
 esp_err_t Nvs_SetString(const char* key, const char* value);
 esp_err_t Nvs_GetString(const char* key, char* value, size_t maxLength);
 esp_err_t Nvs_GetStringDefault(const char* key, char* value, size_t maxLength, const char* defaultValue);
+esp_err_t Nvs_SetBlob(const char* key, const void* value, size_t length);
+esp_err_t Nvs_GetBlob(const char* key, void* value, size_t maxLength, size_t* lengthOut);
+esp_err_t Nvs_EraseKey(const char* key);
 esp_err_t Nvs_Erase(void);
 
 #endif

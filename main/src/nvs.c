@@ -81,6 +81,91 @@ esp_err_t Nvs_GetStringDefault(const char* key, char* value, size_t maxLength, c
   return ret;
 }
 
+esp_err_t Nvs_EraseKey(const char* key)
+{
+  nvs_handle_t handle;
+  if (nvs_open(CONFIG_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+    return ESP_FAIL;
+  }
+  esp_err_t ret = nvs_erase_key(handle, key);
+  if (ret == ESP_ERR_NVS_NOT_FOUND) {
+    NVS_RETURN_AND_CLOSE(handle, ESP_OK);
+  }
+  if (ret != ESP_OK) {
+    ESP_LOGE(tag, "Cannot erase key %s: %s", key, esp_err_to_name(ret));
+    NVS_RETURN_AND_CLOSE(handle, ESP_FAIL);
+  }
+  ret = nvs_commit(handle);
+  if (ret != ESP_OK) {
+    ESP_LOGE(tag, "Cannot commit erase of key %s", key);
+    NVS_RETURN_AND_CLOSE(handle, ESP_FAIL);
+  }
+  nvs_close(handle);
+  return ESP_OK;
+}
+
+esp_err_t Nvs_SetBlob(const char* key, const void* value, size_t length)
+{
+  if (key == NULL || (length > 0 && value == NULL)) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (length == 0) {
+    return Nvs_EraseKey(key);
+  }
+
+  void* existing = malloc(length);
+  if (existing != NULL) {
+    size_t existingLength = 0;
+    if (Nvs_GetBlob(key, existing, length, &existingLength) == ESP_OK && existingLength == length &&
+        memcmp(existing, value, length) == 0) {
+      free(existing);
+      return ESP_OK;
+    }
+    free(existing);
+  }
+
+  nvs_handle_t handle;
+  if (nvs_open(CONFIG_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+    return ESP_FAIL;
+  }
+  esp_err_t ret = nvs_set_blob(handle, key, value, length);
+  if (ret == ESP_ERR_NVS_TYPE_MISMATCH) {
+    nvs_erase_key(handle, key);
+    ret = nvs_set_blob(handle, key, value, length);
+  }
+  if (ret != ESP_OK) {
+    ESP_LOGE(tag, "Cannot write key %s: %s", key, esp_err_to_name(ret));
+    NVS_RETURN_AND_CLOSE(handle, ESP_FAIL);
+  }
+  ret = nvs_commit(handle);
+  if (ret != ESP_OK) {
+    ESP_LOGE(tag, "Cannot commit key %s", key);
+    NVS_RETURN_AND_CLOSE(handle, ESP_FAIL);
+  }
+  nvs_close(handle);
+  return ESP_OK;
+}
+
+esp_err_t Nvs_GetBlob(const char* key, void* value, size_t maxLength, size_t* lengthOut)
+{
+  nvs_handle_t handle;
+  if (nvs_open(CONFIG_NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) {
+    return ESP_FAIL;
+  }
+  size_t realLength = maxLength;
+  esp_err_t ret = nvs_get_blob(handle, key, value, &realLength);
+  if (ret == ESP_ERR_NVS_NOT_FOUND) {
+    NVS_RETURN_AND_CLOSE(handle, ESP_ERR_NVS_NOT_FOUND);
+  }
+  if (ret != ESP_OK) {
+    NVS_RETURN_AND_CLOSE(handle, ESP_FAIL);
+  }
+  if (lengthOut != NULL) {
+    *lengthOut = realLength;
+  }
+  NVS_RETURN_AND_CLOSE(handle, ESP_OK);
+}
+
 esp_err_t Nvs_Init(void)
 {
   esp_err_t ret = nvs_flash_init();

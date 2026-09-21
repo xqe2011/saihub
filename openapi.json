@@ -1987,7 +1987,8 @@
         "type": "object",
         "required": [
           "name",
-          "grantSecret"
+          "grantSecret",
+          "createdAt"
         ],
         "properties": {
           "name": {
@@ -1998,6 +1999,9 @@
             "type": "string",
             "minLength": 32,
             "maxLength": 32
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/TimeUs"
           }
         },
         "additionalProperties": false
