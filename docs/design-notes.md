@@ -1,6 +1,6 @@
 # Cloud relay protocol — design notes
 
-The wire protocol between a Saihub device and a cloud relay server. The protocol is **server-agnostic**: the device only needs a WebSocket endpoint and the message contract below. The current reference implementation is a Cloudflare Worker with one Durable Object per device ([`cloud/cloudflare/src/`](../cloud/cloudflare/src/)); the firmware side lives in [`main/src/cloud.c`](../main/src/cloud.c) and [`main/include/cloud.h`](../main/include/cloud.h).
+The wire protocol between a SAIHub device and a cloud relay server. The protocol is **server-agnostic**: the device only needs a WebSocket endpoint and the message contract below. The current reference implementation is a Cloudflare Worker with one Durable Object per device ([`cloud/cloudflare/src/`](../cloud/cloudflare/src/)); the firmware side lives in [`main/src/cloud.c`](../main/src/cloud.c) and [`main/include/cloud.h`](../main/include/cloud.h).
 
 User-facing setup: [cookbook §5](cookbook.md#5-self-host-the-cloudflare-relay).
 

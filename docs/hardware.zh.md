@@ -1,10 +1,10 @@
-# Saihub-Mini 硬件文档
+# SAIHub-Mini 硬件文档
 
 一块 48 × 28 mm 的双层 ESP32-C5 IO 板：USB-C 接口、一个 BOOT 按键、一排 12 针直角排针，外加双频 U.FL 天线。元件全部贴在顶层。
 
 [English](hardware.md) · [README](../README.zh.md) · [使用手册](cookbook.zh.md) · [自备开发板](bring-your-own-board.zh.md) · [KiCad 工程](../hardware/README.md)
 
-![Saihub-Mini J2 排针定义](assets/pinout.webp)
+![SAIHub-Mini J2 排针定义](assets/pinout.webp)
 
 ## 板子前缘
 
@@ -44,7 +44,7 @@
 
 - 逻辑引脚**仅支持 3.3 V**。
 - **禁止**从外部向任一可控电源轨倒灌。
-- 市电只能走外接继电器的触点，绝不能接到 Saihub 引脚上。
+- 市电只能走外接继电器的触点，绝不能接到 SAIHub 引脚上。
 
 ## 按键与测试点
 

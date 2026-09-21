@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="docs/assets/robot.svg" width="46" height="46" alt="Saihub 机器人" valign="middle"> Saihub ⚡️
+  <img src="docs/assets/robot.svg" width="46" height="46" alt="SAIHub 机器人" valign="middle"> SAIHub ⚡️
 </h1>
 
 <p align="center"><strong>给智能体搭把手。</strong></p>
@@ -21,17 +21,20 @@
 
 ---
 
-## Saihub 是什么
+## SAIHub 是什么
 
-Saihub 是给编程智能体用的口袋 IO 板。烧好固件、连上 Wi-Fi、把 MCP 地址填进编辑器，智能体就能翻转引脚、输出 PWM、收发 UART、通断 3.3 V / 5 V 电源，还能像逻辑分析仪一样抓取边沿信号——在工位上用，或者经云端中继远程用，都行。
+SAIHub 是给编程智能体用的口袋 IO 板。烧好固件、连上 Wi-Fi、把 MCP 地址填进编辑器，智能体就有了一只真实的手：
 
-硬件本体是 **Saihub-Mini**：48 × 28 mm 的 ESP32-C5 小板，带 USB-C、BOOT 按键、12 针排针和外接 U.FL 天线。引脚定义和电气规格见[硬件文档](docs/hardware.zh.md)。固件、KiCad 工程和中继服务端全部开源在本仓库。
+- **GPIO / PWM / 可编程电源**——翻转引脚、输出最高 50 kHz 的 PWM、像逻辑分析仪一样抓取边沿、通断 3.3 V / 5 V 电源轨，全部通过 MCP 完成。
+- **板载脚本**——智能体可以把 Lua 脚本上传到板子上运行，时序敏感或多步骤的复杂逻辑在设备本地执行，不必每个引脚都来回一次网络请求。
+
+硬件本体是 **SAIHub-Mini**：48 × 28 mm 的 ESP32-C5 小板，带 USB-C、BOOT 按键、12 针排针和外接 U.FL 天线。引脚定义和电气规格见[硬件文档](docs/hardware.zh.md)。固件、KiCad 工程和中继服务端全部开源在本仓库。
 
 不一定非要用我们的板子——固件兼容任意 ESP32-C5 开发板。哪些功能会受影响、GPIO 映射在哪里改，见[自备开发板](docs/bring-your-own-board.zh.md)。
 
 ## 能用来做什么
 
-**让智能体亲手调硬件。** 把 Saihub 接在待测板旁边，智能体就能自己驱动 GPIO、输出 PWM、抓波形、收发 UART，不用你拿着表笔逐根线去探。
+**让智能体亲手调硬件。** 把 SAIHub 接在待测板旁边，智能体就能自己驱动 GPIO、输出 PWM、抓波形、收发 UART，不用你拿着表笔逐根线去探。
 
 **最省事的智能体 IO 扩展。** 把各种外设直接挂到智能体上：
 
@@ -52,19 +55,28 @@ Saihub 是给编程智能体用的口袋 IO 板。烧好固件、连上 Wi-Fi、
 
 工位调试用局域网地址就够了。想在任何地方访问板子，就在前面加一层中继——我们托管，或者你自己部署：
 
-| | 局域网直连 | 自部署中继 | 托管中继 |
+| | 局域网直连 | 自部署中继 | 托管云 |
 | --- | --- | --- | --- |
 | 适用场景 | 工位调试，零配置 | 远程访问，账号自己掌控 | 远程访问，零运维 |
-| MCP 地址 | `http://<设备IP>/mcp` | `https://<你的Worker域名>/device/<digest>/mcp` | `https://<托管域名>/device/<digest>/mcp` |
+| MCP 地址 | `http://<设备IP>/mcp` | `https://<你的Worker域名>/device/<digest>/mcp` | `https://<托管云域名>/device/<digest>/mcp` |
 | 访问范围 | 仅同一局域网 | 任意地点 | 任意地点 |
-| 准备工作 | 连上 Wi-Fi 即可 | [部署 Worker](docs/cookbook.zh.md#5-自行部署-cloudflare-中继)，并用你的域名重编固件 | 无需配置——从我们这里购买的板子自动接入托管中继 |
+| 准备工作 | 连上 Wi-Fi 即可 | [部署 Worker](docs/cookbook.zh.md#5-自行部署-cloudflare-中继)，并用你的域名重编固件 | 无需配置——从我们这里购买的板子自动接入托管云 |
 | 鉴权 | 无（默认信任局域网） | OAuth（经你的中继） | OAuth（浏览器授权） |
-| 数据通路 | 直达设备 | 经你的 Cloudflare 账号 | 经我们的 Cloudflare 账号 |
+| 数据通路 | 直达设备 | 经你的 Cloudflare 账号 | 经我们的基础设施 |
 | 费用 | 免费 | Cloudflare 免费额度 | 购板即含 |
 
 板子与中继鉴权成功后，串口日志会打印落地页 `https://<源站>/cloud/landing/<digest>/page`，显示设备是否在线，可复制 MCP 或 REST/OpenAPI 地址，并可获取用于鉴权的Token。
 
 中继协议本身不绑定 Cloudflare——仓库里的 Worker 只是参考实现，详见[协议设计笔记](docs/design-notes.md)（英文）。
+
+## 无厂商锁定
+
+这个项目不把你绑定在我们身上：
+
+- **任意 ESP32-C5 开发板都能用。** SAIHub-Mini 只是一种载板；现成的 DevKit 或你自己画的板子跑的是同一套固件，见[自备开发板](docs/bring-your-own-board.zh.md)。
+- **不依赖我们的托管云。** 中继就是一个 Cloudflare Worker，你可以部署到自己的账号下；协议有完整文档且不绑定服务端，也可以完全自己实现。
+- **软硬件全部 MIT 开源。** 固件、KiCad 硬件工程、云端中继代码都在本仓库里。
+- **局域网模式不需要任何服务。** 连上 Wi-Fi、填入本地 MCP 地址即可完整使用；云端只是可选的便利，不是前提。
 
 ## 能力一览
 
@@ -87,7 +99,7 @@ Saihub 是给编程智能体用的口袋 IO 板。烧好固件、连上 Wi-Fi、
 | `mcp.json` | 设备提供的 MCP 工具定义 |
 | `openapi.json` | 同一套能力的 REST API 描述 |
 | `cloud/cloudflare/` | Cloudflare Worker 中继与 OAuth（参考服务端） |
-| `hardware/` | Saihub-Mini KiCad 工程 |
+| `hardware/` | SAIHub-Mini KiCad 工程 |
 | `docs/` | 使用手册、硬件文档、构建指南、协议设计笔记、自备开发板指南 |
 
 ## 许可证

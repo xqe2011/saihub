@@ -27,7 +27,7 @@ idf.py merge-bin   # 生成网页烧录器使用的合并镜像（烧到 0x0）
 | `CONFIG_CLOUD_URL` | 中继源站，`ws://` 或 `wss://` 开头、不带路径；留空则禁用中继。自行部署时必须修改并重新编译 |
 | `CONFIG_WIFI_SSID` / `CONFIG_WIFI_PASSWORD` | Wi-Fi 凭据种子，仅在 NVS 中没有已保存凭据时使用 |
 
-为 Saihub-Mini 以外的板子编译：见[自备开发板](bring-your-own-board.zh.md)。
+为 SAIHub-Mini 以外的板子编译：见[自备开发板](bring-your-own-board.zh.md)。
 
 ## Cloudflare Worker（参考中继实现）
 

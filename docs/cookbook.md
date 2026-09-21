@@ -1,4 +1,4 @@
-# Saihub cookbook
+# SAIHub cookbook
 
 Flash the board, join Wi-Fi, and hand an MCP URL to Cursor, Claude Code, or Codex CLI.
 
@@ -16,7 +16,7 @@ Use a **USB data cable**, not a charge-only cable.
 
 ### Download mode
 
-Saihub-Mini has native USB and a BOOT button (GPIO28) beside USB-C. There is no EN / RESET button on the board. The chip enters the ROM serial bootloader when GPIO28 is held low at reset.
+SAIHub-Mini has native USB and a BOOT button (GPIO28) beside USB-C. There is no EN / RESET button on the board. The chip enters the ROM serial bootloader when GPIO28 is held low at reset.
 
 Do this:
 
@@ -42,7 +42,7 @@ Empty boards often enumerate in download mode already — try connecting first, 
 4. Pick your network, enter the password, tap **Connect**. Wait until it shows **Device IP**.
 5. Write that IP down. The pairing AP closes a few seconds after a successful join. Click BOOT again if you need to cancel pairing.
 
-<img src="assets/wifi-pairing.webp" alt="Saihub Wi-Fi pairing page" style="display:block;max-height:720px;width:auto;margin:0 auto">
+<img src="assets/wifi-pairing.webp" alt="SAIHub Wi-Fi pairing page" style="display:block;max-height:720px;width:auto;margin:0 auto">
 
 The board reconnects to the saved network on later boots. Click BOOT any time you need to change Wi-Fi.
 
@@ -120,25 +120,25 @@ Scripts: `run_script` — sandboxed Lua 5.4 with the same pin/power tools plus `
 
 Full schemas: [`mcp.json`](../mcp.json). REST twin: [`openapi.json`](../openapi.json).
 
-## 4. Hosted cloud relay (optional)
+## 4. Managed cloud relay (optional)
 
-If you **buy a board from us**, we host the Cloudflare relay. After the board is on Wi-Fi it keeps a WebSocket to the cloud. You can use Saihub from a cafe, another office, or a CI runner — not only the local LAN.
+If you **buy a board from us**, we host the cloud relay. After the board is on Wi-Fi it keeps a WebSocket to the cloud. You can use Saihub from a cafe, another office, or a CI runner — not only the local LAN.
 
 1. After cloud authentication succeeds, the serial log prints the landing page URL:
 
-   `https://<hosted-origin>/cloud/landing/<digest>/page`
+   `https://<managed-cloud-origin>/cloud/landing/<digest>/page`
 
 2. Open that URL. It shows whether the board is online. MCP is listed first; REST and OpenAPI sit below **OR**.
 
-   - MCP URL — `https://<hosted-origin>/device/<digest>/mcp`
-   - REST API base — `https://<hosted-origin>/device/<digest>`
-   - `openapi.json` — `https://<hosted-origin>/device/<digest>/openapi.json`
+   - MCP URL — `https://<managed-cloud-origin>/device/<digest>/mcp`
+   - REST API base — `https://<managed-cloud-origin>/device/<digest>`
+   - `openapi.json` — `https://<managed-cloud-origin>/device/<digest>/openapi.json`
 
 3. Paste the MCP URL into Cursor, Claude Code, or Codex CLI the same way as the LAN URL. The client runs OAuth in the browser: name this client, then **hold BOOT for 3 seconds** on the board. You do not paste a long-lived token by hand.
 
    REST calls need a routing token first. Click **Get routing token** on the landing page — that reuses the same OAuth pairing flow, then shows the token on `/cloud/oauth/echo` with a copy button. Revoke grants later from the device control page **Cloud** tab (`http://<device-ip>/`).
 
-<img src="assets/cloud-landing.webp" alt="Saihub cloud landing page" style="display:block;max-height:720px;width:auto;margin:0 auto">
+<img src="assets/cloud-landing.webp" alt="SAIHub cloud landing page" style="display:block;max-height:720px;width:auto;margin:0 auto">
 
 Self-hosted workers use the same URL shape; the serial log prints the landing page for your origin. See the next section.
 
@@ -178,7 +178,7 @@ idf.py build
 idf.py merge-bin   # merged image for the web flasher, flash at 0x0
 ```
 
-Building for a board other than Saihub-Mini? Remap the pins first: [bring your own board](bring-your-own-board.md).
+Building for a board other than SAIHub-Mini? Remap the pins first: [bring your own board](bring-your-own-board.md).
 
 Once the board reboots, the device connects to:
 
@@ -196,13 +196,13 @@ Worker routes, local dev with a fake device, and tests: [build.md](build.md).
 
 ## 6. Pins, power, and example jobs
 
-![Saihub-Mini J2 header](assets/pinout.webp)
+![SAIHub-Mini J2 header](assets/pinout.webp)
 
 Quick reference — J2 left to right: `1:3V3_SW  2:GND  3:5V_SW  4:GND  5:IO0 … 12:IO7`; IO0–IO7 map to ESP32-C5 GPIO **10, 1, 0, 23, 4, 5, 6, 24**; both rails default **off**. Full pinout table, power budget, and test points: [hardware.md](hardware.md).
 
 ### Give the agent a hand on the bench
 
-Wire Saihub’s GPIO and UART to a DUT. Then ask:
+Wire SAIHub’s GPIO and UART to a DUT. Then ask:
 
 > Configure pins 0–2 as inputs with pull-ups. Trace them for two seconds while I press the DUT button. Summarize the edges, then bit-bang a reset pulse on pin 3.
 
@@ -214,6 +214,6 @@ That is GPIO + pulse + `trace_pins` (a small logic analyzer) + optional UART to 
 
 **Light.** PWM an LED or a MOSFET dimmer. Slow ramps belong in `run_script` with `sleep`.
 
-**Electromagnetic relay.** Enable 5 V if the coil needs it, configure the pin as a digital output, set it high to close. Use it as a smart switch for a pump, a door lock, a heater, or a test-fixture mains relay (keep mains on the relay side, never on Saihub pins).
+**Electromagnetic relay.** Enable 5 V if the coil needs it, configure the pin as a digital output, set it high to close. Use it as a smart switch for a pump, a door lock, a heater, or a test-fixture mains relay (keep mains on the relay side, never on SAIHub pins).
 
 **Safety.** 5 V / 3 A adapter and cable for real loads. Keep outputs off on unknown USB ports. Nominal rail protection is about 1 A, not a guaranteed continuous 1 A.

@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Saihub REST API",
+    "title": "SAIHub REST API",
     "version": "1.0.0",
     "description": "JSON REST API for logical pins 0-7, PWM, UART, power rails (3v3/5v), edge tracing, resource locks, on-device Lua 5.4 scripts, and cloud management. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}."
   },

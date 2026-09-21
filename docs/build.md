@@ -27,7 +27,7 @@ Board-specific configuration is concentrated in `main/include/config.h`:
 | `CONFIG_CLOUD_URL` | Relay origin, `ws://` or `wss://` without a path; empty disables the relay. Self-hosting requires changing it and rebuilding |
 | `CONFIG_WIFI_SSID` / `CONFIG_WIFI_PASSWORD` | Wi-Fi seed credentials, used whenever NVS has none saved |
 
-Building for a board other than Saihub-Mini: [bring your own board](bring-your-own-board.md).
+Building for a board other than SAIHub-Mini: [bring your own board](bring-your-own-board.md).
 
 ## Cloudflare Worker (reference relay)
 

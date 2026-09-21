@@ -1,6 +1,6 @@
 # Bring your own board
 
-The firmware is not tied to Saihub-Mini. Any ESP32-C5 board runs it — an Espressif devkit or your own carrier board — as long as it has Wi-Fi, an antenna, and enough free GPIO. Everything the agent talks to (MCP, REST, the web UI, Lua) lives in the chip.
+The firmware is not tied to SAIHub-Mini. Any ESP32-C5 board runs it — an Espressif devkit or your own carrier board — as long as it has Wi-Fi, an antenna, and enough free GPIO. Everything the agent talks to (MCP, REST, the web UI, Lua) lives in the chip.
 
 [中文](bring-your-own-board.zh.md) · [README](../README.md) · [Hardware](hardware.md)
 
@@ -10,9 +10,9 @@ The firmware is not tied to Saihub-Mini. Any ESP32-C5 board runs it — an Espre
 - GPIO: digital in / out / open-drain, pulse, PWM (4 channels, up to 50 kHz), edge trace (up to 60 s / 1024 events)
 - The product UART — UART1 routes through the GPIO matrix, so TX / RX can sit on any pins you map
 - Sandboxed Lua 5.4 scripts and resource locks
-- Cloud relay: the ECDSA identity key is provisioned into each chip's eFuse at first boot, so the relay works from any board — point `CONFIG_CLOUD_URL` at a worker you self-host (the hosted relay comes with boards bought from us)
+- Cloud relay: the ECDSA identity key is provisioned into each chip's eFuse at first boot, so the relay works from any board — point `CONFIG_CLOUD_URL` at a worker you self-host (the managed cloud comes with boards bought from us)
 
-## What you lose without the Saihub-Mini hardware
+## What you lose without the SAIHub-Mini hardware
 
 | Function | Why | Options |
 | --- | --- | --- |
@@ -20,7 +20,7 @@ The firmware is not tied to Saihub-Mini. Any ESP32-C5 board runs it — an Espre
 | ~1 A output current limit, fused 3 A input | Carrier-board protection parts | Design your own supply path; don't hang heavy loads off devkit rails |
 | BOOT button UX (click → Wi-Fi pairing) | Button wired to `CONFIG_BUTTON_PIN` | Many C5 devkits wire BOOT to GPIO28 as well — check your schematic. Otherwise remap the pin, or bake credentials into `CONFIG_WIFI_SSID` / `CONFIG_WIFI_PASSWORD`: they are used whenever NVS has none saved, and portal-paired credentials persist in NVS |
 | Buzzer feedback | 5020 buzzer on GPIO12 | Remap or ignore |
-| Hosted cloud relay | A service included with boards bought from us | Self-host the worker ([cookbook §5](cookbook.md#5-self-host-the-cloudflare-relay)) |
+| Managed cloud | A service included with boards bought from us | Self-host the worker ([cookbook §5](cookbook.md#5-self-host-the-cloudflare-relay)) |
 
 ## Where to update the GPIO map
 
@@ -39,7 +39,7 @@ All board-specific pins live in `main/include/config.h`:
 
 `CONFIG_GPIO_LOGICAL_TO_HW` is the map agents see: entry *N* is the logical pin `IO<N>` used by `list_pins`, `set_pin_levels`, and friends; the value is the physical chip GPIO. The array length decides how many pins are exposed.
 
-The prebuilt `.bin` in [Releases](https://github.com/xqe2011/saihub/releases) is built for the Saihub-Mini map and a 4 MB flash layout. For your own board, rebuild:
+The prebuilt `.bin` in [Releases](https://github.com/xqe2011/saihub/releases) is built for the SAIHub-Mini map and a 4 MB flash layout. For your own board, rebuild:
 
 ```bash
 idf.py set-target esp32c5

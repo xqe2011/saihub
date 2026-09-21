@@ -1,4 +1,4 @@
-# Saihub 使用手册
+# SAIHub 使用手册
 
 烧录固件、连上 Wi-Fi，把 MCP 地址填进 Cursor、Claude Code 或 Codex CLI，智能体就能驱动板子了。
 
@@ -16,7 +16,7 @@
 
 ### 进入下载模式
 
-Saihub-Mini 采用原生 USB，BOOT 键（GPIO28）位于 USB-C 旁边，板上没有单独的 EN / RESET 键。只要在复位瞬间拉低 GPIO28，芯片就会进入 ROM 串口下载模式。
+SAIHub-Mini 采用原生 USB，BOOT 键（GPIO28）位于 USB-C 旁边，板上没有单独的 EN / RESET 键。只要在复位瞬间拉低 GPIO28，芯片就会进入 ROM 串口下载模式。
 
 操作步骤：
 
@@ -42,7 +42,7 @@ Saihub-Mini 采用原生 USB，BOOT 键（GPIO28）位于 USB-C 旁边，板上�
 4. 选择你的 Wi-Fi，输入密码，点 **Connect**，等页面显示出 **Device IP**。
 5. 记下这个 IP。配对成功几秒后，热点会自动关闭。想取消配对，再按一下 BOOT 即可。
 
-<img src="assets/wifi-pairing.webp" alt="Saihub Wi-Fi 配对页" style="display:block;max-height:720px;width:auto;margin:0 auto">
+<img src="assets/wifi-pairing.webp" alt="SAIHub Wi-Fi 配对页" style="display:block;max-height:720px;width:auto;margin:0 auto">
 
 之后每次开机都会自动重连已保存的网络。需要更换 Wi-Fi 时，随时按一下 BOOT。
 
@@ -122,23 +122,23 @@ UART：`list_uarts`、`configure_uart`、`uart_transmit`、`uart_receive`、`uar
 
 ## 4. 托管云中继（可选）
 
-**从我们这里购买**的板子自带托管 Cloudflare 中继。板子连上 Wi-Fi 后，会与云端保持一条 WebSocket 长连接；之后你在咖啡馆、另一间办公室甚至 CI 里都能用 Saihub，不受局域网限制。
+**从我们这里购买**的板子自带一个由我们托管的云中继。板子连上 Wi-Fi 后，会与云端保持一条 WebSocket 长连接；之后你在咖啡馆、另一间办公室甚至 CI 里都能用 SAIHub，不受局域网限制。
 
 1. 云端鉴权成功后，串口日志会打印落地页地址：
 
-   `https://<托管域名>/cloud/landing/<digest>/page`
+   `https://<托管云域名>/cloud/landing/<digest>/page`
 
 2. 打开该地址。页面会显示板子是否在线。MCP 在上，REST 与 OpenAPI 在 **OR** 下方。
 
-   - MCP 地址 — `https://<托管域名>/device/<digest>/mcp`
-   - REST API 基址 — `https://<托管域名>/device/<digest>`
-   - `openapi.json` — `https://<托管域名>/device/<digest>/openapi.json`
+   - MCP 地址 — `https://<托管云域名>/device/<digest>/mcp`
+   - REST API 基址 — `https://<托管云域名>/device/<digest>`
+   - `openapi.json` — `https://<托管云域名>/device/<digest>/openapi.json`
 
 3. 像填局域网地址一样，把 MCP 地址填进 Cursor、Claude Code 或 Codex CLI。客户端会在浏览器完成 OAuth：给这个客户端起名，然后在板子上**长按 BOOT 3 秒**。无需手动粘贴长期 token。
 
    使用 REST 需要先拿到 routing token。在落地页点击 **Get routing token**，会走同一套 OAuth 配对流程，然后在 `/cloud/oauth/echo` 展示 token 并提供复制按钮。之后可在设备控制页的 **Cloud** 标签页撤销授权（`http://<设备IP>/`）。
 
-<img src="assets/cloud-landing.webp" alt="Saihub 云落地页" style="display:block;max-height:720px;width:auto;margin:0 auto">
+<img src="assets/cloud-landing.webp" alt="SAIHub 云落地页" style="display:block;max-height:720px;width:auto;margin:0 auto">
 
 自行部署的 Worker 使用相同的 URL 格式；串口日志会打印指向你自己源站的落地页。见下一节。
 
@@ -178,7 +178,7 @@ idf.py build
 idf.py merge-bin   # 生成网页烧录器使用的合并镜像，烧到 0x0
 ```
 
-为 Saihub-Mini 以外的板子编译？请先重映射引脚：[自备开发板](bring-your-own-board.zh.md)。
+为 SAIHub-Mini 以外的板子编译？请先重映射引脚：[自备开发板](bring-your-own-board.zh.md)。
 
 板子重启后，设备将连接：
 
@@ -196,13 +196,13 @@ Worker 的路由表、本地模拟设备联调和测试方法见[构建指南](b
 
 ## 6. 引脚、电源和示例
 
-![Saihub-Mini J2 排针](assets/pinout.webp)
+![SAIHub-Mini J2 排针](assets/pinout.webp)
 
 速查——俯视板子、排针朝上时，J2 从左到右：`1:3V3_SW  2:GND  3:5V_SW  4:GND  5:IO0 … 12:IO7`；IO0–IO7 对应 ESP32-C5 GPIO **10、1、0、23、4、5、6、24**；两路电源默认**关闭**。完整引脚表、电源规格和测试点见[硬件文档](hardware.zh.md)。
 
 ### 让智能体上手调试真实硬件
 
-把 Saihub 的 GPIO 和 UART 连到待测板，然后对智能体说：
+把 SAIHub 的 GPIO 和 UART 连到待测板，然后对智能体说：
 
 > 把 pin 0–2 配置为上拉输入，抓取两秒边沿信号，期间我会按一下待测板的按键。然后总结边沿情况，并在 pin 3 上打一个复位脉冲。
 
@@ -214,6 +214,6 @@ Worker 的路由表、本地模拟设备联调和测试方法见[构建指南](b
 
 **灯光。** 用 PWM 驱动 LED 或 MOSFET 调光电路。需要缓慢渐变时，把逻辑写进 `run_script`，配合 `sleep` 实现。
 
-**电磁继电器。** 线圈需要 5 V 就先打开 5 V 电源，把引脚配置为数字输出，拉高即可吸合。可以当作智能开关使用：水泵、门锁、加热器，或工装上的市电继电器（市电只能走继电器触点，绝不能接到 Saihub 引脚）。
+**电磁继电器。** 线圈需要 5 V 就先打开 5 V 电源，把引脚配置为数字输出，拉高即可吸合。可以当作智能开关使用：水泵、门锁、加热器，或工装上的市电继电器（市电只能走继电器触点，绝不能接到 SAIHub 引脚）。
 
 **安全提示。** 带实际负载时请使用 5 V / 3 A 的适配器和线缆；接入不确定的 USB 口时，先关闭电源输出。电源通道的保护阈值约为 1 A，不保证能持续输出 1 A。

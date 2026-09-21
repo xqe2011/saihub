@@ -1,10 +1,10 @@
-# Saihub-Mini hardware
+# SAIHub-Mini hardware
 
 A 48 × 28 mm, two-layer ESP32-C5 IO board: USB-C, one BOOT button, a 12-pin right-angle header, and an external dual-band U.FL antenna. Top-side assembly only.
 
 [中文](hardware.zh.md) · [README](../README.md) · [Cookbook](cookbook.md) · [Bring your own board](bring-your-own-board.md) · [KiCad project](../hardware/README.md)
 
-![Saihub-Mini J2 header pinout](assets/pinout.webp)
+![SAIHub-Mini J2 header pinout](assets/pinout.webp)
 
 ## Front edge
 
@@ -44,7 +44,7 @@ Agents drive these through the MCP / REST tools; the mapping lives in firmware `
 
 - Logic pins are **3.3 V only**.
 - **Do not back-power** either switched rail.
-- Mains voltage belongs on external relay contacts only — never on Saihub pins.
+- Mains voltage belongs on external relay contacts only — never on SAIHub pins.
 
 ## Button and test points
 

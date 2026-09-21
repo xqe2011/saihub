@@ -1,6 +1,6 @@
 # 自备开发板
 
-固件并不绑定 Saihub-Mini 这块板子。任何 ESP32-C5 开发板都能跑——Espressif 官方 DevKit 或你自己画的载板都行——只要有 Wi-Fi、天线和足够的空闲 GPIO。智能体对接的一切（MCP、REST、网页控制台、Lua）都长在芯片里。
+固件并不绑定 SAIHub-Mini 这块板子。任何 ESP32-C5 开发板都能跑——Espressif 官方 DevKit 或你自己画的载板都行——只要有 Wi-Fi、天线和足够的空闲 GPIO。智能体对接的一切（MCP、REST、网页控制台、Lua）都长在芯片里。
 
 [English](bring-your-own-board.md) · [README](../README.zh.md) · [硬件文档](hardware.zh.md)
 
@@ -10,9 +10,9 @@
 - GPIO：数字输入 / 输出 / 开漏、脉冲、PWM（4 通道，最高 50 kHz）、边沿采集（最长 60 s / 1024 个事件）
 - 产品 UART——UART1 经 GPIO 交换矩阵路由，TX / RX 可以落在你映射的任意引脚上
 - 沙箱 Lua 5.4 脚本和资源锁
-- 云中继：ECDSA 身份密钥在首次启动时烧写进每颗芯片的 eFuse，所以任何板子都能用中继——把 `CONFIG_CLOUD_URL` 指向你自行部署的 Worker 即可（托管中继仅随我们售出的板子提供）
+- 云中继：ECDSA 身份密钥在首次启动时烧写进每颗芯片的 eFuse，所以任何板子都能用中继——把 `CONFIG_CLOUD_URL` 指向你自行部署的 Worker 即可（托管云仅随我们售出的板子提供）
 
-## 离开 Saihub-Mini 硬件后缺失的功能
+## 离开 SAIHub-Mini 硬件后缺失的功能
 
 | 功能 | 原因 | 替代方案 |
 | --- | --- | --- |
@@ -39,7 +39,7 @@
 
 `CONFIG_GPIO_LOGICAL_TO_HW` 就是智能体看到的引脚表：第 *N* 项对应 `list_pins`、`set_pin_levels` 等工具里的逻辑引脚 `IO<N>`，值是实际接线的芯片 GPIO。数组长度决定暴露多少个引脚。
 
-[Releases](https://github.com/xqe2011/saihub/releases) 里的预编译 `.bin` 按 Saihub-Mini 的映射和 4 MB Flash 布局构建。自己的板子请重新编译：
+[Releases](https://github.com/xqe2011/saihub/releases) 里的预编译 `.bin` 按 SAIHub-Mini 的映射和 4 MB Flash 布局构建。自己的板子请重新编译：
 
 ```bash
 idf.py set-target esp32c5
