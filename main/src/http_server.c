@@ -346,13 +346,11 @@ esp_err_t HttpServer_RegisterRoutes(const HttpServer_Route* routes, size_t count
                        .handler = HttpServer_RouteAdapter, .user_ctx = (void*)&routes[i]};
     esp_err_t ret = httpd_register_uri_handler(server, &uri);
     if (ret != ESP_OK) return ret;
-    if (!pairingServer) {
-      bool registered = false;
-      for (size_t j = 0; j < cloudRouteCount; j++) if (cloudRoutes[j] == &routes[i]) registered = true;
-      if (!registered) {
-        if (cloudRouteCount >= 48) return ESP_ERR_NO_MEM;
-        cloudRoutes[cloudRouteCount++] = &routes[i];
-      }
+    bool registered = false;
+    for (size_t j = 0; j < cloudRouteCount; j++) if (cloudRoutes[j] == &routes[i]) registered = true;
+    if (!registered) {
+      if (cloudRouteCount >= 48) return ESP_ERR_NO_MEM;
+      cloudRoutes[cloudRouteCount++] = &routes[i];
     }
   }
   return ESP_OK;
@@ -857,11 +855,26 @@ cJSON* HttpServer_ParseBody(HttpServer_Context* ctx, esp_err_t* errOut)
   return root;
 }
 
-static esp_err_t HttpServer_NotFoundHandler(httpd_req_t* req, httpd_err_code_t err)
+static bool HttpServer_PathExists(const char* uri)
 {
-  (void)err;
+  size_t pathLen = strcspn(uri, "?");
+  for (size_t i = 0; i < cloudRouteCount; i++) {
+    if (strcmp(cloudRoutes[i]->uri, "/*") == 0) continue;
+    if (HttpServer_UriMatch(cloudRoutes[i]->uri, uri, pathLen)) return true;
+  }
+  return false;
+}
+
+/* Catch-all URI templates match every path and would make httpd report 405
+ * for missing URLs. CORS preflight is 204; unknown URLs are 404. */
+static esp_err_t HttpServer_ErrorHandler(httpd_req_t* req, httpd_err_code_t err)
+{
   HttpServer_Context ctx = {.req = req, .from = "local"};
+  if (req->method == HTTP_OPTIONS) return HttpServer_SendOptions(&ctx);
   HttpServer_LogCall(&ctx);
+  if (err == HTTPD_405_METHOD_NOT_ALLOWED && HttpServer_PathExists(req->uri)) {
+    return HttpServer_SendError(&ctx, 405, "method not allowed");
+  }
   if (pairingServer) {
     return HttpServer_SendError(&ctx, 404, "This URL does not exist. Open /wifi/page for Wi-Fi setup.");
   }
@@ -927,6 +940,7 @@ esp_err_t HttpServer_Stop(void)
     httpd_stop(server);
     server = NULL;
     pairingServer = false;
+    cloudRouteCount = 0;
     ESP_LOGI(tag, "HTTP server stopped");
   }
   return ESP_OK;
@@ -999,10 +1013,15 @@ esp_err_t HttpServer_DispatchCloud(cJSON* request, HttpServer_CloudWrite write, 
     ret = HttpServer_SendError(&ctx, 503, "device API unavailable");
     goto cleanup;
   }
+  if (HttpServer_GetMethod(&ctx) == HTTP_SERVER_OPTIONS) {
+    ret = HttpServer_SendOptions(&ctx);
+    goto cleanup;
+  }
   size_t pathLen = strcspn(path->valuestring, "?");
   HttpServer_Handler handler = NULL;
   bool foundPath = false;
   for (size_t i = 0; i < cloudRouteCount; i++) {
+    if (strcmp(cloudRoutes[i]->uri, "/*") == 0) continue;
     if (!HttpServer_UriMatch(cloudRoutes[i]->uri, path->valuestring, pathLen)) continue;
     foundPath = true;
     if (cloudRoutes[i]->method == HttpServer_GetMethod(&ctx)) { handler = cloudRoutes[i]->handler; break; }
@@ -1065,9 +1084,8 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_McpRegister(), "mcp routes failed");
   }
 
-  static const HttpServer_Route optionsUri = {.uri = "/*", .method = HTTP_SERVER_OPTIONS, .handler = HttpServer_SendOptions};
-  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(HttpServer_RegisterRoutes(&optionsUri, 1), "options cors route failed");
-  httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, HttpServer_NotFoundHandler);
+  httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, HttpServer_ErrorHandler);
+  httpd_register_err_handler(server, HTTPD_405_METHOD_NOT_ALLOWED, HttpServer_ErrorHandler);
   ESP_LOGI(tag, "HTTP server started on port 80 (%s)", pairing ? "pairing" : "api");
   return ESP_OK;
 }

@@ -289,7 +289,8 @@ async function testRestMetadata(): Promise<void> {
   await expectStatus("GET", "/mcp", 405);
   await expectStatus("DELETE", "/mcp", 405);
   await expectStatus("OPTIONS", "/pin/", 204);
-  await expectStatus("GET", "/does-not-exist", 405);
+  await expectStatus("GET", "/does-not-exist", 404);
+  await expectStatus("POST", "/openapi.json", 405);
   await expectStatus("PUT", `/pin/${OUTPUT_A}`, 415);
   await expectStatus("PUT", "/pin/99", 404, { mode: "digitalInput", pullUp: false, pullDown: false });
 }
