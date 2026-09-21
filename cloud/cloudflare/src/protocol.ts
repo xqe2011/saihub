@@ -8,6 +8,7 @@ export const MAX_HEADER_VALUE_LEN = 512;
 export const MAX_HEADERS = 16;
 export const MAX_PATH_LEN = 1024;
 export const MAX_BODY_BYTES = 64 * 1024;
+export const MAX_PAIRING_NAME_LEN = 32;
 export const PUBLIC_KEY_BYTES = 65;
 export const SIGNATURE_BYTES = 64;
 export const CHALLENGE_BYTES = 32;
@@ -54,7 +55,21 @@ export type RequestMessage = {
   path: string;
   headers: Record<string, string>;
   body: Record<string, unknown> | null;
+  grantSecret?: string;
 };
+
+export type PairingSessionRequestMessage = {
+  type: "pairingSessionRequest";
+  name: string;
+};
+
+export type PairingSessionResponseMessage =
+  | { type: "pairingSessionResponse"; success: true; sessionToken: string; expiredAt: number }
+  | { type: "pairingSessionResponse"; success: false; reason: string };
+
+export type PairingSessionTokenResponseMessage =
+  | { type: "pairingSessionTokenResponse"; success: true; grantSecret: string }
+  | { type: "pairingSessionTokenResponse"; success: false; reason: string };
 
 export type ResponseMessage = {
   type: "response";
@@ -64,9 +79,9 @@ export type ResponseMessage = {
   body: JsonBody;
 };
 
-export type ServerMessage = AuthRequestMessage | AuthResultMessage | RequestMessage;
+export type ServerMessage = AuthRequestMessage | AuthResultMessage | RequestMessage | PairingSessionRequestMessage;
 
-export type DeviceMessage = AuthResponseMessage | ResponseMessage;
+export type DeviceMessage = AuthResponseMessage | ResponseMessage | PairingSessionResponseMessage | PairingSessionTokenResponseMessage;
 
 export type JsonError = {
   reason: string;
@@ -74,6 +89,13 @@ export type JsonError = {
 
 export function jsonError(status: number, reason: string): Response {
   return Response.json({ reason } satisfies JsonError, { status });
+}
+
+export function pairingErrorStatus(reason: string): number {
+  if (reason === "a pairing session is already active") return 409;
+  if (reason === "grant secret limit reached (16)") return 422;
+  if (reason === "session token is invalid or expired") return 401;
+  return 400;
 }
 
 export function isDigest(value: string): boolean {
@@ -159,6 +181,32 @@ export function parseDeviceMessage(raw: string): DeviceMessage | null {
       return null;
     }
     return { type, requestId, status, headers, body };
+  }
+  if (type === "pairingSessionResponse" || type === "pairingSessionTokenResponse") {
+    const success = parsed.success;
+    if (typeof success !== "boolean") {
+      return null;
+    }
+    if (success) {
+      if (type === "pairingSessionResponse") {
+        const sessionToken = asString(parsed.sessionToken);
+        const expiredAt = parsed.expiredAt;
+        if (sessionToken === null || sessionToken.length === 0 || typeof expiredAt !== "number" || !Number.isFinite(expiredAt)) {
+          return null;
+        }
+        return { type, success, sessionToken, expiredAt };
+      }
+      const grantSecret = asString(parsed.grantSecret);
+      if (grantSecret === null || grantSecret.length === 0) {
+        return null;
+      }
+      return { type, success, grantSecret };
+    }
+    const reason = asString(parsed.reason);
+    if (reason === null || reason.length === 0) {
+      return null;
+    }
+    return { type, success, reason };
   }
   return null;
 }

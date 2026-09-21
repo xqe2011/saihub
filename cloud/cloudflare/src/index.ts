@@ -94,7 +94,7 @@ async function handleDeviceHttp(
   }
 
   const auth = await requireRoutingToken(request, env, digest);
-  if (auth) {
+  if (auth instanceof Response) {
     return auth;
   }
 
@@ -113,10 +113,10 @@ async function handleDeviceHttp(
   }
   const headers = selectForwardHeaders(request);
 
-  return proxyToDevice(env, digest, request.method, path, body, headers);
+  return proxyToDevice(env, digest, request.method, path, body, headers, auth.grantSecret);
 }
 
-async function requireRoutingToken(request: Request, env: Env, digest: string): Promise<Response | null> {
+async function requireRoutingToken(request: Request, env: Env, digest: string): Promise<{ grantSecret: string } | Response> {
   if (!env.ROUTING_TOKEN_SECRET) {
     return jsonError(500, "routing token secret not configured");
   }
@@ -132,5 +132,5 @@ async function requireRoutingToken(request: Request, env: Env, digest: string): 
   if (!payload || payload.devicePublicKeyDigest !== digest) {
     return unauthorized(request);
   }
-  return null;
+  return { grantSecret: payload.grantSecret };
 }

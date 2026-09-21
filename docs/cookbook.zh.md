@@ -134,7 +134,7 @@ UART：`list_uarts`、`configure_uart`、`uart_transmit`、`uart_receive`、`uar
    - REST API 基址 — `https://<托管域名>/device/<digest>`
    - `openapi.json` — `https://<托管域名>/device/<digest>/openapi.json`
 
-3. 像填局域网地址一样，把 MCP 地址填进 Cursor、Claude Code 或 Codex CLI。客户端会自动在浏览器完成 OAuth 授权，无需手动粘贴长期 token。
+3. 像填局域网地址一样，把 MCP 地址填进 Cursor、Claude Code 或 Codex CLI。客户端会在浏览器完成 OAuth：给这个客户端起名，然后在板子上**长按 BOOT 3 秒**。无需手动粘贴长期 token。之后可在设备控制页的 **Cloud** 标签页撤销授权（`http://<设备IP>/`）。
 
 <img src="assets/cloud-landing.webp" alt="Saihub 云落地页" style="display:block;max-height:720px;width:auto;margin:0 auto">
 

@@ -37,9 +37,19 @@ type RequestMessage = {
   path: string;
   headers: Record<string, string>;
   body: Record<string, unknown> | null;
+  grantSecret?: string;
 };
 
-type DeviceInbound = AuthRequestMessage | AuthResultMessage | RequestMessage;
+type PairingSessionRequestMessage = {
+  type: "pairingSessionRequest";
+  name: string;
+};
+
+type DeviceInbound =
+  | AuthRequestMessage
+  | AuthResultMessage
+  | RequestMessage
+  | PairingSessionRequestMessage;
 
 function bytesToBase64Url(bytes: ArrayBuffer | Uint8Array): string {
   const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -407,7 +417,7 @@ describe("cloudflare device proxy e2e", () => {
     expect(ok.status).toBe(200);
     expect(ok.headers.get("content-type") ?? "").toContain("text/html");
     const html = await ok.text();
-    expect(html).toContain("Connecting to device");
+    expect(html).toContain("Name this client");
     expect(html).toContain("Press button for 3 seconds.");
   }, 30_000);
 
@@ -437,22 +447,33 @@ describe("cloudflare device proxy e2e", () => {
     expect(((await bad.json()) as { error: string }).error).toBe("invalid_grant");
   }, 30_000);
 
+  test("pairing session requires name", async () => {
+    const res = await fetch(`${baseUrl}/cloud/pairing/session`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: identity.digest }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { reason: string }).reason).toBe("invalid name");
+  }, 30_000);
+
   test("pairing session and token mint routingToken without leaking grantSecret", async () => {
     const other = await generateDeviceIdentity();
     const ws = await openDeviceSocket(baseUrl, other.digest);
     expect((await authenticateDevice(ws, other)).success).toBe(true);
 
-    const sessionPending = waitForMessage(ws, (msg): msg is RequestMessage => msg.type === "request");
+    const sessionPending = waitForMessage(ws, (msg): msg is PairingSessionRequestMessage =>
+      msg.type === "pairingSessionRequest");
     const sessionPromise = fetch(`${baseUrl}/cloud/pairing/session`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ devicePublicKeyDigest: other.digest }),
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, name: "Cursor" }),
     });
     const sessionReq = await sessionPending;
-    expect(sessionReq.method).toBe("POST");
-    expect(sessionReq.path).toBe("/pairing/session");
+    expect(sessionReq.name).toBe("Cursor");
+    expect("requestId" in sessionReq).toBe(false);
     const expiredAt = Math.floor(Date.now() / 1000) + 30;
-    replyJson(ws, sessionReq.requestId, 200, { sessionToken: "sess-1", expiredAt });
+    ws.send(JSON.stringify({
+      type: "pairingSessionResponse", success: true, sessionToken: "sess-1", expiredAt,
+    }));
 
     const sessionRes = await sessionPromise;
     expect(sessionRes.status).toBe(200);
@@ -460,52 +481,240 @@ describe("cloudflare device proxy e2e", () => {
     expect(sessionBody.sessionToken).toBe("sess-1");
     expect(sessionBody.expiredAt).toBe(expiredAt);
 
-    const tokenPending = waitForMessage(ws, (msg): msg is RequestMessage => msg.type === "request");
+    const inbound: DeviceInbound[] = [];
+    const onMessage = (event: MessageEvent) => {
+      try {
+        inbound.push(JSON.parse(String(event.data)) as DeviceInbound);
+      } catch {
+        // ignore
+      }
+    };
+    ws.addEventListener("message", onMessage);
     const tokenPromise = fetch(`${baseUrl}/cloud/pairing/token`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
+      method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ devicePublicKeyDigest: other.digest, sessionToken: "sess-1" }),
     });
-    const tokenReq = await tokenPending;
-    expect(tokenReq.path).toBe("/pairing/token");
-    replyJson(ws, tokenReq.requestId, 200, { grantSecret: "super-secret-grant" });
+    await Bun.sleep(200);
+    expect(inbound.some((msg) => (msg as { type: string }).type === "pairingSessionTokenRequest")).toBe(false);
+    ws.send(JSON.stringify({
+      type: "pairingSessionTokenResponse", success: true, grantSecret: "abcdefghijklmnopqrstuvwx012345",
+    }));
 
     const tokenRes = await tokenPromise;
+    ws.removeEventListener("message", onMessage);
     expect(tokenRes.status).toBe(200);
     const tokenBody = (await tokenRes.json()) as Record<string, unknown>;
     expect(tokenBody.grantSecret).toBeUndefined();
     expect(typeof tokenBody.routingToken).toBe("string");
     const opened = await openRoutingToken(ROUTING_TOKEN_SECRET, tokenBody.routingToken as string);
-    expect(opened).toEqual({ devicePublicKeyDigest: other.digest, grantSecret: "super-secret-grant" });
+    expect(opened).toEqual({ devicePublicKeyDigest: other.digest, grantSecret: "abcdefghijklmnopqrstuvwx012345" });
 
     ws.close();
   }, 60_000);
 
-  test("pairing token rejects bad device grant body", async () => {
+  test("pairing token validates sessionToken on the relay", async () => {
     const other = await generateDeviceIdentity();
     const ws = await openDeviceSocket(baseUrl, other.digest);
     expect((await authenticateDevice(ws, other)).success).toBe(true);
 
-    const pending = waitForMessage(ws, (msg): msg is RequestMessage => msg.type === "request");
-    const promise = fetch(`${baseUrl}/cloud/pairing/token`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ devicePublicKeyDigest: other.digest, sessionToken: "sess" }),
+    const missing = await fetch(`${baseUrl}/cloud/pairing/token`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, sessionToken: "sess-1" }),
     });
-    const req = await pending;
-    replyJson(ws, req.requestId, 200, { ok: true });
-    const res = await promise;
-    expect(res.status).toBe(502);
-    expect(((await res.json()) as { reason: string }).reason).toBe("invalid device response");
+    expect(missing.status).toBe(401);
+    expect(((await missing.json()) as { reason: string }).reason).toBe("session token is invalid or expired");
+
+    const sessionPending = waitForMessage(ws, (msg): msg is PairingSessionRequestMessage =>
+      msg.type === "pairingSessionRequest");
+    const sessionPromise = fetch(`${baseUrl}/cloud/pairing/session`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, name: "Cursor" }),
+    });
+    await sessionPending;
+    ws.send(JSON.stringify({
+      type: "pairingSessionResponse", success: true, sessionToken: "sess-1",
+      expiredAt: Math.floor(Date.now() / 1000) + 30,
+    }));
+    expect((await sessionPromise).status).toBe(200);
+
+    const inbound: DeviceInbound[] = [];
+    const onMessage = (event: MessageEvent) => {
+      try {
+        inbound.push(JSON.parse(String(event.data)) as DeviceInbound);
+      } catch {
+        // ignore
+      }
+    };
+    ws.addEventListener("message", onMessage);
+    const mismatch = await fetch(`${baseUrl}/cloud/pairing/token`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, sessionToken: "wrong" }),
+    });
+    expect(mismatch.status).toBe(401);
+    expect(((await mismatch.json()) as { reason: string }).reason).toBe("session token is invalid or expired");
+    await Bun.sleep(150);
+    expect(inbound).toEqual([]);
+    ws.removeEventListener("message", onMessage);
+    ws.close();
+  }, 60_000);
+
+  test("pairing session maps conflict and grant limit", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    expect((await authenticateDevice(ws, other)).success).toBe(true);
+
+    const conflictPending = waitForMessage(ws, (msg): msg is PairingSessionRequestMessage =>
+      msg.type === "pairingSessionRequest");
+    const conflictPromise = fetch(`${baseUrl}/cloud/pairing/session`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, name: "A" }),
+    });
+    await conflictPending;
+    ws.send(JSON.stringify({
+      type: "pairingSessionResponse", success: false,
+      reason: "a pairing session is already active",
+    }));
+    const conflictRes = await conflictPromise;
+    expect(conflictRes.status).toBe(409);
+
+    const fullPending = waitForMessage(ws, (msg): msg is PairingSessionRequestMessage =>
+      msg.type === "pairingSessionRequest");
+    const fullPromise = fetch(`${baseUrl}/cloud/pairing/session`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, name: "B" }),
+    });
+    await fullPending;
+    ws.send(JSON.stringify({
+      type: "pairingSessionResponse", success: false,
+      reason: "grant secret limit reached (16)",
+    }));
+    const fullRes = await fullPromise;
+    expect(fullRes.status).toBe(422);
+    ws.close();
+  }, 60_000);
+
+  test("pairing allows concurrent token requests", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    expect((await authenticateDevice(ws, other)).success).toBe(true);
+
+    const sessionPending = waitForMessage(ws, (msg): msg is PairingSessionRequestMessage =>
+      msg.type === "pairingSessionRequest");
+    const sessionPromise = fetch(`${baseUrl}/cloud/pairing/session`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, name: "Cursor" }),
+    });
+    await sessionPending;
+    ws.send(JSON.stringify({
+      type: "pairingSessionResponse", success: true, sessionToken: "sess-1",
+      expiredAt: Math.floor(Date.now() / 1000) + 30,
+    }));
+    expect((await sessionPromise).status).toBe(200);
+
+    const firstPromise = fetch(`${baseUrl}/cloud/pairing/token`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, sessionToken: "sess-1" }),
+    });
+    const secondPromise = fetch(`${baseUrl}/cloud/pairing/token`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, sessionToken: "sess-1" }),
+    });
+    await Bun.sleep(200);
+    const grantSecret = "abcdefghijklmnopqrstuvwx012345";
+    ws.send(JSON.stringify({
+      type: "pairingSessionTokenResponse", success: true, grantSecret,
+    }));
+    const [firstRes, secondRes] = await Promise.all([firstPromise, secondPromise]);
+    expect(firstRes.status).toBe(200);
+    expect(secondRes.status).toBe(200);
+    const firstOpened = await openRoutingToken(
+      ROUTING_TOKEN_SECRET, ((await firstRes.json()) as { routingToken: string }).routingToken,
+    );
+    const secondOpened = await openRoutingToken(
+      ROUTING_TOKEN_SECRET, ((await secondRes.json()) as { routingToken: string }).routingToken,
+    );
+    expect(firstOpened?.grantSecret).toBe(grantSecret);
+    expect(secondOpened?.grantSecret).toBe(grantSecret);
+
+    const retry = await fetch(`${baseUrl}/cloud/pairing/token`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, sessionToken: "sess-1" }),
+    });
+    expect(retry.status).toBe(200);
+    const retryOpened = await openRoutingToken(
+      ROUTING_TOKEN_SECRET, ((await retry.json()) as { routingToken: string }).routingToken,
+    );
+    expect(retryOpened?.grantSecret).toBe(grantSecret);
+    ws.close();
+  }, 60_000);
+
+  test("pairing token rejects expired sessionToken", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    expect((await authenticateDevice(ws, other)).success).toBe(true);
+
+    const sessionPending = waitForMessage(ws, (msg): msg is PairingSessionRequestMessage =>
+      msg.type === "pairingSessionRequest");
+    const sessionPromise = fetch(`${baseUrl}/cloud/pairing/session`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, name: "Cursor" }),
+    });
+    await sessionPending;
+    ws.send(JSON.stringify({
+      type: "pairingSessionResponse", success: true, sessionToken: "sess-1",
+      expiredAt: Math.floor(Date.now() / 1000) - 1,
+    }));
+    expect((await sessionPromise).status).toBe(200);
+
+    const tokenRes = await fetch(`${baseUrl}/cloud/pairing/token`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, sessionToken: "sess-1" }),
+    });
+    expect(tokenRes.status).toBe(401);
+    expect(((await tokenRes.json()) as { reason: string }).reason).toBe("session token is invalid or expired");
+    ws.close();
+  }, 60_000);
+
+  test("pairing token uses grant sent by the device without a token request", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    expect((await authenticateDevice(ws, other)).success).toBe(true);
+
+    const sessionPending = waitForMessage(ws, (msg): msg is PairingSessionRequestMessage =>
+      msg.type === "pairingSessionRequest");
+    const sessionPromise = fetch(`${baseUrl}/cloud/pairing/session`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, name: "Cursor" }),
+    });
+    await sessionPending;
+    ws.send(JSON.stringify({
+      type: "pairingSessionResponse", success: true, sessionToken: "sess-1",
+      expiredAt: Math.floor(Date.now() / 1000) + 30,
+    }));
+    expect((await sessionPromise).status).toBe(200);
+
+    ws.send(JSON.stringify({
+      type: "pairingSessionTokenResponse", success: true, grantSecret: "abcdefghijklmnopqrstuvwx012345",
+    }));
+    await Bun.sleep(200);
+
+    const tokenRes = await fetch(`${baseUrl}/cloud/pairing/token`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, sessionToken: "sess-1" }),
+    });
+    expect(tokenRes.status).toBe(200);
+    const opened = await openRoutingToken(
+      ROUTING_TOKEN_SECRET, ((await tokenRes.json()) as { routingToken: string }).routingToken,
+    );
+    expect(opened?.grantSecret).toBe("abcdefghijklmnopqrstuvwx012345");
     ws.close();
   }, 60_000);
 
   test("pairing session returns 503 when device offline", async () => {
     const digest = PLACEHOLDER.b;
     const res = await fetch(`${baseUrl}/cloud/pairing/session`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ devicePublicKeyDigest: digest }),
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: digest, name: "Cursor" }),
     });
     expect(res.status).toBe(503);
   }, 30_000);
@@ -568,6 +777,7 @@ describe("cloudflare device proxy e2e", () => {
     expect(deviceRequest.headers["accept"]).toBe("application/json");
     expect(deviceRequest.headers["x-lock-id"]).toBe("lock-abc");
     expect(deviceRequest.headers["authorization"]).toBeUndefined();
+    expect(deviceRequest.grantSecret).toBe("grant-secret");
 
     expect(deviceRequest.body).toEqual({ duty: 0.5 });
 

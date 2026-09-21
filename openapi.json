@@ -3,7 +3,7 @@
   "info": {
     "title": "Saihub REST API",
     "version": "1.0.0",
-    "description": "No-TLS JSON REST API for logical pins 0-7, PWM, UART, power rails (3v3/5v), edge tracing, resource locks, and on-device Lua 5.4 scripts. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}."
+    "description": "JSON REST API for logical pins 0-7, PWM, UART, power rails (3v3/5v), edge tracing, resource locks, on-device Lua 5.4 scripts, and cloud management. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}."
   },
   "servers": [
     {
@@ -31,6 +31,10 @@
     {
       "name": "script",
       "description": "Sandboxed Lua 5.4. Allowed libraries: base, table, string, math, utf8. require/dofile/loadfile/load/collectgarbage are nil. No io, os, package, debug, or coroutine. Tools are globals with MCP argument keys. sleep(us) delays in microseconds. print() is captured. First return value is result. Errors raise {reason=\"...\"}; catch with pcall. Timeout, maxCalls, and out-of-memory abort the run."
+    },
+    {
+      "name": "cloud",
+      "description": "Named cloud grants minted by pairing. LAN has no bearer; cloud-proxied calls require a live grantSecret."
     },
     {
       "name": "meta"
@@ -1516,6 +1520,70 @@
           }
         }
       }
+    },
+    "/cloud/grant-secrets": {
+      "get": {
+        "tags": [
+          "cloud"
+        ],
+        "summary": "List named cloud grants",
+        "description": "Returns every grantSecret stored on the device. Cloud-proxied calls require a live grantSecret in the WebSocket request envelope.",
+        "responses": {
+          "200": {
+            "description": "Grant list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "grants"
+                  ],
+                  "properties": {
+                    "grants": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CloudGrant"
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/cloud/grant-secrets/{grantSecret}": {
+      "delete": {
+        "tags": [
+          "cloud"
+        ],
+        "summary": "Revoke a cloud grant (idempotent)",
+        "parameters": [
+          {
+            "name": "grantSecret",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 32
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted or already gone"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1915,6 +1983,25 @@
           }
         }
       },
+      "CloudGrant": {
+        "type": "object",
+        "required": [
+          "name",
+          "grantSecret"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "grantSecret": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 32
+          }
+        },
+        "additionalProperties": false
+      },
       "ScriptResult": {
         "type": "object",
         "required": [
@@ -2103,6 +2190,16 @@
       }
     },
     "responses": {
+      "Unauthorized": {
+        "description": "Cloud request grantSecret missing or not stored on the device",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
       "BadRequest": {
         "description": "invalid_json or out-of-range body/query params",
         "content": {

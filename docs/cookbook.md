@@ -134,7 +134,7 @@ If you **buy a board from us**, we host the Cloudflare relay. After the board is
    - REST API base — `https://<hosted-origin>/device/<digest>`
    - `openapi.json` — `https://<hosted-origin>/device/<digest>/openapi.json`
 
-3. Paste the MCP URL into Cursor, Claude Code, or Codex CLI the same way as the LAN URL. The client runs OAuth in the browser; you do not paste a long-lived token by hand.
+3. Paste the MCP URL into Cursor, Claude Code, or Codex CLI the same way as the LAN URL. The client runs OAuth in the browser: name this client, then **hold BOOT for 3 seconds** on the board. You do not paste a long-lived token by hand. Revoke grants later from the device control page **Cloud** tab (`http://<device-ip>/`).
 
 <img src="assets/cloud-landing.webp" alt="Saihub cloud landing page" style="display:block;max-height:720px;width:auto;margin:0 auto">
 

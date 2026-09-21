@@ -7,6 +7,7 @@
 #include "config.h"
 #include "http_server.h"
 #include "ntp.h"
+#include "nvs.h"
 #include "wifi.h"
 
 #include <esp_app_desc.h>
@@ -31,6 +32,7 @@
 #include <soc/soc_caps.h>
 #include <stdbool.h>
 #include <string.h>
+#include <time.h>
 
 #if !defined(CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN) || !CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN
 #error "Cloud identity requires CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN"
@@ -53,6 +55,31 @@ static uint8_t publicKey[CLOUD_PUBLIC_KEY_BYTES];
 static char publicKeyDigest[CLOUD_DIGEST_CHARS + 1];
 static bool initialized;
 static esp_err_t Cloud_StartRelay(void);
+static bool Cloud_Base64Encode(const uint8_t* data, size_t length, char* out, size_t capacity);
+static bool Cloud_RandomToken(char out[CONFIG_CLOUD_GRANT_SECRET_LEN + 1]);
+static bool Cloud_AddGrantSecret(const char* name, const char* secret);
+static void Cloud_LoadGrantSecrets(void);
+
+#define CLOUD_GRANTS_NVS_KEY "cloud.grants"
+#define CLOUD_GRANTS_JSON_MAX 2048
+
+typedef struct {
+  char name[CONFIG_CLOUD_GRANT_NAME_MAX + 1];
+  char grantSecret[CONFIG_CLOUD_GRANT_SECRET_LEN + 1];
+} Cloud_Grant;
+
+static Cloud_Grant grants[CONFIG_CLOUD_GRANT_MAX];
+static size_t grantCount;
+static SemaphoreHandle_t grantMutex;
+
+typedef struct {
+  bool used;
+  bool approved;
+  char name[CONFIG_CLOUD_GRANT_NAME_MAX + 1];
+  int64_t expiredAtS;
+} Cloud_Pairing;
+
+static Cloud_Pairing pairing;
 
 static void Cloud_SecureZero(void* data, size_t len)
 {
@@ -377,6 +404,12 @@ esp_err_t Cloud_Init(void)
   }
 
   initialized = true;
+  if (!grantMutex) grantMutex = xSemaphoreCreateMutex();
+  if (!grantMutex) {
+    err = ESP_ERR_NO_MEM;
+    goto cleanup;
+  }
+  Cloud_LoadGrantSecrets();
 
 cleanup:
   if (entropyEnabled) bootloader_random_disable();
@@ -513,6 +546,105 @@ static esp_err_t Cloud_Write(void* user, HttpServer_CloudWriteKind kind, const v
   return ESP_OK;
 }
 
+/* wait=0 for the heartbeat timer, which must not block. */
+static void Cloud_SendText(unsigned expected, const char* text, TickType_t wait)
+{
+  if (!text) return;
+  if (xSemaphoreTake(sendMutex, wait) != pdTRUE) return;
+  int len = (int)strlen(text);
+  if (Cloud_ConnectionCurrent(expected) &&
+      esp_websocket_client_send_text(client, text, len, wait == 0 ? 0 : pdMS_TO_TICKS(10000)) != len)
+    Cloud_RequestRestart("cloud send failed");
+  xSemaphoreGive(sendMutex);
+}
+
+static void Cloud_SendJson(unsigned expected, cJSON* root)
+{
+  if (!root) return;
+  char* text = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+  Cloud_SendText(expected, text, pdMS_TO_TICKS(1000));
+  free(text);
+}
+
+static bool Cloud_PairingLive(void)
+{
+  return pairing.used && time(NULL) < pairing.expiredAtS;
+}
+
+bool Cloud_PairingSessionIsLive(void)
+{
+  xSemaphoreTake(grantMutex, portMAX_DELAY);
+  bool live = Cloud_PairingLive();
+  xSemaphoreGive(grantMutex);
+  return live;
+}
+
+void Cloud_PairingApprove(void)
+{
+  char secret[CONFIG_CLOUD_GRANT_SECRET_LEN + 1];
+  xSemaphoreTake(grantMutex, portMAX_DELAY);
+  if (!Cloud_PairingLive() || pairing.approved) {
+    xSemaphoreGive(grantMutex);
+    return;
+  }
+  pairing.approved = true;
+  bool minted = true;
+  if (!Cloud_RandomToken(secret)) minted = false;
+  if (!Cloud_AddGrantSecret(pairing.name, secret)) {
+    Cloud_SecureZero(secret, CONFIG_CLOUD_GRANT_SECRET_LEN + 1);
+    minted = false;
+  }
+  if (!minted) pairing.approved = false;
+  xSemaphoreGive(grantMutex);
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return;
+  cJSON_AddStringToObject(root, "type", "pairingSessionTokenResponse");
+  cJSON_AddBoolToObject(root, "success", minted);
+  if (minted) cJSON_AddStringToObject(root, "grantSecret", secret);
+  else cJSON_AddStringToObject(root, "reason", "grant secret limit reached (16)");
+  Cloud_SendJson(atomic_load(&generation), root);
+}
+
+static void Cloud_HandlePairingSession(cJSON* message, unsigned expected)
+{
+  const char* fail = NULL;
+  char token[CONFIG_CLOUD_GRANT_SECRET_LEN + 1];
+  int64_t expiredAt = 0;
+  cJSON* root;
+  cJSON* name = cJSON_GetObjectItemCaseSensitive(message, "name");
+  if (!cJSON_IsString(name) || !name->valuestring[0] || strlen(name->valuestring) > CONFIG_CLOUD_GRANT_NAME_MAX) {
+    fail = "invalid name";
+    goto reply;
+  }
+  xSemaphoreTake(grantMutex, portMAX_DELAY);
+  if (pairing.used && time(NULL) >= pairing.expiredAtS) memset(&pairing, 0, sizeof(pairing));
+  if (grantCount >= CONFIG_CLOUD_GRANT_MAX) fail = "grant secret limit reached (16)";
+  else if (Cloud_PairingLive()) fail = "a pairing session is already active";
+  else if (!Cloud_RandomToken(token)) fail = "internal";
+  else {
+    memset(&pairing, 0, sizeof(pairing));
+    pairing.used = true;
+    pairing.expiredAtS = time(NULL) + CONFIG_CLOUD_PAIRING_TTL_S;
+    snprintf(pairing.name, sizeof(pairing.name), "%s", name->valuestring);
+    expiredAt = pairing.expiredAtS;
+  }
+  xSemaphoreGive(grantMutex);
+reply:
+  root = cJSON_CreateObject();
+  if (!root) return;
+  cJSON_AddStringToObject(root, "type", "pairingSessionResponse");
+  cJSON_AddBoolToObject(root, "success", fail == NULL);
+  if (!fail) {
+    cJSON_AddStringToObject(root, "sessionToken", token);
+    cJSON_AddNumberToObject(root, "expiredAt", (double)expiredAt);
+    ESP_LOGI(tag, "pairing session started name=%s expiredAt=%lld", name->valuestring, (long long)expiredAt);
+  } else {
+    cJSON_AddStringToObject(root, "reason", fail);
+  }
+  Cloud_SendJson(expected, root);
+}
+
 static bool Cloud_Base64Encode(const uint8_t* data, size_t length, char* out, size_t capacity)
 {
   size_t written = 0;
@@ -524,6 +656,141 @@ static bool Cloud_Base64Encode(const uint8_t* data, size_t length, char* out, si
     if (out[i] == '/') out[i] = '_';
   }
   return true;
+}
+
+static bool Cloud_RandomToken(char out[CONFIG_CLOUD_GRANT_SECRET_LEN + 1])
+{
+  uint8_t raw[24];
+  esp_fill_random(raw, sizeof(raw));
+  bool ok = Cloud_Base64Encode(raw, sizeof(raw), out, CONFIG_CLOUD_GRANT_SECRET_LEN + 1);
+  Cloud_SecureZero(raw, sizeof(raw));
+  if (!ok || strlen(out) != CONFIG_CLOUD_GRANT_SECRET_LEN) {
+    out[0] = '\0';
+    return false;
+  }
+  return true;
+}
+
+static bool Cloud_SaveGrantSecrets(void)
+{
+  cJSON* list = cJSON_CreateArray();
+  if (!list) return false;
+  for (size_t i = 0; i < grantCount; i++) {
+    cJSON* item = cJSON_CreateObject();
+    if (!item || !cJSON_AddStringToObject(item, "name", grants[i].name) ||
+        !cJSON_AddStringToObject(item, "grantSecret", grants[i].grantSecret)) {
+      cJSON_Delete(item);
+      cJSON_Delete(list);
+      return false;
+    }
+    cJSON_AddItemToArray(list, item);
+  }
+  char* text = cJSON_PrintUnformatted(list);
+  cJSON_Delete(list);
+  if (!text) return false;
+  esp_err_t err = Nvs_SetString(CLOUD_GRANTS_NVS_KEY, text);
+  free(text);
+  return err == ESP_OK;
+}
+
+static void Cloud_LoadGrantSecrets(void)
+{
+  char json[CLOUD_GRANTS_JSON_MAX];
+  if (Nvs_GetString(CLOUD_GRANTS_NVS_KEY, json, sizeof(json)) != ESP_OK) return;
+  cJSON* list = cJSON_Parse(json);
+  if (!cJSON_IsArray(list)) {
+    cJSON_Delete(list);
+    return;
+  }
+  xSemaphoreTake(grantMutex, portMAX_DELAY);
+  grantCount = 0;
+  cJSON* item = NULL;
+  cJSON_ArrayForEach(item, list) {
+    if (grantCount >= CONFIG_CLOUD_GRANT_MAX) break;
+    cJSON* name = cJSON_GetObjectItemCaseSensitive(item, "name");
+    cJSON* secret = cJSON_GetObjectItemCaseSensitive(item, "grantSecret");
+    if (!cJSON_IsString(name) || !cJSON_IsString(secret) || !name->valuestring[0] ||
+        strlen(name->valuestring) > CONFIG_CLOUD_GRANT_NAME_MAX ||
+        strlen(secret->valuestring) != CONFIG_CLOUD_GRANT_SECRET_LEN) {
+      continue;
+    }
+    snprintf(grants[grantCount].name, sizeof(grants[grantCount].name), "%s", name->valuestring);
+    memcpy(grants[grantCount].grantSecret, secret->valuestring, CONFIG_CLOUD_GRANT_SECRET_LEN + 1);
+    grantCount++;
+  }
+  xSemaphoreGive(grantMutex);
+  cJSON_Delete(list);
+}
+
+static bool Cloud_AddGrantSecret(const char* name, const char* secret)
+{
+  if (grantCount >= CONFIG_CLOUD_GRANT_MAX) return false;
+  for (size_t i = 0; i < grantCount; i++) {
+    if (memcmp(grants[i].grantSecret, secret, CONFIG_CLOUD_GRANT_SECRET_LEN) == 0) return true;
+  }
+  snprintf(grants[grantCount].name, sizeof(grants[grantCount].name), "%s", name);
+  memcpy(grants[grantCount].grantSecret, secret, CONFIG_CLOUD_GRANT_SECRET_LEN + 1);
+  grantCount++;
+  if (!Cloud_SaveGrantSecrets()) {
+    grantCount--;
+    return false;
+  }
+  return true;
+}
+
+bool Cloud_HasGrantSecret(const char* grantSecret)
+{
+  if (!grantSecret || strlen(grantSecret) != CONFIG_CLOUD_GRANT_SECRET_LEN) return false;
+  xSemaphoreTake(grantMutex, portMAX_DELAY);
+  bool found = false;
+  for (size_t i = 0; i < grantCount; i++) {
+    if (memcmp(grants[i].grantSecret, grantSecret, CONFIG_CLOUD_GRANT_SECRET_LEN) == 0) {
+      found = true;
+      break;
+    }
+  }
+  xSemaphoreGive(grantMutex);
+  return found;
+}
+
+cJSON* Cloud_ListGrantSecrets(void)
+{
+  cJSON* root = cJSON_CreateObject();
+  cJSON* list = cJSON_CreateArray();
+  if (!root || !list) {
+    cJSON_Delete(root);
+    cJSON_Delete(list);
+    return NULL;
+  }
+  cJSON_AddItemToObject(root, "grants", list);
+  xSemaphoreTake(grantMutex, portMAX_DELAY);
+  for (size_t i = 0; i < grantCount; i++) {
+    cJSON* item = cJSON_CreateObject();
+    if (!item || !cJSON_AddStringToObject(item, "name", grants[i].name) ||
+        !cJSON_AddStringToObject(item, "grantSecret", grants[i].grantSecret)) {
+      cJSON_Delete(item);
+      continue;
+    }
+    cJSON_AddItemToArray(list, item);
+  }
+  xSemaphoreGive(grantMutex);
+  return root;
+}
+
+esp_err_t Cloud_RevokeGrantSecret(const char* grantSecret)
+{
+  if (!grantSecret || grantSecret[0] == '\0') return ESP_OK;
+  xSemaphoreTake(grantMutex, portMAX_DELAY);
+  size_t w = 0;
+  for (size_t i = 0; i < grantCount; i++) {
+    if (strcmp(grants[i].grantSecret, grantSecret) == 0) continue;
+    if (w != i) grants[w] = grants[i];
+    w++;
+  }
+  grantCount = w;
+  Cloud_GrantSave();
+  xSemaphoreGive(grantMutex);
+  return ESP_OK;
 }
 
 static void Cloud_Authenticate(cJSON* message, unsigned expected)
@@ -555,15 +822,7 @@ static void Cloud_Authenticate(cJSON* message, unsigned expected)
   cJSON_AddStringToObject(response, "devicePublicKeyDigest", Cloud_GetPublicKeyDigest());
   cJSON_AddStringToObject(response, "version", esp_app_get_description()->version);
   cJSON_AddStringToObject(response, "response", signatureText);
-  char* text = cJSON_PrintUnformatted(response);
-  cJSON_Delete(response);
-  if (!text) return;
-  if (xSemaphoreTake(sendMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-    if (Cloud_ConnectionCurrent(expected) && esp_websocket_client_send_text(client, text, strlen(text), pdMS_TO_TICKS(10000)) < 0)
-      Cloud_RequestRestart("cloud authentication response send failed");
-    xSemaphoreGive(sendMutex);
-  } else Cloud_RequestRestart("cloud authentication response send lock timeout");
-  free(text);
+  Cloud_SendJson(expected, response);
 }
 
 static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* eventData)
@@ -607,13 +866,7 @@ static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* e
 static void Cloud_HeartbeatTimer(TimerHandle_t timer)
 {
   (void)timer;
-  unsigned expected = atomic_load(&generation);
-  if (!Cloud_ConnectionCurrent(expected)) return;
-  if (xSemaphoreTake(sendMutex, 0) != pdTRUE) return;
-  if (Cloud_ConnectionCurrent(expected) &&
-      esp_websocket_client_send_text(client, "ping", 4, 0) != 4)
-    Cloud_RequestRestart("cloud heartbeat send failed");
-  xSemaphoreGive(sendMutex);
+  Cloud_SendText(atomic_load(&generation), "ping", 0);
 }
 
 static void Cloud_RelayTask(void* arg)
@@ -638,6 +891,10 @@ static void Cloud_RelayTask(void* arg)
       atomic_store(&restart, false);
       running = esp_websocket_client_start(client) == ESP_OK;
     }
+    // clear pairing session if it is expired
+    xSemaphoreTake(grantMutex, portMAX_DELAY);
+    if (pairing.used && time(NULL) >= pairing.expiredAtS) memset(&pairing, 0, sizeof(pairing));
+    xSemaphoreGive(grantMutex);
     Cloud_Message message;
     if (xQueueReceive(incoming, &message, pdMS_TO_TICKS(200)) != pdTRUE) continue;
     if (!Cloud_ConnectionCurrent(message.generation)) { free(message.text); continue; }
@@ -656,6 +913,8 @@ static void Cloud_RelayTask(void* arg)
         } else {
           ESP_LOGW(tag, "cloud authentication rejected");
         }
+      } else if (strcmp(type->valuestring, "pairingSessionRequest") == 0 && atomic_load(&authenticated)) {
+        Cloud_HandlePairingSession(root, message.generation);
       } else if (strcmp(type->valuestring, "request") == 0 && atomic_load(&authenticated)) {
         /* Match the local HTTP server: dispatch synchronously on the relay task.
          * Cloud-side timeout handling bounds how long this can occupy the relay. */

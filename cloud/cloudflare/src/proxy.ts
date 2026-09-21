@@ -7,11 +7,15 @@ export function proxyToDevice(
   path: string,
   body?: string,
   headers?: Record<string, string>,
+  grantSecret?: string,
 ): Promise<Response> {
   const id = env.DEVICE.idFromName(digest);
   const stub = env.DEVICE.get(id);
   const forwardUrl = new URL("https://device/proxy");
   forwardUrl.searchParams.set("path", path);
+  if (grantSecret) {
+    forwardUrl.searchParams.set("grantSecret", grantSecret);
+  }
 
   const requestHeaders = new Headers(headers);
   return stub.fetch(

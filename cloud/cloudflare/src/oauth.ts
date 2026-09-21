@@ -235,24 +235,29 @@ p{margin:.5rem 0;color:#3f4945}
 </head>
 <body>
 <main>
-  <h1 id="status">Connecting to device</h1>
-  <p id="detail"></p>
+  <h1 id="status">Name this client</h1>
+  <p id="detail">Choose a name so you can revoke this grant later on the device.</p>
+  <p><input id="name" type="text" maxlength="32" placeholder="Cursor" autocomplete="off" style="width:100%;max-width:20rem;padding:.6rem .75rem;font:inherit;border:1px solid #c5cdc9;border-radius:8px"/></p>
+  <p><button id="start" type="button" style="padding:.6rem 1.1rem;font:inherit;font-weight:650;border:0;border-radius:999px;background:#006b54;color:#fff;cursor:pointer">Pair</button></p>
   <p class="err" id="err"></p>
 </main>
 <script>
-(async () => {
+(() => {
   const digest = ${JSON.stringify(digest)};
   const redirectUri = ${JSON.stringify(redirectUri)};
   const state = ${JSON.stringify(state)};
   const statusEl = document.getElementById('status');
   const detailEl = document.getElementById('detail');
   const errEl = document.getElementById('err');
+  const nameEl = document.getElementById('name');
+  const startEl = document.getElementById('start');
   let countdownTimer = null;
 
   function fail(msg) {
     if (countdownTimer) clearInterval(countdownTimer);
     statusEl.textContent = 'Pairing failed';
     errEl.textContent = msg || 'Pairing failed.';
+    startEl.disabled = false;
   }
 
   function startCountdown(expiredAt) {
@@ -275,31 +280,41 @@ p{margin:.5rem 0;color:#3f4945}
     location.href = target.toString();
   }
 
-  try {
-    const sessionRes = await fetch('/cloud/pairing/session', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ devicePublicKeyDigest: digest }),
-    });
-    const sessionBody = await sessionRes.json().catch(() => ({}));
-    if (!sessionRes.ok) throw new Error(sessionBody.reason || 'session failed');
+  startEl.onclick = async () => {
+    const name = (nameEl.value || '').trim();
+    if (!name) {
+      errEl.textContent = 'Enter a name.';
+      return;
+    }
+    errEl.textContent = '';
+    startEl.disabled = true;
+    nameEl.disabled = true;
+    try {
+      const sessionRes = await fetch('/cloud/pairing/session', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ devicePublicKeyDigest: digest, name }),
+      });
+      const sessionBody = await sessionRes.json().catch(() => ({}));
+      if (!sessionRes.ok) throw new Error(sessionBody.reason || 'session failed');
 
-    statusEl.textContent = 'Press button for 3 seconds.';
-    startCountdown(Number(sessionBody.expiredAt) || 0);
+      statusEl.textContent = 'Press button for 3 seconds.';
+      startCountdown(Number(sessionBody.expiredAt) || 0);
 
-    const tokenRes = await fetch('/cloud/pairing/token', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ devicePublicKeyDigest: digest, sessionToken: sessionBody.sessionToken }),
-    });
-    const tokenBody = await tokenRes.json().catch(() => ({}));
-    if (!tokenRes.ok) throw new Error(tokenBody.reason || 'token failed');
-    if (!tokenBody.routingToken) throw new Error('missing routing token');
-    if (countdownTimer) clearInterval(countdownTimer);
-    redirectWithCode(tokenBody.routingToken);
-  } catch (e) {
-    fail(e && e.message ? e.message : 'Pairing failed.');
-  }
+      const tokenRes = await fetch('/cloud/pairing/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ devicePublicKeyDigest: digest, sessionToken: sessionBody.sessionToken }),
+      });
+      const tokenBody = await tokenRes.json().catch(() => ({}));
+      if (!tokenRes.ok) throw new Error(tokenBody.reason || 'token failed');
+      if (!tokenBody.routingToken) throw new Error('missing routing token');
+      if (countdownTimer) clearInterval(countdownTimer);
+      redirectWithCode(tokenBody.routingToken);
+    } catch (e) {
+      fail(e && e.message ? e.message : 'Pairing failed.');
+    }
+  };
 })();
 </script>
 </body>

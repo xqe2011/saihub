@@ -1,9 +1,11 @@
 import { DEFAULT_AUTH_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS, parseTimeoutMs, type Env } from "./env.ts";
 import { base64UrlToBytes, bytesToBase64Url, randomChallenge, verifyDeviceAuth } from "./crypto.ts";
-import { isJsonContentType, unsupportedContentType, jsonError, MAX_BODY_BYTES, MAX_PATH_LEN, parseDeviceMessage, selectForwardHeaders, type AuthRequestMessage, type AuthResultMessage, type RequestMessage } from "./protocol.ts";
+import { isJsonContentType, unsupportedContentType, jsonError, MAX_BODY_BYTES, MAX_PATH_LEN, parseDeviceMessage, pairingErrorStatus, selectForwardHeaders, type AuthRequestMessage, type AuthResultMessage, type PairingSessionRequestMessage, type PairingSessionResponseMessage, type PairingSessionTokenResponseMessage, type RequestMessage } from "./protocol.ts";
 
 const MAX_PENDING_REQUESTS = 8;
+const MAX_PAIRING_WAITERS = 8;
 const HEARTBEAT_TIMEOUT_MS = 33_000;
+const PAIRING_STORAGE_KEY = "pairing";
 
 type HeadroomRequest = {
   message: RequestMessage;
@@ -14,6 +16,27 @@ type PendingRequest = {
   resolve: (response: Response) => void;
   timer: ReturnType<typeof setTimeout>;
 };
+
+type PairingState = {
+  sessionToken: string;
+  expiredAt: number;
+  grantSecret?: string;
+};
+
+type PairingWaiter = {
+  resolve: (response: Response) => void;
+  timer: ReturnType<typeof setTimeout>;
+};
+
+function isPairingState(value: unknown): value is PairingState {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const rec = value as Record<string, unknown>;
+  return typeof rec.sessionToken === "string" && rec.sessionToken.length > 0 &&
+    typeof rec.expiredAt === "number" && Number.isFinite(rec.expiredAt) &&
+    (rec.grantSecret === undefined || (typeof rec.grantSecret === "string" && rec.grantSecret.length > 0));
+}
 
 type SocketState = {
   authenticated: boolean;
@@ -33,9 +56,13 @@ export class Device implements DurableObject {
   readonly #pending = new Map<string, PendingRequest>();
   readonly #headroom: HeadroomRequest[] = [];
   readonly #discarded = new WeakSet<WebSocket>();
+  readonly #pairingTokenWaiters: PairingWaiter[] = [];
   #seq = 0;
   #socket: WebSocket | null = null;
   #socketState: SocketState | null = null;
+  #pairing: PairingState | null = null;
+  #pairingLoaded = false;
+  #pairingSessionWaiter: PendingRequest | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     this.#ctx = ctx;
@@ -46,6 +73,9 @@ export class Device implements DurableObject {
   async fetch(request: Request): Promise<Response> {
     await this.#validateSocket();
     const url = new URL(request.url);
+    if (url.pathname === "/pairing/session" || url.pathname === "/pairing/token") {
+      await this.#loadPairing();
+    }
 
     if (url.pathname === "/websocket") {
       const digest = url.searchParams.get("digest") ?? "";
@@ -53,6 +83,12 @@ export class Device implements DurableObject {
     }
     if (url.pathname === "/proxy") {
       return this.#handleProxy(request);
+    }
+    if (url.pathname === "/pairing/session") {
+      return this.#handlePairingSession(request);
+    }
+    if (url.pathname === "/pairing/token") {
+      return this.#handlePairingToken(request);
     }
     if (url.pathname === "/online") {
       return this.#handleOnline();
@@ -99,6 +135,21 @@ export class Device implements DurableObject {
 
     if (!this.#socketState?.authenticated) {
       await this.#failAuth(ws, "not authenticated");
+      return;
+    }
+
+    if (parsed.type === "pairingSessionResponse") {
+      await this.#loadPairing();
+      await this.#onPairingSessionResponse(parsed);
+      return;
+    }
+    if (parsed.type === "pairingSessionTokenResponse") {
+      await this.#loadPairing();
+      await this.#onPairingTokenResponse(parsed);
+      return;
+    }
+
+    if (parsed.type !== "response") {
       return;
     }
 
@@ -311,6 +362,7 @@ export class Device implements DurableObject {
     }
 
     const requestId = this.#nextRequestId();
+    const grantSecret = url.searchParams.get("grantSecret") ?? "";
     const message: RequestMessage = {
       type: "request",
       requestId,
@@ -319,11 +371,178 @@ export class Device implements DurableObject {
       headers: selectForwardHeaders(request),
       body: jsonBody,
     };
+    if (grantSecret) {
+      message.grantSecret = grantSecret;
+    }
 
     return new Promise<Response>((resolve) => {
       this.#headroom.push({ message, resolve });
       this.#drainHeadroom();
     });
+  }
+
+  async #handlePairingSession(request: Request): Promise<Response> {
+    if (!this.#socket || !this.#socketState?.authenticated) {
+      return jsonError(503, "device offline");
+    }
+    if (this.#pairingSessionWaiter) {
+      return jsonError(409, "a pairing session is already active");
+    }
+    let body: Record<string, unknown>;
+    try {
+      const parsed: unknown = await request.json();
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        return jsonError(400, "invalid body");
+      }
+      body = parsed as Record<string, unknown>;
+    } catch {
+      return jsonError(400, "invalid body");
+    }
+
+    const message: PairingSessionRequestMessage = {
+      type: "pairingSessionRequest",
+      name: typeof body.name === "string" ? body.name : "",
+    };
+
+    return new Promise<Response>((resolve) => {
+      const timeoutMs = parseTimeoutMs(this.#env.REQUEST_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS);
+      const timer = setTimeout(() => {
+        this.#completePairingSession(jsonError(504, "device timeout"));
+      }, timeoutMs);
+      this.#pairingSessionWaiter = { resolve, timer };
+      try {
+        this.#socket!.send(JSON.stringify(message));
+      } catch {
+        clearTimeout(timer);
+        this.#pairingSessionWaiter = null;
+        resolve(jsonError(503, "device offline"));
+      }
+    });
+  }
+
+  async #handlePairingToken(request: Request): Promise<Response> {
+    let body: Record<string, unknown>;
+    try {
+      const parsed: unknown = await request.json();
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        return jsonError(400, "invalid body");
+      }
+      body = parsed as Record<string, unknown>;
+    } catch {
+      return jsonError(400, "invalid body");
+    }
+
+    const sessionToken = typeof body.sessionToken === "string" ? body.sessionToken : "";
+    if (!sessionToken) {
+      return jsonError(400, "invalid sessionToken");
+    }
+
+    const pairing = await this.#livePairing();
+    if (!pairing || pairing.sessionToken !== sessionToken) {
+      return jsonError(401, "session token is invalid or expired");
+    }
+    if (pairing.grantSecret) {
+      return Response.json({ grantSecret: pairing.grantSecret });
+    }
+    if (!this.#socket || !this.#socketState?.authenticated) {
+      return jsonError(503, "device offline");
+    }
+    if (this.#pairingTokenWaiters.length >= MAX_PAIRING_WAITERS) {
+      return jsonError(409, "a pairing session is already active");
+    }
+
+    return new Promise<Response>((resolve) => {
+      const waitMs = Math.max(0, pairing.expiredAt * 1000 - Date.now());
+      const timer = setTimeout(() => {
+        const index = this.#pairingTokenWaiters.findIndex((waiter) => waiter.resolve === resolve);
+        if (index >= 0) {
+          this.#pairingTokenWaiters.splice(index, 1);
+        }
+        resolve(jsonError(401, "session token is invalid or expired"));
+      }, waitMs);
+      this.#pairingTokenWaiters.push({ resolve, timer });
+    });
+  }
+
+  async #onPairingSessionResponse(parsed: PairingSessionResponseMessage): Promise<void> {
+    if (parsed.success) {
+      const sameToken = this.#pairing?.sessionToken === parsed.sessionToken;
+      await this.#savePairing({
+        sessionToken: parsed.sessionToken,
+        expiredAt: parsed.expiredAt,
+        grantSecret: sameToken ? this.#pairing?.grantSecret : undefined,
+      });
+      if (!sameToken) {
+        this.#finishPairingTokenWaiters(jsonError(401, "session token is invalid or expired"));
+      }
+      this.#completePairingSession(Response.json({
+        sessionToken: parsed.sessionToken, expiredAt: parsed.expiredAt,
+      }));
+      return;
+    }
+    this.#completePairingSession(jsonError(pairingErrorStatus(parsed.reason), parsed.reason));
+  }
+
+  async #onPairingTokenResponse(parsed: PairingSessionTokenResponseMessage): Promise<void> {
+    const pairing = await this.#livePairing();
+    if (!pairing) {
+      return;
+    }
+    if (parsed.success) {
+      await this.#savePairing({ ...pairing, grantSecret: parsed.grantSecret });
+      this.#finishPairingTokenWaiters(Response.json({ grantSecret: parsed.grantSecret }));
+      return;
+    }
+    this.#finishPairingTokenWaiters(jsonError(pairingErrorStatus(parsed.reason), parsed.reason));
+  }
+
+  async #loadPairing(): Promise<void> {
+    if (this.#pairingLoaded) {
+      return;
+    }
+    this.#pairingLoaded = true;
+    const stored = await this.#ctx.storage.get(PAIRING_STORAGE_KEY);
+    this.#pairing = isPairingState(stored) ? stored : null;
+  }
+
+  async #savePairing(state: PairingState | null): Promise<void> {
+    this.#pairing = state;
+    if (state) {
+      await this.#ctx.storage.put(PAIRING_STORAGE_KEY, state);
+    } else {
+      await this.#ctx.storage.delete(PAIRING_STORAGE_KEY);
+    }
+  }
+
+  async #livePairing(): Promise<PairingState | null> {
+    const pairing = this.#pairing;
+    if (!pairing) {
+      return null;
+    }
+    if (Date.now() / 1000 >= pairing.expiredAt) {
+      await this.#savePairing(null);
+      this.#finishPairingTokenWaiters(jsonError(401, "session token is invalid or expired"));
+      return null;
+    }
+    return pairing;
+  }
+
+  #completePairingSession(response: Response): void {
+    const pending = this.#pairingSessionWaiter;
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending.timer);
+    this.#pairingSessionWaiter = null;
+    pending.resolve(response);
+  }
+
+  #finishPairingTokenWaiters(response: Response): void {
+    const waiters = this.#pairingTokenWaiters.splice(0);
+    for (const waiter of waiters) {
+      clearTimeout(waiter.timer);
+      waiter.resolve(response.clone());
+    }
   }
 
   #drainHeadroom(): void {
@@ -409,6 +628,8 @@ export class Device implements DurableObject {
     for (const { resolve } of this.#headroom.splice(0)) {
       resolve(jsonError(503, reason));
     }
+    this.#completePairingSession(jsonError(503, reason));
+    this.#finishPairingTokenWaiters(jsonError(503, reason));
   }
 
   async #setAuthAlarm(deadline: number): Promise<void> {

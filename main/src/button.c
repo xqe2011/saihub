@@ -5,6 +5,7 @@
  */
 #include "button.h"
 
+#include "cloud.h"
 #include "config.h"
 #include "tool.h"
 #include "wifi.h"
@@ -21,8 +22,10 @@ static const char* tag = "SAIHub-Button";
 #define BUTTON_POLL_MS 20
 
 static int64_t lastChangeUs = 0;
+static int64_t pressStartUs = 0;
 static int stableLevel = 1;
 static int lastRawLevel = 1;
+static bool pairingHoldFired = false;
 
 static void Button_Task(void* arg)
 {
@@ -36,14 +39,27 @@ static void Button_Task(void* arg)
     } else if (raw != stableLevel && (now - lastChangeUs) >= BUTTON_DEBOUNCE_US) {
       stableLevel = raw;
       if (stableLevel == 0) {
-        if (Wifi_IsPairing()) {
-          ESP_LOGI(tag, "Button: stop pairing");
-          Wifi_StopPairing();
-        } else {
-          ESP_LOGI(tag, "Button: start pairing");
-          Wifi_StartPairing();
+        pressStartUs = now;
+        pairingHoldFired = false;
+        if (!Cloud_PairingSessionIsLive()) {
+          if (Wifi_IsPairing()) {
+            ESP_LOGI(tag, "Button: stop pairing");
+            Wifi_StopPairing();
+          } else {
+            ESP_LOGI(tag, "Button: start pairing");
+            Wifi_StartPairing();
+          }
         }
+      } else {
+        pressStartUs = 0;
+        pairingHoldFired = false;
       }
+    }
+    if (stableLevel == 0 && pressStartUs > 0 && !pairingHoldFired && Cloud_PairingSessionIsLive() &&
+        (now - pressStartUs) >= CONFIG_BUTTON_CLOUD_PAIRING_HOLD_US) {
+      ESP_LOGI(tag, "Button: approve cloud pairing");
+      Cloud_PairingApprove();
+      pairingHoldFired = true;
     }
     vTaskDelay(pdMS_TO_TICKS(BUTTON_POLL_MS));
   }

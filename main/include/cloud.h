@@ -6,7 +6,9 @@
 #ifndef CLOUD_H__
 #define CLOUD_H__
 
+#include <cJSON.h>
 #include <esp_err.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -30,5 +32,11 @@ esp_err_t Cloud_SignChallenge(const uint8_t* challenge, size_t challengeLen,
                               uint8_t signature[CLOUD_SIGNATURE_BYTES], size_t* signatureLenOut);
 
 esp_err_t Cloud_Init(void);
+
+bool Cloud_HasGrantSecret(const char* grantSecret);
+cJSON* Cloud_ListGrantSecrets(void);
+esp_err_t Cloud_RevokeGrantSecret(const char* grantSecret);
+bool Cloud_PairingSessionIsLive(void);
+void Cloud_PairingApprove(void);
 
 #endif

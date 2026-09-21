@@ -1,7 +1,6 @@
 import { sealRoutingToken } from "./crypto.ts";
 import type { Env } from "./env.ts";
-import { isDigest, jsonError } from "./protocol.ts";
-import { proxyToDevice } from "./proxy.ts";
+import { isDigest, jsonError, MAX_PAIRING_NAME_LEN } from "./protocol.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -16,6 +15,16 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown> |
   }
 }
 
+function pairingStub(env: Env, digest: string, path: string, body: Record<string, unknown>): Promise<Response> {
+  const id = env.DEVICE.idFromName(digest);
+  const stub = env.DEVICE.get(id);
+  return stub.fetch(new Request(`https://device${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+}
+
 export async function handlePairingSession(request: Request, env: Env): Promise<Response> {
   if (request.method !== "POST") {
     return jsonError(405, "method not allowed");
@@ -25,13 +34,15 @@ export async function handlePairingSession(request: Request, env: Env): Promise<
     return jsonError(400, "invalid body");
   }
   const digest = typeof body.devicePublicKeyDigest === "string" ? body.devicePublicKeyDigest : "";
+  const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!isDigest(digest)) {
     return jsonError(400, "invalid devicePublicKeyDigest");
   }
+  if (!name || name.length > MAX_PAIRING_NAME_LEN) {
+    return jsonError(400, "invalid name");
+  }
 
-  return proxyToDevice(env, digest, "POST", "/pairing/session", JSON.stringify({ devicePublicKeyDigest: digest }), {
-    "content-type": "application/json",
-  });
+  return pairingStub(env, digest, "/pairing/session", { name });
 }
 
 export async function handlePairingToken(request: Request, env: Env): Promise<Response> {
@@ -55,14 +66,7 @@ export async function handlePairingToken(request: Request, env: Env): Promise<Re
     return jsonError(400, "invalid sessionToken");
   }
 
-  const deviceRes = await proxyToDevice(
-    env,
-    digest,
-    "POST",
-    "/pairing/token",
-    JSON.stringify({ devicePublicKeyDigest: digest, sessionToken }),
-    { "content-type": "application/json" },
-  );
+  const deviceRes = await pairingStub(env, digest, "/pairing/token", { sessionToken });
 
   if (!deviceRes.ok) {
     return deviceRes;

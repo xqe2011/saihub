@@ -92,10 +92,12 @@ On failure the relay closes the socket (reference: code 1008); the firmware trea
   "method": "POST",
   "path": "/mcp",
   "headers": { "content-type": "application/json", "…": "…" },
-  "body": { }
+  "body": { },
+  "grantSecret": "<32 URL-safe chars>"
 }
 ```
 
+- `grantSecret` is a top-level envelope field (not inside `body`). The relay copies it from the unsealed routing token. The device returns 401 `{reason:"grantSecret not found"}` unless that secret is stored in NVS.
 - Header allowlist (`FORWARDED_HEADERS`): `content-type`, `accept`, `x-lock-id`, `mcp-protocol-version`, `mcp-session-id`, `origin`.
 - Limits: path ≤ 1024 chars and must start with `/`; body ≤ 64 KB (`MAX_BODY_BYTES`), must be a JSON object or null; ≤ 16 headers, name ≤ 64 chars, value ≤ 512 chars.
 - **Headroom**: at most 8 in-flight requests per device (`MAX_PENDING_REQUESTS`); further requests wait in a FIFO queue. The device timeout (`REQUEST_TIMEOUT_MS`, default 55 s) starts **only when a request is admitted**, so queued requests do not time out early; queued fetches keep the reference DO awake.
@@ -130,11 +132,15 @@ OAuth (MCP authorization) is implemented by the relay:
 
 Browser pairing flow (`/cloud/oauth/redirect`, page served by `oauth.ts`):
 
-1. The page resolves the digest from `devicePublicKeyDigest` or the `resource` parameter, then `POST /cloud/pairing/session` → proxied to the device's `/pairing/session` → `{sessionToken, expiredAt}`; the page shows a countdown and asks the user to **hold the BOOT button for 3 s** to approve.
-2. `POST /cloud/pairing/token` with `{devicePublicKeyDigest, sessionToken}` → proxied to the device's `/pairing/token` → device returns `{grantSecret}`.
-3. The relay seals `{devicePublicKeyDigest, grantSecret}` into a routing token and redirects to `redirect_uri?code=<routingToken>&state=…`.
+1. The page asks for a client **name** (1–32 characters), then `POST /cloud/pairing/session` with `{devicePublicKeyDigest, name}`.
+2. The relay sends a WebSocket `pairingSessionRequest` `{name}` (no `requestId`; not `type: "request"` / not HTTP `/pairing/*`). The device keeps **one** RAM session (`name`, `expiredAt`) and replies `pairingSessionResponse` with `{sessionToken, expiredAt}`. The Durable Object stores the latest `sessionToken` and TTL. A second session while TTL is live is 409 `a pairing session is already active`. A full grant table (16) is 422 `grant secret limit reached (16)`.
+3. The page shows a countdown and asks the user to **hold BOOT for 3 s**. That hold is valid as soon as the session exists. `POST /cloud/pairing/token` is answered by the Durable Object: it matches `sessionToken` against the stored value (401 `session token is invalid or expired` on mismatch or TTL) and holds concurrent waiters until the device approves. The device does not see token waiters.
+4. After approval the device mints one 32-character `grantSecret`, stores `{name, grantSecret}` in NVS (`cloud.grants`), and sends a single unsolicited `pairingSessionTokenResponse`. The Durable Object stores that secret, broadcasts it to waiters, and serves later `/pairing/token` calls with the same secret until TTL.
+5. The relay seals `{devicePublicKeyDigest, grantSecret}` into a routing token and redirects to `redirect_uri?code=<routingToken>&state=…`.
 
-> **Status**: the worker side is implemented, including the public landing page at `/cloud/landing/<digest>/page`. The device-side `/pairing/session` and `/pairing/token` endpoints and the button-approval UX are **not yet in the firmware**.
+Grant list/revoke on the device: `GET /cloud/grant-secrets`, `DELETE /cloud/grant-secrets/{grantSecret}` (LAN or cloud). The human control UI has a Cloud tab.
+
+`grantSecret` is `base64url` of 24 random bytes (32 `[A-Za-z0-9_-]` characters).
 
 ## Landing page (reference worker)
 
@@ -149,7 +155,7 @@ These routes do not grant API access. MCP and REST still require a routing token
 
 - One FreeRTOS task (`cloud-relay`, 6 KB stack) owns receive parsing and dispatch; sends from HTTP handlers go through `Cloud_Write` under a mutex.
 - Receive path: fragments (opcodes 0/1) are reassembled; control frames may interleave. Oversize or malformed buffers trigger a relay restart. Each queued message carries the connection generation; stale messages are dropped.
-- Message handling: `pong` is ignored; `authRequest` is answered only while unauthenticated; `authResult` sets the authenticated flag; `request` is dispatched synchronously on the relay task (cloud-side timeouts bound the work).
+- Message handling: `pong` is ignored; `authRequest` is answered only while unauthenticated; `authResult` sets the authenticated flag; `pairingSessionRequest` runs in `cloud.c` (no `requestId`); holding BOOT sends one unsolicited `pairingSessionTokenResponse`; `request` is dispatched synchronously on the relay task (cloud-side timeouts bound the work) after `grantSecret` is checked.
 - Requests arriving during Wi-Fi pairing or with the API server down get `503 device API unavailable` from the device itself.
 
 ## Constants

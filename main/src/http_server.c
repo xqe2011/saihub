@@ -6,6 +6,7 @@
 #include "http_server.h"
 
 #include "cJSON.h"
+#include "cloud.h"
 #include "config.h"
 #include "gpio_ctrl.h"
 #include "ntp.h"
@@ -171,6 +172,7 @@ static const char* HttpServer_StatusReason(int code)
     case 204: return "No Content";
     case 302: return "Found";
     case 400: return "Bad Request";
+    case 401: return "Unauthorized";
     case 403: return "Forbidden";
     case 404: return "Not Found";
     case 405: return "Method Not Allowed";
@@ -988,6 +990,11 @@ esp_err_t HttpServer_DispatchCloud(cJSON* request, HttpServer_CloudWrite write, 
     ret = HttpServer_SendError(&ctx, 400, "body must be a JSON object or null");
     goto cleanup;
   }
+  cJSON* grantSecret = cJSON_GetObjectItemCaseSensitive(request, "grantSecret");
+  if (!cJSON_IsString(grantSecret) || !Cloud_HasGrantSecret(grantSecret->valuestring)) {
+    ret = HttpServer_SendError(&ctx, 401, "grantSecret not found");
+    goto cleanup;
+  }
   if (!server || pairingServer || Wifi_IsPairing()) {
     ret = HttpServer_SendError(&ctx, 503, "device API unavailable");
     goto cleanup;
@@ -1048,6 +1055,7 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(httpd_register_uri_handler(server, &redirect), "portal redirect failed");
   } else {
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ControlRegister(), "control ui route failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_CloudRegister(), "cloud grant routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_OpenApiRegister(), "openapi routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(), "pin routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_UartRegister(), "uart routes failed");

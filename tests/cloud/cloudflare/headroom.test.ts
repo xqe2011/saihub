@@ -21,11 +21,17 @@ function fixture(timeout = "10000", age = 0, noPing = false, closeThrows = false
       sent.push(JSON.parse(data) as RequestMessage);
     },
   } as unknown as WebSocket;
+  const stored = new Map<string, unknown>();
   const ctx = {
     setWebSocketAutoResponse: () => {},
     getWebSocketAutoResponseTimestamp: () => noPing ? null : new Date(lastSeen),
     getWebSockets: () => [socket],
-    storage: { deleteAlarm: async () => {} },
+    storage: {
+      deleteAlarm: async () => {},
+      get: async (key: string) => stored.get(key),
+      put: async (key: string, value: unknown) => { stored.set(key, value); },
+      delete: async (key: string) => { stored.delete(key); },
+    },
   } as unknown as DurableObjectState;
   const device = new Device(ctx, { REQUEST_TIMEOUT_MS: timeout } as Env);
   const request = (index: number) => device.fetch(new Request(`https://cloud/proxy?path=/request/${index}`));

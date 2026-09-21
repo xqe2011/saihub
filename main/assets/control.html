@@ -511,6 +511,32 @@ body{
   gap:.55rem;
 }
 .row-actions .btn{width:auto;flex:1;min-width:7rem}
+.grant{
+  display:flex;
+  flex-direction:column;
+  gap:.65rem;
+  padding:1rem;
+  border-radius:var(--md-sys-shape-corner-large);
+  background:var(--md-sys-color-surface-container);
+  min-width:0;
+}
+.grant-name{
+  font-weight:650;
+  font-size:1rem;
+}
+.grant-secret{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:.78rem;
+  line-height:1.4;
+  word-break:break-all;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.grant .btn{width:auto;align-self:flex-start;min-width:7rem}
+.empty{
+  margin:0;
+  padding:1rem;
+  color:var(--md-sys-color-on-surface-variant);
+}
 .snack{
   position:fixed;
   left:50%;
@@ -563,7 +589,7 @@ body{
   <header class="top">
     <div class="brand-block">
       <h1 class="brand">SAIHUB</h1>
-      <p class="subtitle">Control pins, power, and UART.</p>
+      <p class="subtitle">Control pins, power, UART, and cloud grants.</p>
     </div>
     <button class="icon-btn" type="button" id="refresh" aria-label="Refresh" title="Refresh">
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
@@ -574,6 +600,7 @@ body{
     <button class="tab" type="button" role="tab" data-tab="power" aria-selected="false">Power</button>
     <button class="tab active" type="button" role="tab" data-tab="pins" aria-selected="true">Pins</button>
     <button class="tab" type="button" role="tab" data-tab="uart" aria-selected="false">UART</button>
+    <button class="tab" type="button" role="tab" data-tab="cloud" aria-selected="false">Cloud</button>
   </nav>
 
   <section class="sheet panel" id="panel-power" aria-label="Power" role="tabpanel">
@@ -591,6 +618,11 @@ body{
     <div id="uarts"></div>
   </section>
 
+  <section class="sheet panel" id="panel-cloud" aria-label="Cloud" role="tabpanel">
+    <h2 class="section-label">Cloud grants</h2>
+    <div class="card-grid" id="grants"></div>
+  </section>
+
   <p class="footer">API for agents: <a href="/openapi.json">/openapi.json</a></p>
 </main>
 <div class="snack" id="snack" role="alert" aria-live="assertive"></div>
@@ -606,6 +638,7 @@ const snackEl=document.getElementById('snack');
 const railsEl=document.getElementById('rails');
 const pinsEl=document.getElementById('pins');
 const uartsEl=document.getElementById('uarts');
+const grantsEl=document.getElementById('grants');
 const editing=new Set();
 let uartEditing=false;
 let activeTab='pins';
@@ -613,6 +646,10 @@ let pollTimer=null;
 let busy=false;
 let snackTimer=null;
 let uartLog='';
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
 
 function showError(text){
   clearTimeout(snackTimer);
@@ -891,12 +928,45 @@ async function refresh(force){
     if(force||!uartEditing||!uartsEl.children.length){
       renderUarts(uartRes.uarts||[]);
     }
+    if(force||activeTab==='cloud'||!grantsEl.children.length){
+      try{
+        const grantRes=await api('GET','/cloud/grant-secrets');
+        renderGrants(grantRes.grants||[]);
+      }catch(e){
+        if(force||activeTab==='cloud') showError(e.message);
+      }
+    }
     if(activeTab==='uart') await pollUartReceive();
   }catch(e){
     showError(e.message||'Could not load device state.');
   }finally{
     busy=false;
   }
+}
+
+function renderGrants(list){
+  if(!list.length){
+    grantsEl.innerHTML='<p class="empty">No cloud grants. Pair an MCP client from the landing page, then hold BOOT for 3 seconds.</p>';
+    return;
+  }
+  grantsEl.innerHTML=list.map(g=>{
+    const name=escapeHtml(g.name||'Unnamed');
+    const secret=escapeHtml(g.grantSecret||'');
+    return '<div class="grant">'+
+      '<div><span class="grant-name">'+name+'</span>'+
+      '<div class="grant-secret">'+secret+'</div></div>'+
+      '<button class="btn btn-tonal" type="button" data-revoke="'+secret+'">Revoke</button>'+
+      '</div>';
+  }).join('');
+  grantsEl.querySelectorAll('[data-revoke]').forEach(btn=>{
+    btn.onclick=async()=>{
+      if(!confirm('Revoke grant '+btn.dataset.revoke+'?')) return;
+      try{
+        await api('DELETE','/cloud/grant-secrets/'+encodeURIComponent(btn.dataset.revoke));
+        await refresh(true);
+      }catch(e){showError(e.message)}
+    };
+  });
 }
 
 function pinOptions(selected){

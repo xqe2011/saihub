@@ -229,6 +229,24 @@ async function main(): Promise<void> {
   const { privateKey, digest, publicKeyB64 } = identity;
 
   const wsUrl = CLOUD.replace(/^http/, "ws") + `/cloud/device/${digest}`;
+  const grants: { name: string; grantSecret: string }[] = [];
+  let pairing: {
+    name: string;
+    expiredAt: number;
+    approved: boolean;
+  } | null = null;
+
+  const approvePairing = (ws: WebSocket): void => {
+    if (!pairing || pairing.approved) return;
+    pairing.approved = true;
+    const grantSecret = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(24)));
+    grants.push({ name: pairing.name, grantSecret });
+    ws.send(JSON.stringify({
+      type: "pairingSessionTokenResponse", success: true, grantSecret,
+    }));
+    console.log(`→ grantSecret ${grantSecret} name=${pairing.name}`);
+  };
+
   console.log(`digest: ${digest}`);
   console.log(`mcp: ${CLOUD}/device/${digest}/mcp`);
   console.log(`landing: ${CLOUD}/cloud/landing/${digest}/page`);
@@ -286,25 +304,43 @@ async function main(): Promise<void> {
         return;
       }
 
+      if (msg.type === "pairingSessionRequest") {
+        const name = typeof msg.name === "string" ? msg.name.trim() : "";
+        const now = Math.floor(Date.now() / 1000);
+        if (grants.length >= 16) {
+          ws.send(JSON.stringify({
+            type: "pairingSessionResponse", success: false,
+            reason: "grant secret limit reached (16)",
+          }));
+          return;
+        }
+        if (pairing && now < pairing.expiredAt) {
+          ws.send(JSON.stringify({
+            type: "pairingSessionResponse", success: false,
+            reason: "a pairing session is already active",
+          }));
+          return;
+        }
+        const sessionToken = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(24)));
+        pairing = {
+          name,
+          expiredAt: now + 30,
+          approved: false,
+        };
+        ws.send(JSON.stringify({
+          type: "pairingSessionResponse", success: true,
+          sessionToken, expiredAt: pairing.expiredAt,
+        }));
+        console.log(`→ sessionToken ${sessionToken} name=${name} expiredAt=${pairing.expiredAt}`);
+        setTimeout(() => approvePairing(ws), 800);
+        return;
+      }
+
       if (msg.type === "request" && typeof msg.requestId === "string" && typeof msg.path === "string") {
         const path = msg.path.split("?")[0] ?? msg.path;
         const method = typeof msg.method === "string" ? msg.method : "GET";
         console.log(`← ${method} ${msg.path}`);
 
-        if (path === "/pairing/session") {
-          const expiredAt = Math.floor(Date.now() / 1000) + 30;
-          const sessionToken = `sess-${crypto.randomUUID()}`;
-          reply(ws, msg.requestId, 200, { sessionToken, expiredAt });
-          console.log(`→ sessionToken ${sessionToken} expiredAt=${expiredAt}`);
-          return;
-        }
-        if (path === "/pairing/token") {
-          await Bun.sleep(800);
-          const grantSecret = `grant-${crypto.randomUUID()}`;
-          reply(ws, msg.requestId, 200, { grantSecret });
-          console.log(`→ grantSecret ${grantSecret}`);
-          return;
-        }
         if (path === "/mcp") {
           const rawBody = msg.body === null ? "" : JSON.stringify(msg.body);
           console.log(`  body: ${rawBody.slice(0, 200)}${rawBody.length > 200 ? "…" : ""}`);

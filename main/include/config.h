@@ -19,6 +19,10 @@
 /* Set to the deployed worker origin, e.g. wss://saihub-cloud.example.workers.dev. */
 #define CONFIG_CLOUD_URL "ws://192.168.88.190:8787"
 #define CONFIG_CLOUD_MAX_MESSAGE_BYTES (72 * 1024)
+#define CONFIG_CLOUD_GRANT_SECRET_LEN 32
+#define CONFIG_CLOUD_GRANT_NAME_MAX 32
+#define CONFIG_CLOUD_GRANT_MAX 16
+#define CONFIG_CLOUD_PAIRING_TTL_S 30
 
 #define CONFIG_LOCK_TTL_US (30ULL * 1000 * 1000)
 #define CONFIG_LOCK_MAX_COUNT 16
@@ -32,9 +36,12 @@
 #define CONFIG_GPIO_PWM_MAX_FREQ_HZ 50000U
 #define CONFIG_GPIO_PWM_DEFAULT_FREQ_HZ 1000U
 #define CONFIG_GPIO_LOGICAL_TO_HW {10, 1, 0, 23, 4, 5, 6, 24}
-#define CONFIG_BUTTON_PIN 28
 #define CONFIG_GPIO_POWER_3V3_PIN 8
 #define CONFIG_GPIO_POWER_5V_PIN 9
+
+#define CONFIG_BUTTON_PIN 28
+#define CONFIG_BUTTON_CLOUD_PAIRING_HOLD_US (3LL * 1000 * 1000)
+
 #define CONFIG_BUZZER_PIN 12
 
 /* Product UART id -> hardware UART port number (controller 0 reserved for console). */
