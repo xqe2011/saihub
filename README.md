@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-  <img src="https://count.getloli.com/@saihub?theme=booru-jaypee/" height="80" alt="counter">
+  <img src="https://count.getloli.com/@saihub?theme=booru-jaypee" height="80" alt="counter">
 </p>
 
 <p align="center"><strong>Give your agent a hand.</strong></p>
