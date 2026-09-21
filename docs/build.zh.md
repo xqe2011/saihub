@@ -67,6 +67,7 @@ bun run fake-device     # 默认连 http://127.0.0.1:8787，也可传入其他�
 | `GET /.well-known/oauth-protected-resource[/device/<digest>/mcp]` | RFC 9728 资源元数据 |
 | `POST /register`、`POST /token` | MCP OAuth——静态客户端、routing-token 换 code |
 | `GET /cloud/oauth/redirect` | 浏览器配对页 / OAuth 跳转 |
+| `GET /cloud/oauth/echo` | OAuth 回调页，展示 routing token |
 | `POST /cloud/pairing/session`、`POST /cloud/pairing/token` | 按键配对流程，转发到设备 |
 | `GET /cloud/landing/{digest}/page` | 公开落地页，含 MCP、REST、OpenAPI 地址 |
 | `GET /cloud/landing/{digest}/online` | `{ "online": true or false }`——当前是否有已鉴权的 WebSocket |

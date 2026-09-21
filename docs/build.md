@@ -67,6 +67,7 @@ bun run fake-device     # defaults to http://127.0.0.1:8787; pass another origin
 | `GET /.well-known/oauth-protected-resource[/device/<digest>/mcp]` | RFC 9728 resource metadata |
 | `POST /register`, `POST /token` | MCP OAuth — static client, routing-token code exchange |
 | `GET /cloud/oauth/redirect` | Browser pairing page / OAuth redirect |
+| `GET /cloud/oauth/echo` | OAuth callback that displays the routing token |
 | `POST /cloud/pairing/session`, `POST /cloud/pairing/token` | Button pairing flow, proxied to the device |
 | `GET /cloud/landing/{digest}/page` | Public landing page with MCP, REST, and OpenAPI URLs |
 | `GET /cloud/landing/{digest}/online` | `{ "online": true or false }` — authenticated WebSocket attached |

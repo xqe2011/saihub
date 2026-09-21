@@ -134,7 +134,7 @@ Browser pairing flow (`/cloud/oauth/redirect`, page served by `oauth.ts`):
 
 1. The page asks for a client **name** (1–32 characters), then `POST /cloud/pairing/session` with `{devicePublicKeyDigest, name}`.
 2. The relay sends a WebSocket `pairingSessionRequest` `{name}` (no `requestId`; not `type: "request"` / not HTTP `/pairing/*`). The device keeps **one** RAM session (`name`, `expiredAt`) and replies `pairingSessionResponse` with `{sessionToken, expiredAt}`. The Durable Object stores the latest `sessionToken` and TTL. A second session while TTL is live is 409 `a pairing session is already active`. A full grant table (16) is 422 `grant secret limit reached (16)`.
-3. The page shows a countdown and asks the user to **hold BOOT for 3 s**. That hold is valid as soon as the session exists. `POST /cloud/pairing/token` is answered by the Durable Object: it matches `sessionToken` against the stored value (401 `session token is invalid or expired` on mismatch or TTL) and holds concurrent waiters until the device approves. The device does not see token waiters.
+3. The page hides the name field and shows **Hold BOOT for 3 seconds** plus “This approval will create grant `name`.” That hold is valid as soon as the session exists. `POST /cloud/pairing/token` is answered by the Durable Object: it matches `sessionToken` against the stored value (401 `session token is invalid or expired` on mismatch or TTL) and holds concurrent waiters until the device approves. The device does not see token waiters.
 4. After approval the device mints one 32-character `grantSecret`, stores `{name, grantSecret}` in NVS (`cloud.grants`), and sends a single unsolicited `pairingSessionTokenResponse`. The Durable Object stores that secret, broadcasts it to waiters, and serves later `/pairing/token` calls with the same secret until TTL.
 5. The relay seals `{devicePublicKeyDigest, grantSecret}` into a routing token and redirects to `redirect_uri?code=<routingToken>&state=…`.
 
@@ -146,7 +146,8 @@ Grant list/revoke on the device: `GET /cloud/grant-secrets`, `DELETE /cloud/gran
 
 Public HTML for humans, no bearer token. Firmware logs this URL after a successful `authResult` (`http` + `CONFIG_CLOUD_URL` without the leading `ws`).
 
-- `GET /cloud/landing/<digest>/page` — copyable MCP URL (`/device/<digest>/mcp`), REST API base (`/device/<digest>`), and `openapi.json`. The page polls `/online`.
+- `GET /cloud/landing/<digest>/page` — MCP URL (`/device/<digest>/mcp`) split from REST base (`/device/<digest>`) and `openapi.json` with **OR**. REST has **Get routing token**, which starts `/cloud/oauth/redirect` with `redirect_uri=/cloud/oauth/echo`. The page polls `/online`.
+- `GET /cloud/oauth/echo` — OAuth callback HTML. Reads `code` from the query string and shows the routing token with a copy button.
 - `GET /cloud/landing/<digest>/online` — `{ "online": true | false }`. Online means an authenticated WebSocket is currently attached to that digest (heartbeat still valid). Unauthenticated or disconnected sockets are offline.
 
 These routes do not grant API access. MCP and REST still require a routing token.

@@ -2,7 +2,7 @@ import { openRoutingToken } from "./crypto.ts";
 import { Device } from "./device.ts";
 import type { Env } from "./env.ts";
 import { handleLandingOnline, handleLandingPage } from "./landing.ts";
-import { handleOauthRedirectPage, handleProtectedResourceMetadata, handleRegister, handleToken, handleWellKnown, unauthorized } from "./oauth.ts";
+import { handleOauthEchoPage, handleOauthRedirectPage, handleProtectedResourceMetadata, handleRegister, handleToken, handleWellKnown, unauthorized } from "./oauth.ts";
 import { handlePairingSession, handlePairingToken } from "./pairing.ts";
 import { isDigest, isJsonContentType, unsupportedContentType, selectForwardHeaders, jsonError } from "./protocol.ts";
 import { proxyToDevice } from "./proxy.ts";
@@ -33,6 +33,9 @@ export default {
     }
     if (pathname === "/cloud/oauth/redirect") {
       return handleOauthRedirectPage(request);
+    }
+    if (pathname === "/cloud/oauth/echo") {
+      return handleOauthEchoPage(request);
     }
     if (pathname === "/cloud/pairing/session") {
       return handlePairingSession(request, env);

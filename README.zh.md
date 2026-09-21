@@ -62,7 +62,7 @@ Saihub 是给编程智能体用的口袋 IO 板。烧好固件、连上 Wi-Fi、
 | 数据通路 | 直达设备 | 经你的 Cloudflare 账号 | 经我们的 Cloudflare 账号 |
 | 费用 | 免费 | Cloudflare 免费额度 | 购板即含 |
 
-板子与中继鉴权成功后，串口日志会打印落地页 `https://<源站>/cloud/landing/<digest>/page`，显示设备是否在线，并可一键复制 MCP、REST 和 OpenAPI 地址。
+板子与中继鉴权成功后，串口日志会打印落地页 `https://<源站>/cloud/landing/<digest>/page`，显示设备是否在线，可复制 MCP 或 REST/OpenAPI 地址，并可获取用于鉴权的Token。
 
 中继协议本身不绑定 Cloudflare——仓库里的 Worker 只是参考实现，详见[协议设计笔记](docs/design-notes.md)（英文）。
 

@@ -377,6 +377,10 @@ describe("cloudflare device proxy e2e", () => {
     expect(html).toContain(`${baseUrl}/device/${digest}/openapi.json`);
     expect(html).toContain(`value="${baseUrl}/device/${digest}"`);
     expect(html).toContain(`/cloud/landing/${digest}/online`);
+    expect(html).toContain(">OR<");
+    expect(html).toContain("cloud%2Foauth%2Fecho");
+    expect(html).toContain("Get routing token");
+    expect(html).toContain("REST calls need a routing token first.");
 
     const offline = await fetch(`${baseUrl}/cloud/landing/${digest}/online`);
     expect(offline.status).toBe(200);
@@ -418,7 +422,21 @@ describe("cloudflare device proxy e2e", () => {
     expect(ok.headers.get("content-type") ?? "").toContain("text/html");
     const html = await ok.text();
     expect(html).toContain("Name this client");
-    expect(html).toContain("Press button for 3 seconds.");
+    expect(html).toContain("Hold BOOT for 3 seconds");
+    expect(html).toContain("This approval will create grant");
+  }, 30_000);
+
+  test("oauth echo page shows routing token and copy button", async () => {
+    const missingMethod = await fetch(`${baseUrl}/cloud/oauth/echo`, { method: "POST" });
+    expect(missingMethod.status).toBe(405);
+
+    const page = await fetch(`${baseUrl}/cloud/oauth/echo`);
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type") ?? "").toContain("text/html");
+    const html = await page.text();
+    expect(html).toContain("Routing token");
+    expect(html).toContain(">Copy<");
+    expect(html).toContain('get("code")');
   }, 30_000);
 
   test("token endpoint exchanges routingToken code", async () => {

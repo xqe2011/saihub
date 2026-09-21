@@ -511,27 +511,37 @@ body{
   gap:.55rem;
 }
 .row-actions .btn{width:auto;flex:1;min-width:7rem}
-.grant{
+.grant-list{
+  list-style:none;
+  margin:0;
+  padding:0;
+}
+.grant-item{
   display:flex;
-  flex-direction:column;
-  gap:.65rem;
-  padding:1rem;
-  border-radius:var(--md-sys-shape-corner-large);
-  background:var(--md-sys-color-surface-container);
+  align-items:center;
+  justify-content:space-between;
+  gap:1rem;
+  padding:.9rem .15rem .9rem .35rem;
+  border-bottom:1px solid var(--md-sys-color-outline-variant);
   min-width:0;
 }
+.grant-item:last-child{border-bottom:0}
+.grant-meta{min-width:0;flex:1}
 .grant-name{
+  display:block;
   font-weight:650;
   font-size:1rem;
 }
 .grant-secret{
+  display:block;
+  margin-top:.2rem;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-size:.78rem;
   line-height:1.4;
   word-break:break-all;
   color:var(--md-sys-color-on-surface-variant);
 }
-.grant .btn{width:auto;align-self:flex-start;min-width:7rem}
+.grant-item .btn{width:auto;flex:none;min-width:6.5rem}
 .empty{
   margin:0;
   padding:1rem;
@@ -620,7 +630,7 @@ body{
 
   <section class="sheet panel" id="panel-cloud" aria-label="Cloud" role="tabpanel">
     <h2 class="section-label">Cloud grants</h2>
-    <div class="card-grid" id="grants"></div>
+    <div id="grants"></div>
   </section>
 
   <p class="footer">API for agents: <a href="/openapi.json">/openapi.json</a></p>
@@ -949,15 +959,15 @@ function renderGrants(list){
     grantsEl.innerHTML='<p class="empty">No cloud grants. Pair an MCP client from the landing page, then hold BOOT for 3 seconds.</p>';
     return;
   }
-  grantsEl.innerHTML=list.map(g=>{
+  grantsEl.innerHTML='<ul class="grant-list">'+list.map(g=>{
     const name=escapeHtml(g.name||'Unnamed');
     const secret=escapeHtml(g.grantSecret||'');
-    return '<div class="grant">'+
-      '<div><span class="grant-name">'+name+'</span>'+
-      '<div class="grant-secret">'+secret+'</div></div>'+
+    return '<li class="grant-item">'+
+      '<div class="grant-meta"><span class="grant-name">'+name+'</span>'+
+      '<span class="grant-secret">'+secret+'</span></div>'+
       '<button class="btn btn-tonal" type="button" data-revoke="'+secret+'">Revoke</button>'+
-      '</div>';
-  }).join('');
+      '</li>';
+  }).join('')+'</ul>';
   grantsEl.querySelectorAll('[data-revoke]').forEach(btn=>{
     btn.onclick=async()=>{
       if(!confirm('Revoke grant '+btn.dataset.revoke+'?')) return;

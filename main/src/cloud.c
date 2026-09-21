@@ -788,7 +788,7 @@ esp_err_t Cloud_RevokeGrantSecret(const char* grantSecret)
     w++;
   }
   grantCount = w;
-  Cloud_GrantSave();
+  Cloud_SaveGrantSecrets();
   xSemaphoreGive(grantMutex);
   return ESP_OK;
 }

@@ -32,6 +32,8 @@ function landingPageHtml(origin: string, digest: string): string {
   const restUrl = `${origin}/device/${digest}`;
   const openapiUrl = `${origin}/device/${digest}/openapi.json`;
   const onlineUrl = `/cloud/landing/${digest}/online`;
+  const echoUrl = `${origin}/cloud/oauth/echo`;
+  const tokenUrl = `/cloud/oauth/redirect?devicePublicKeyDigest=${encodeURIComponent(digest)}&redirect_uri=${encodeURIComponent(echoUrl)}&resource=${encodeURIComponent(restUrl)}`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -168,6 +170,42 @@ body{
 }
 .copy:active{transform:scale(.97)}
 .copy.done{background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-on-secondary-container);box-shadow:none}
+.or{
+  display:flex;
+  align-items:center;
+  gap:.75rem;
+  margin:1.15rem .35rem;
+  font-size:.72rem;
+  font-weight:700;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.or::before,.or::after{
+  content:"";
+  flex:1;
+  height:1px;
+  background:var(--md-sys-color-outline);
+  opacity:.35;
+}
+.cta{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  min-height:2.75rem;
+  margin-top:.25rem;
+  border-radius:999px;
+  padding:.7rem 1.25rem;
+  font:inherit;
+  font-size:.92rem;
+  font-weight:650;
+  text-decoration:none;
+  background:var(--md-sys-color-primary);
+  color:var(--md-sys-color-on-primary);
+  box-shadow:var(--md-sys-elevation-1);
+}
+.cta:active{transform:scale(.985)}
 </style>
 </head>
 <body>
@@ -180,7 +218,7 @@ body{
     <div class="pill" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Checking</span></div>
   </header>
   <section class="sheet">
-    <h2 class="section-label">Cloud URLs</h2>
+    <h2 class="section-label">MCP</h2>
     <p class="hint">Paste the MCP URL into Cursor, Claude Code, or Codex CLI. The client completes OAuth in the browser.</p>
     <div class="rows">
       <div class="row">
@@ -192,6 +230,10 @@ body{
           <button class="copy" type="button" data-copy="mcp">Copy</button>
         </div>
       </div>
+    </div>
+    <div class="or">OR</div>
+    <h2 class="section-label">REST + OpenAPI</h2>
+    <div class="rows">
       <div class="row">
         <div class="row-head">
           <div class="field">
@@ -211,6 +253,8 @@ body{
         </div>
       </div>
     </div>
+    <p class="hint">REST calls need a routing token first.</p>
+    <a class="cta" href="${escapeAttr(tokenUrl)}">Get routing token</a>
   </section>
 </main>
 <script>
