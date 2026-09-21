@@ -4,7 +4,6 @@
 Requires KiCad CLI, ImageMagick and the Python reportlab package.
 Run export_placement.py --routed first when validating a release.
 """
-import csv
 import json
 import os
 from pathlib import Path
@@ -13,6 +12,7 @@ import shutil
 import subprocess
 
 from identity import identity
+from export_bom import write_bom
 
 from reportlab.lib.pagesizes import landscape, A4
 from reportlab.lib.utils import ImageReader
@@ -58,20 +58,7 @@ def main():
         pdf.drawString(36, 23, 'Review preview - not to scale. Use the editable KiCad project for dimensions and fabrication.')
         pdf.showPage()
     pdf.save()
-    with (docs/'bom.csv').open('w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['Reference','Quantity','Value','MPN_or_procurement_spec','Footprint','Notes','Datasheet'])
-        for part in data['parts']:
-            if part['ref'].startswith('TP'):
-                continue
-            mpn = part['mpn']
-            if part['sym'] == 'R':
-                mpn = f"Generic {part['value']} ohm, 1%, 0603, >=0.1W"
-            elif part['sym'] == 'C':
-                size = next(size for size in ['1210','0805','0603'] if size in part['foot'])
-                mpn = f"Generic {part['value']}F, X7R, >=10V, +/-10%, {size}"
-            writer.writerow([part['ref'], 1, part['value'], mpn, part['foot'], part['desc']+'; '+part['side']+' assembly', part['url']])
-        writer.writerow(['ANT1 (off-board)',1,'Dual-band external antenna','50 ohm 2.4/5GHz U.FL-compatible antenna; qualify with final enclosure','Not PCB mounted','Required accessory; not included in placement file',''])
+    write_bom(docs/'bom.csv', data['parts'])
     print('Updated docs/bom.csv, docs/schematic.pdf and docs/pcb.pdf')
 
 if __name__ == '__main__':

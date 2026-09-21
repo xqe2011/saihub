@@ -1,51 +1,32 @@
 Reference,Quantity,Value,MPN_or_procurement_spec,Footprint,Notes,Datasheet
 J1,1,USB4105-GF-A,USB4105-GF-A,Saihub:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal,; top assembly,https://gct.co/files/drawings/usb4105.pdf
-R1,1,5.1k,"Generic 5.1k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
-R2,1,5.1k,"Generic 5.1k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
+"R1, R2",2,5.1k,"Generic 5.1k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
 U1,1,USBLC6-2SC6,USBLC6-2SC6,Saihub:SOT-23-6,; top assembly,https://www.st.com/resource/en/datasheet/usblc6-2.pdf
-C1,1,100n,"Generic 100nF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
-R3,1,22,"Generic 22 ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
-R4,1,22,"Generic 22 ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
+"C1, C3, C5, C7, C9, C10, C13, C15",8,100n,"Generic 100nF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
+"R3, R4",2,22,"Generic 22 ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
 F1,1,3A fuse,0467003.NR,Saihub:Fuse_1206_3216Metric,"Littelfuse 467, 3A fast fuse; top assembly",https://www.littelfuse.com/~/media/electronics/datasheets/fuses/littelfuse_fuse_467_datasheet.pdf
 D2,1,SMF5.0A,SMF5.0A,Saihub:D_SOD-123F,; top assembly,https://www.yint-electronic.com/products/emsproduct/tvs/smf5-0a.html
 U2,1,SGM6232YPS8G/TR,SGM6232YPS8G/TR,Saihub:SGM6232_SOIC8_EP,EN open for auto-start; 3.314V divider; exposed pad GND; top assembly,https://www.sg-micro.com/rect/assets/9fe04e94-334c-4982-964b-fc08001cd9ac/SGM6232.pdf
 L1,1,4.7uH,SRP5030TA-4R7M,Saihub:SRP5030TA,"Shielded 5.7x5.2x2.8mm; 4.6A Irms, 6A Isat per manufacturer drawing; top assembly",https://bourns.com/docs/product-datasheets/SRP5030TA.pdf
 D1,1,SS34,SS34,Saihub:D_SMA,; top assembly,https://www.diodes.com/assets/Datasheets/ds23013.pdf
 C2,1,22u,"Generic 22uF, X7R, >=10V, +/-10%, 1210",Saihub:C_1210_3225Metric,"X7R, 10V minimum; top assembly",
-C3,1,100n,"Generic 100nF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
 C4,1,47u,"Generic 47uF, X7R, >=10V, +/-10%, 1210",Saihub:C_1210_3225Metric,"X7R, 10V minimum; top assembly",
-C5,1,100n,"Generic 100nF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
 R15,1,33k,"Generic 33k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
 R16,1,10.5k,"Generic 10.5k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
-R17,1,10k,"Generic 10k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
+"R5, R6, R13, R14, R17",5,10k,"Generic 10k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
 R18,1,10,"Generic 10 ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
 C14,1,10n,"Generic 10nF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
-C15,1,100n,"Generic 100nF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
 C16,1,5.6n,"Generic 5.6nF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
 U3,1,ESPC5-32E-H4,ESPC5-32E-H4,Saihub:ESPC5-32E-H4,; top assembly,https://atta.szlcsc.com/upload/public/pdf/source/20251016/AE26C73F5F73E1BD024C1C95B3A92329.pdf
 C6,1,10u,"Generic 10uF, X7R, >=10V, +/-10%, 0805",Saihub:C_0805_2012Metric,"X7R, 10V minimum; top assembly",
-C7,1,100n,"Generic 100nF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
-R5,1,10k,"Generic 10k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
-C8,1,1u,"Generic 1uF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
-R6,1,10k,"Generic 10k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
+"C8, C11, C12",3,1u,"Generic 1uF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
 SW1,1,BOOT,EVQP7A01P,Saihub:SW_SPST_EVQP7A,"3.5 x 2.9 mm body, 1.35 mm high, side-actuated toward connector edge; top assembly",https://industry.panasonic.com/ap/en/products/control/switch/light-touch/number/evqp7a01p
 J2,1,1x12 2.54mm right-angle,61301211021,Saihub:PinHeader_1x12_P2.54mm_Horizontal,Wurth WR-PHD 2.54mm 1x12 right-angle male; top assembly,https://www.we-online.com/components/products/datasheet/61301211021.pdf
-U4,1,TPS2553DBVR,TPS2553DBVR,Saihub:SOT-23-6,; top assembly,https://www.ti.com/lit/ds/symlink/tps2553.pdf
-R7,1,26.1k,"Generic 26.1k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
-R9,1,100k,"Generic 100k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
-C9,1,100n,"Generic 100nF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
-C11,1,1u,"Generic 1uF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
-R13,1,10k,"Generic 10k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
-U5,1,TPS2553DBVR,TPS2553DBVR,Saihub:SOT-23-6,; top assembly,https://www.ti.com/lit/ds/symlink/tps2553.pdf
-R8,1,26.1k,"Generic 26.1k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
-R10,1,100k,"Generic 100k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
-C10,1,100n,"Generic 100nF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
-C12,1,1u,"Generic 1uF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
-R14,1,10k,"Generic 10k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
+"U4, U5",2,TPS2553DBVR,TPS2553DBVR,Saihub:SOT-23-6,; top assembly,https://www.ti.com/lit/ds/symlink/tps2553.pdf
+"R7, R8",2,26.1k,"Generic 26.1k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
+"R9, R10, R12",3,100k,"Generic 100k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
 BZ1,1,KLJ-5020 3.3V,KLJ-5020,Saihub:KLJ-5020,; top assembly,https://datasheet.lcsc.com/datasheet/pdf/5a334e56ebfeea427b46ed3bd7f9e2de.pdf?productCode=C556937
 Q1,1,AO3400A,AO3400A,Saihub:SOT-23,; top assembly,https://www.aosmd.com/sites/default/files/res/datasheets/AO3400A.pdf
 D3,1,SS14,SS14,Saihub:D_SMA,; top assembly,https://www.diodes.com/assets/Datasheets/ds23001.pdf
 R11,1,100,"Generic 100 ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
-R12,1,100k,"Generic 100k ohm, 1%, 0603, >=0.1W",Saihub:R_0603_1608Metric,"1%, 0603; top assembly",
-C13,1,100n,"Generic 100nF, X7R, >=10V, +/-10%, 0603",Saihub:C_0603_1608Metric,"X7R, 10V minimum; top assembly",
 ANT1 (off-board),1,Dual-band external antenna,50 ohm 2.4/5GHz U.FL-compatible antenna; qualify with final enclosure,Not PCB mounted,Required accessory; not included in placement file,

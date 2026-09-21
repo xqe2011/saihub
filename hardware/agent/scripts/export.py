@@ -3,6 +3,7 @@
 import csv,json,os,shutil,subprocess,zipfile,hashlib
 from pathlib import Path
 from identity import identity
+from export_bom import write_bom
 R=Path(__file__).resolve().parents[2]
 for directory in ('agent/validation', 'agent/previews', 'agent/routing', 'docs'):
     (R/directory).mkdir(parents=True, exist_ok=True)
@@ -24,15 +25,7 @@ for side,layers in [('top','F.Cu,F.SilkS,F.Fab,Edge.Cuts'),('bottom','B.Cu,B.Sil
 run('pcb','export','svg','--mode-single','--fit-page-to-board','--exclude-drawing-sheet','-l','F.Fab,Edge.Cuts','-o',R/'agent/previews/assembly.svg',b)
 run('pcb','export','svg','--mode-single','--fit-page-to-board','--exclude-drawing-sheet','--mirror','-l','B.Fab,Edge.Cuts','-o',R/'agent/previews/assembly-bottom.svg',b)
 parts=json.loads((R/'agent/design.json').read_text())['parts']
-with (m/'bom.csv').open('w',newline='') as f:
- w=csv.writer(f);w.writerow(['Reference','Quantity','Value','MPN_or_procurement_spec','Footprint','Notes','Datasheet'])
- for a in parts:
-  if a['ref'].startswith('TP'):continue
-  mpn=a['mpn']
-  if a['sym']=='R':mpn=f"Generic {a['value']} ohm, 1%, 0603, >=0.1W"
-  elif a['sym']=='C':mpn=f"Generic {a['value']}F, X7R, >=10V, +/-10%, "+next(size for size in ['1210','0805','0603'] if size in a['foot'])
-  w.writerow([a['ref'],1,a['value'],mpn,a['foot'],a['desc']+'; '+a['side']+' assembly',a['url']])
- w.writerow(['ANT1 (off-board)',1,'Dual-band external antenna','50 ohm 2.4/5GHz U.FL-compatible antenna; qualify with final enclosure','Not PCB mounted','Required accessory; not included in placement file',''])
+write_bom(m/'bom.csv', parts)
 # Do not send PCB test pads to the assembly pick-and-place machine.
 with (m/'placement.csv').open() as f:rows=list(csv.reader(f))
 with (m/'placement.csv').open('w',newline='') as f:csv.writer(f).writerows([rows[0]]+[r for r in rows[1:] if not r[0].startswith('TP')])
