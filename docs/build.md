@@ -36,12 +36,12 @@ Requires [Bun](https://bun.sh) (or Node) and [Wrangler](https://developers.cloud
 ```bash
 cd cloud/cloudflare
 bun install
-bun run dev            # wrangler dev → http://127.0.0.1:8787
+bun run dev            # applies local D1 migrations, then wrangler dev → http://127.0.0.1:8787
 ```
 
-For a dev loop, point the firmware's `CONFIG_CLOUD_URL` at your machine over the LAN, e.g. `ws://<your-lan-ip>:8787`. `.dev.vars` supplies a local `ROUTING_TOKEN_SECRET` to `wrangler dev` only; production keeps it in `wrangler secret put ROUTING_TOKEN_SECRET` — never commit a real secret.
+For a dev loop, point the firmware's `CONFIG_CLOUD_URL` at your machine over the LAN, e.g. `ws://<your-lan-ip>:8787`. `.dev.vars` supplies local `ROUTING_TOKEN_SECRET` and `ADMIN_TOKEN` for `wrangler dev`; production uses `wrangler secret put` — never commit a real secret.
 
-`wrangler.jsonc` binds the `DEVICE` Durable Object (SQLite class) and defaults `AUTH_TIMEOUT_MS` / `REQUEST_TIMEOUT_MS` (10 s / 55 s). `wrangler.test.jsonc` deploys a separate `saihub-cloud-test` worker with 2 s timeouts for integration tests.
+`wrangler.jsonc` binds the `DEVICE` Durable Object (SQLite class), a D1 `device_whitelist` database, and `AUTH_TIMEOUT_MS` / `REQUEST_TIMEOUT_MS` (10 s / 55 s); devices not in the whitelist get 403. `wrangler.test.jsonc` deploys a separate `saihub-cloud-test` worker with 2 s timeouts for integration tests.
 
 ### Checks and tests
 
@@ -73,3 +73,7 @@ bun run fake-device     # defaults to http://127.0.0.1:8787; pass another origin
 | `GET /cloud/landing/{digest}/online` | `{ "online": true or false }` — authenticated WebSocket attached |
 | `GET /cloud/device/{digest}` | Device WebSocket — no bearer; the challenge handshake authenticates |
 | `/device/{digest}/…` | Proxied REST + `/mcp` — bearer routing token, JSON only |
+| `GET /admin` | Admin UI — enter `ADMIN_TOKEN` to manage the device whitelist |
+| `GET /admin/devices/whitelist?page=` | Paginated whitelist (`Authorization: Bearer <ADMIN_TOKEN>`) |
+| `POST /admin/devices/whitelist` | Add `{ "digest" }` to the whitelist |
+| `DELETE /admin/devices/whitelist/{digest}` | Remove a digest from the whitelist |

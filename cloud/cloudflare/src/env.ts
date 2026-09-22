@@ -1,8 +1,10 @@
 export interface Env {
   DEVICE: DurableObjectNamespace;
+  DB: D1Database;
   AUTH_TIMEOUT_MS: string;
   REQUEST_TIMEOUT_MS: string;
   ROUTING_TOKEN_SECRET: string;
+  ADMIN_TOKEN: string;
 }
 
 export const DEFAULT_AUTH_TIMEOUT_MS = 10_000;

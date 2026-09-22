@@ -1,6 +1,7 @@
 import { sealRoutingToken } from "./crypto.ts";
 import type { Env } from "./env.ts";
 import { isDigest, jsonError, MAX_PAIRING_NAME_LEN } from "./protocol.ts";
+import { requireWhitelisted } from "./whitelist.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -41,6 +42,10 @@ export async function handlePairingSession(request: Request, env: Env): Promise<
   if (!name || name.length > MAX_PAIRING_NAME_LEN) {
     return jsonError(400, "invalid name");
   }
+  const denied = await requireWhitelisted(env, digest);
+  if (denied) {
+    return denied;
+  }
 
   return pairingStub(env, digest, "/pairing/session", { name });
 }
@@ -64,6 +69,10 @@ export async function handlePairingToken(request: Request, env: Env): Promise<Re
   }
   if (!sessionToken) {
     return jsonError(400, "invalid sessionToken");
+  }
+  const denied = await requireWhitelisted(env, digest);
+  if (denied) {
+    return denied;
   }
 
   const deviceRes = await pairingStub(env, digest, "/pairing/token", { sessionToken });

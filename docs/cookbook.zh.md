@@ -154,13 +154,16 @@ UART：`list_uarts`、`configure_uart`、`uart_transmit`、`uart_receive`、`uar
 cd cloud/cloudflare
 bun install          # 或：npm install
 npx wrangler login
+npx wrangler d1 create saihub
+# 把返回的 database_id 填进 wrangler.jsonc
 openssl rand -hex 32
 npx wrangler secret put ROUTING_TOKEN_SECRET
-# 按提示粘贴刚生成的随机 hex
-npx wrangler deploy
+openssl rand -hex 32
+npx wrangler secret put ADMIN_TOKEN
+bun run deploy          # 先应用 D1 迁移，再 wrangler deploy
 ```
 
-部署完成后，Wrangler 会输出 `*.workers.dev` 源站地址，例如 `https://saihub-cloud.<account>.workers.dev`。也可以在 Cloudflare 控制台绑定自定义域名。
+部署完成后，Wrangler 会输出 `*.workers.dev` 源站地址，例如 `https://saihub-cloud.<account>.workers.dev`。也可以在 Cloudflare 控制台绑定自定义域名。打开该源站的 `/admin`，输入 `ADMIN_TOKEN`，把设备 digest 加入白名单后才能连接；未列入的 digest 会返回 403。
 
 ### 配置固件指向你的 Worker
 

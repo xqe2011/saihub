@@ -17,9 +17,18 @@
       "new_sqlite_classes": ["Device"]
     }
   ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "saihub-test",
+      "database_id": "00000000-0000-4000-8000-000000000002",
+      "migrations_dir": "migrations"
+    }
+  ],
   "vars": {
     "AUTH_TIMEOUT_MS": "2000",
     "REQUEST_TIMEOUT_MS": "2000",
-    "ROUTING_TOKEN_SECRET": "local-dev-routing-token-secret"
+    "ROUTING_TOKEN_SECRET": "local-dev-routing-token-secret",
+    "ADMIN_TOKEN": "local-dev-admin-token"
   }
 }

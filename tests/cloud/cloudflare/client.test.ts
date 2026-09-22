@@ -7,6 +7,7 @@ import { PUBLIC_KEY_BYTES, SIGNATURE_BYTES } from "../../../cloud/cloudflare/src
 const PACKAGE_DIR = join(import.meta.dir, "../../../cloud/cloudflare");
 const BASE_PORT = 8787 + Math.floor(Math.random() * 1000);
 const ROUTING_TOKEN_SECRET = "local-dev-routing-token-secret";
+const ADMIN_TOKEN = "local-dev-admin-token";
 const ACCESS_TOKEN_EXPIRES_IN = 315_360_000;
 
 /** Stable placeholder digests for offline/oauth path tests (Base58Check of SHA-256(label)[0..19]). */
@@ -117,6 +118,37 @@ async function bearerFor(digest: string, grantSecret = "grant-secret"): Promise<
   return sealRoutingToken(ROUTING_TOKEN_SECRET, { devicePublicKeyDigest: digest, grantSecret });
 }
 
+async function applyLocalMigrations(persistTo: string): Promise<void> {
+  const apply = spawn({
+    cmd: [
+      "bun", "run", "db:migrations:apply:local", "--",
+      "--config", "wrangler.test.jsonc", "--persist-to", persistTo,
+    ],
+    cwd: PACKAGE_DIR,
+    stdout: "pipe",
+    stderr: "pipe",
+    stdin: "ignore",
+    env: { ...process.env, CI: "true", WRANGLER_SEND_METRICS: "false" },
+  });
+  const code = await apply.exited;
+  if (code !== 0) {
+    const stdout = await new Response(apply.stdout).text();
+    const stderr = await new Response(apply.stderr).text();
+    throw new Error(`d1 migrations apply failed: ${code}\n${stdout}\n${stderr}`);
+  }
+}
+
+async function whitelistDigest(baseUrl: string, digest: string): Promise<void> {
+  const res = await fetch(`${baseUrl}/admin/devices/whitelist`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${ADMIN_TOKEN}`, "content-type": "application/json" },
+    body: JSON.stringify({ digest }),
+  });
+  if (res.status !== 201 && res.status !== 409) {
+    throw new Error(`whitelist ${digest} failed: ${res.status} ${await res.text()}`);
+  }
+}
+
 async function generateDeviceIdentity(): Promise<{
   privateKey: CryptoKey;
   publicKeyRaw: Uint8Array;
@@ -195,6 +227,7 @@ function waitForMessage<T extends DeviceInbound>(
 }
 
 async function openDeviceSocket(baseUrl: string, digest: string): Promise<WebSocket> {
+  await whitelistDigest(baseUrl, digest);
   const wsUrl = baseUrl.replace(/^http/, "ws") + `/cloud/device/${digest}`;
   const ws = new WebSocket(wsUrl);
   await new Promise<void>((resolve, reject) => {
@@ -268,6 +301,8 @@ describe("cloudflare device proxy e2e", () => {
     identity = await generateDeviceIdentity();
     const port = BASE_PORT;
     baseUrl = `http://127.0.0.1:${port}`;
+    const persistTo = `.wrangler/e2e-${port}`;
+    await applyLocalMigrations(persistTo);
 
     proc = spawn({
       cmd: [
@@ -282,7 +317,7 @@ describe("cloudflare device proxy e2e", () => {
         "127.0.0.1",
         "--local",
         "--persist-to",
-        `.wrangler/e2e-${port}`,
+        persistTo,
       ],
       cwd: PACKAGE_DIR,
       stdout: "pipe",
@@ -294,6 +329,10 @@ describe("cloudflare device proxy e2e", () => {
     });
 
     await waitForReady(baseUrl);
+    await whitelistDigest(baseUrl, identity.digest);
+    for (const digest of Object.values(PLACEHOLDER)) {
+      await whitelistDigest(baseUrl, digest);
+    }
   }, 120_000);
 
   afterAll(async () => {
@@ -1037,6 +1076,7 @@ describe("cloudflare device proxy e2e", () => {
 
   test("receives a fragmented JSON response larger than the old 64 KiB limit", async () => {
     const other = await generateDeviceIdentity();
+    await whitelistDigest(baseUrl, other.digest);
     const device = spawn(["node", join(import.meta.dir, "fragment-device.mjs"), JSON.stringify({
       url: baseUrl.replace(/^http/, "ws"), digest: other.digest, publicKeyB64: other.publicKeyB64,
       privateKey: await crypto.subtle.exportKey("jwk", other.privateKey),
@@ -1240,5 +1280,132 @@ describe("cloudflare device proxy e2e", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(503);
+  }, 30_000);
+
+  test("admin page and whitelist api", async () => {
+    const page = await fetch(`${baseUrl}/admin`);
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type") ?? "").toContain("text/html");
+    const html = await page.text();
+    expect(html).toContain("Admin token");
+    expect(html).toContain('failureMessage(body, "Request failed (" + res.status + ")")');
+
+    const missing = await fetch(`${baseUrl}/admin/devices/whitelist`);
+    expect(missing.status).toBe(401);
+
+    const wrong = await fetch(`${baseUrl}/admin/devices/whitelist`, { headers: { authorization: "Bearer wrong-token" } });
+    expect(wrong.status).toBe(401);
+
+    const listed = await fetch(`${baseUrl}/admin/devices/whitelist?page=1`, { headers: { authorization: `Bearer ${ADMIN_TOKEN}` } });
+    expect(listed.status).toBe(200);
+    const body = (await listed.json()) as { page: number; pageSize: number; total: number; items: { digest: string; created_at: number }[] };
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(50);
+    expect(body.total).toBeGreaterThan(0);
+    expect(body.items.some((item) => item.digest === identity.digest)).toBe(true);
+
+    const invalidPage = await fetch(`${baseUrl}/admin/devices/whitelist?page=0`, { headers: { authorization: `Bearer ${ADMIN_TOKEN}` } });
+    expect(invalidPage.status).toBe(400);
+
+    const extra = await generateDeviceIdentity();
+    const created = await fetch(`${baseUrl}/admin/devices/whitelist`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify({ digest: extra.digest }),
+    });
+    expect(created.status).toBe(201);
+    const createdBody = (await created.json()) as { digest: string; created_at: number };
+    expect(createdBody.digest).toBe(extra.digest);
+    expect(createdBody.created_at).toBeGreaterThan(0);
+
+    const duplicate = await fetch(`${baseUrl}/admin/devices/whitelist`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify({ digest: extra.digest }),
+    });
+    expect(duplicate.status).toBe(409);
+
+    const deleted = await fetch(`${baseUrl}/admin/devices/whitelist/${extra.digest}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(deleted.status).toBe(200);
+    expect(((await deleted.json()) as { digest: string }).digest).toBe(extra.digest);
+
+    const missingDelete = await fetch(`${baseUrl}/admin/devices/whitelist/${extra.digest}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(missingDelete.status).toBe(404);
+  }, 30_000);
+
+  test("admin whitelist delete disconnects device websocket", async () => {
+    const extra = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, extra.digest);
+    try {
+      const auth = await authenticateDevice(ws, extra);
+      expect(auth.success).toBe(true);
+
+      const online = await fetch(`${baseUrl}/cloud/landing/${extra.digest}/online`);
+      expect(online.status).toBe(200);
+      expect((await online.json()) as { online: boolean }).toEqual({ online: true });
+
+      const closed = new Promise<number>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("websocket did not close after whitelist delete")), 10_000);
+        ws.addEventListener("close", (event) => {
+          clearTimeout(timer);
+          resolve(event.code);
+        });
+      });
+
+      const deleted = await fetch(`${baseUrl}/admin/devices/whitelist/${extra.digest}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      });
+      expect(deleted.status).toBe(200);
+      expect(((await deleted.json()) as { digest: string }).digest).toBe(extra.digest);
+      expect(await closed).toBe(1008);
+
+      const after = await fetch(`${baseUrl}/cloud/landing/${extra.digest}/online`);
+      expect(after.status).toBe(200);
+      expect((await after.json()) as { online: boolean }).toEqual({ online: false });
+
+      const reconnect = await fetch(`${baseUrl}/cloud/device/${extra.digest}`, {
+        headers: {
+          Upgrade: "websocket",
+          Connection: "Upgrade",
+          "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version": "13",
+        },
+      });
+      expect(reconnect.status).toBe(403);
+    } finally {
+      ws.close();
+    }
+  }, 30_000);
+
+  test("rejects unknown digest with 403", async () => {
+    const other = await generateDeviceIdentity();
+    const token = await bearerFor(other.digest);
+    const http = await fetch(`${baseUrl}/device/${other.digest}/pin/1`, { headers: { authorization: `Bearer ${token}` } });
+    expect(http.status).toBe(403);
+    expect(((await http.json()) as { reason: string }).reason).toBe("digest not in whitelist");
+
+    const pairing = await fetch(`${baseUrl}/cloud/pairing/session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ devicePublicKeyDigest: other.digest, name: "Cursor" }),
+    });
+    expect(pairing.status).toBe(403);
+
+    const ws = await fetch(`${baseUrl}/cloud/device/${other.digest}`, {
+      headers: {
+        Upgrade: "websocket",
+        Connection: "Upgrade",
+        "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version": "13",
+      },
+    });
+    expect(ws.status).toBe(403);
   }, 30_000);
 });

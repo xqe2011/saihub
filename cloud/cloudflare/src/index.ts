@@ -1,3 +1,4 @@
+import { handleAdmin, isAdminPath } from "./admin.ts";
 import { openRoutingToken } from "./crypto.ts";
 import { Device } from "./device.ts";
 import type { Env } from "./env.ts";
@@ -6,6 +7,7 @@ import { handleOauthEchoPage, handleOauthRedirectPage, handleProtectedResourceMe
 import { handlePairingSession, handlePairingToken } from "./pairing.ts";
 import { isDigest, isJsonContentType, unsupportedContentType, selectForwardHeaders, jsonError } from "./protocol.ts";
 import { proxyToDevice } from "./proxy.ts";
+import { requireWhitelisted } from "./whitelist.ts";
 
 export { Device };
 
@@ -43,6 +45,9 @@ export default {
     if (pathname === "/cloud/pairing/token") {
       return handlePairingToken(request, env);
     }
+    if (isAdminPath(pathname)) {
+      return handleAdmin(request, env);
+    }
 
     const landingMatch = LANDING_RE.exec(pathname);
     if (landingMatch) {
@@ -67,7 +72,7 @@ export default {
   },
 };
 
-function handleDeviceWebSocket(request: Request, env: Env, digest: string): Promise<Response> | Response {
+async function handleDeviceWebSocket(request: Request, env: Env, digest: string): Promise<Response> {
   if (!isDigest(digest)) {
     return jsonError(400, "invalid digest");
   }
@@ -76,6 +81,10 @@ function handleDeviceWebSocket(request: Request, env: Env, digest: string): Prom
   }
   if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
     return jsonError(426, "websocket upgrade required");
+  }
+  const denied = await requireWhitelisted(env, digest);
+  if (denied) {
+    return denied;
   }
 
   const id = env.DEVICE.idFromName(digest);
@@ -94,6 +103,10 @@ async function handleDeviceHttp(
 ): Promise<Response> {
   if (!isDigest(digest)) {
     return jsonError(400, "invalid digest");
+  }
+  const denied = await requireWhitelisted(env, digest);
+  if (denied) {
+    return denied;
   }
 
   const auth = await requireRoutingToken(request, env, digest);

@@ -17,9 +17,19 @@
       "new_sqlite_classes": ["Device"]
     }
   ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "saihub",
+      "database_id": "00000000-0000-4000-8000-000000000001",
+      "migrations_dir": "migrations"
+    }
+  ],
   "vars": {
     "AUTH_TIMEOUT_MS": "10000",
     "REQUEST_TIMEOUT_MS": "55000"
   }
   // ROUTING_TOKEN_SECRET: set via `wrangler secret put ROUTING_TOKEN_SECRET`
+  // ADMIN_TOKEN: set via `wrangler secret put ADMIN_TOKEN`
+  // D1: `wrangler d1 create saihub` then replace database_id above
 }

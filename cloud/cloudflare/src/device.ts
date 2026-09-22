@@ -93,6 +93,9 @@ export class Device implements DurableObject {
     if (url.pathname === "/online") {
       return this.#handleOnline();
     }
+    if (url.pathname === "/disconnect") {
+      return this.#handleDisconnect();
+    }
     return jsonError(404, "not found");
   }
 
@@ -246,6 +249,11 @@ export class Device implements DurableObject {
   #handleOnline(): Response {
     const online = this.#socket !== null && this.#socketState?.authenticated === true;
     return Response.json({ online }, { headers: { "cache-control": "no-store" } });
+  }
+
+  async #handleDisconnect(): Promise<Response> {
+    await this.#disconnectSocket(1008, "removed from whitelist");
+    return new Response(null, { status: 204 });
   }
 
   #handleWebSocket(request: Request, digest: string): Response {
@@ -606,6 +614,21 @@ export class Device implements DurableObject {
   async #clearSocket(): Promise<void> {
     this.#socket = null;
     this.#socketState = null;
+  }
+
+  async #disconnectSocket(code: number, reason: string): Promise<void> {
+    for (const ws of this.#ctx.getWebSockets()) {
+      this.#discarded.add(ws);
+      try {
+        ws.close(code, reason);
+      } catch {
+        // ignore
+      }
+    }
+    this.#socket = null;
+    this.#socketState = null;
+    this.#rejectAllPending("device offline");
+    await this.#clearAuthAlarm();
   }
 
   #completePending(requestId: string, response: Response): void {

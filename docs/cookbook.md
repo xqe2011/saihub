@@ -154,13 +154,16 @@ You need a Cloudflare account, Node or [Bun](https://bun.sh), and [Wrangler](htt
 cd cloud/cloudflare
 bun install          # or: npm install
 npx wrangler login
+npx wrangler d1 create saihub
+# paste the returned database_id into wrangler.jsonc
 openssl rand -hex 32
 npx wrangler secret put ROUTING_TOKEN_SECRET
-# paste the random hex when prompted
-npx wrangler deploy
+openssl rand -hex 32
+npx wrangler secret put ADMIN_TOKEN
+bun run deploy          # applies D1 migrations, then wrangler deploy
 ```
 
-Wrangler prints a `*.workers.dev` origin, for example `https://saihub-cloud.<account>.workers.dev`. Optional: attach a custom domain in the Cloudflare dashboard.
+Wrangler prints a `*.workers.dev` origin, for example `https://saihub-cloud.<account>.workers.dev`. Optional: attach a custom domain in the Cloudflare dashboard. Open `/admin` on that origin, enter `ADMIN_TOKEN`, and whitelist each device digest before it can connect. Unlisted digests get 403.
 
 ### Point firmware at your worker
 
