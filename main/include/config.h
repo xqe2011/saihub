@@ -17,7 +17,7 @@
 #define CONFIG_NTP_TIMEOUT_MS (15 * 1000)
 
 /* Set to the deployed worker origin, e.g. wss://saihub-cloud.example.workers.dev. */
-#define CONFIG_CLOUD_URL "ws://192.168.88.190:8787"
+#define CONFIG_CLOUD_URL "wss://saihub.xqe2011.com"
 #define CONFIG_CLOUD_MAX_MESSAGE_BYTES (72 * 1024)
 #define CONFIG_CLOUD_GRANT_SECRET_LEN 32
 #define CONFIG_CLOUD_GRANT_NAME_MAX 32

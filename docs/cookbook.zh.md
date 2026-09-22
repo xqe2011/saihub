@@ -120,17 +120,11 @@ UART：`list_uarts`、`configure_uart`、`uart_transmit`、`uart_receive`、`uar
 
 1. 云端鉴权成功后，串口日志会打印落地页地址：
 
-   `https://<托管云域名>/cloud/landing/<digest>/page`
+   `https://saihub.xqe2011.com/cloud/landing/<digest>/page`
 
-2. 打开该地址。页面会显示板子是否在线。MCP 在上，REST 与 OpenAPI 在 **OR** 下方。
+2. 打开该地址。页面会显示板子是否在线。接着像填局域网地址一样，把 MCP 地址填进 Cursor、Claude Code 或 Codex CLI。客户端会在浏览器完成 OAuth：给这个客户端起名，然后在板子上**长按 BOOT 3 秒**。无需手动粘贴长期 token。
 
-   - MCP 地址 — `https://<托管云域名>/device/<digest>/mcp`
-   - REST API 基址 — `https://<托管云域名>/device/<digest>`
-   - `openapi.json` — `https://<托管云域名>/device/<digest>/openapi.json`
-
-3. 像填局域网地址一样，把 MCP 地址填进 Cursor、Claude Code 或 Codex CLI。客户端会在浏览器完成 OAuth：给这个客户端起名，然后在板子上**长按 BOOT 3 秒**。无需手动粘贴长期 token。
-
-   使用 REST 需要先拿到 routing token。在落地页点击 **Get routing token**，会走同一套 OAuth 配对流程，然后在 `/cloud/oauth/echo` 展示 token 并提供复制按钮。之后可在设备控制页的 **Cloud** 标签页撤销授权（`http://<设备IP>/`）。
+   使用 REST 需要先拿到 routing token。在落地页点击 **Get routing token**，会走同一套 OAuth 配对流程，然后将会展示 token 并提供复制按钮。之后可在设备控制页的 **Cloud** 标签页撤销授权（`http://<设备IP>/`）。
 
 <img src="assets/cloud-landing.webp" alt="SAIHub 云落地页" style="display:block;max-height:720px;width:auto;margin:0 auto">
 

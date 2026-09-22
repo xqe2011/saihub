@@ -59,7 +59,7 @@ SAIHub 是给编程智能体用的口袋 IO 板。烧好固件、连上 Wi-Fi、
 | | 局域网直连 | 自部署中继 | 托管云 |
 | --- | --- | --- | --- |
 | 适用场景 | 工位调试，零配置 | 远程访问，账号自己掌控 | 远程访问，零运维 |
-| MCP 地址 | `http://<设备IP>/mcp` | `https://<你的Worker域名>/device/<digest>/mcp` | `https://<托管云域名>/device/<digest>/mcp` |
+| MCP 地址 | `http://<设备IP>/mcp` | `https://<你的Worker域名>/device/<digest>/mcp` | `https://saihub.xqe2011.com/device/<digest>/mcp` |
 | 访问范围 | 仅同一局域网 | 任意地点 | 任意地点 |
 | 准备工作 | 连上 Wi-Fi 即可 | 部署 Worker 然后用你的域名重编固件（[步骤](docs/cookbook.zh.md#5-自行部署-cloudflare-中继)） | 无需配置——从我们这里购买的板子自动接入托管云 |
 | 鉴权 | 无（默认信任局域网） | OAuth（经你的中继） | OAuth（浏览器授权） |

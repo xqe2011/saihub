@@ -120,17 +120,11 @@ If you **buy a board from us**, we host the cloud relay. After the board is on W
 
 1. After cloud authentication succeeds, the serial log prints the landing page URL:
 
-   `https://<managed-cloud-origin>/cloud/landing/<digest>/page`
+   `https://saihub.xqe2011.com/cloud/landing/<digest>/page`
 
-2. Open that URL. It shows whether the board is online. MCP is listed first; REST and OpenAPI sit below **OR**.
+2. Open that URL. It shows whether the board is online. Paste the MCP URL into Cursor, Claude Code, or Codex CLI the same way as the LAN URL. The client runs OAuth in the browser: name this client, then **hold BOOT for 3 seconds** on the board. You do not paste a long-lived token by hand.
 
-   - MCP URL — `https://<managed-cloud-origin>/device/<digest>/mcp`
-   - REST API base — `https://<managed-cloud-origin>/device/<digest>`
-   - `openapi.json` — `https://<managed-cloud-origin>/device/<digest>/openapi.json`
-
-3. Paste the MCP URL into Cursor, Claude Code, or Codex CLI the same way as the LAN URL. The client runs OAuth in the browser: name this client, then **hold BOOT for 3 seconds** on the board. You do not paste a long-lived token by hand.
-
-   REST calls need a routing token first. Click **Get routing token** on the landing page — that reuses the same OAuth pairing flow, then shows the token on `/cloud/oauth/echo` with a copy button. Revoke grants later from the device control page **Cloud** tab (`http://<device-ip>/`).
+   REST calls need a routing token first. Click **Get routing token** on the landing page — that reuses the same OAuth pairing flow, then shows the token with a copy button. Revoke grants later from the device control page **Cloud** tab (`http://<device-ip>/`).
 
 <img src="assets/cloud-landing.webp" alt="SAIHub cloud landing page" style="display:block;max-height:720px;width:auto;margin:0 auto">
 
