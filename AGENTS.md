@@ -1,5 +1,23 @@
 # Agent guidelines
 
+## Do not touch `sdkconfig`
+
+`sdkconfig` and `sdkconfig.old` are generated and gitignored. Never create, edit, or commit them.
+
+Persist every Kconfig / menuconfig / `idf.py` override in `sdkconfig.defaults` (or other committed files). Fresh clones have no `sdkconfig`; CMake creates it from `sdkconfig.defaults` plus IDF defaults.
+
+```
+# ❌ BAD
+edit sdkconfig
+leave CONFIG_FOO=y only in the generated sdkconfig
+
+# ✅ GOOD
+put CONFIG_FOO=y in sdkconfig.defaults
+idf.py set-target … when the chip target must change
+```
+
+Do not treat a local `sdkconfig` as source of truth. If `idf.py set-target` or a reconfigure rewrites it, copy any project-intent symbols back into `sdkconfig.defaults`.
+
 ## No chip details in responses
 
 Never name the MCU, vendor, or SDK in anything a user or API client can see.
