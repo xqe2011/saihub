@@ -21,7 +21,7 @@
     {
       "binding": "DB",
       "database_name": "saihub",
-      "database_id": "1e9eb771-42c5-48bc-9d91-aae1c4ad7e09",
+      "database_id": "00000000-0000-4000-8000-000000000001",
       "migrations_dir": "migrations"
     }
   ],
