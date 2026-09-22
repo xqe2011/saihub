@@ -1,5 +1,7 @@
 # SAIHub-Mini hardware
 
+> **Tip:** Experimental board designed by GPT-6 Astra; still under evaluation. Use at your own risk.
+
 A 48 × 28 mm, two-layer ESP32-C5 IO board: USB-C, one BOOT button, a 12-pin right-angle header, and an external dual-band U.FL antenna. Top-side assembly only.
 
 [中文](hardware.zh.md) · [README](../README.md) · [Cookbook](cookbook.md) · [Bring your own board](bring-your-own-board.md) · [KiCad project](../hardware/README.md)

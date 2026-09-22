@@ -1,5 +1,7 @@
 # SAIHub-Mini 硬件文档
 
+> **提示：** 本板由 GPT-6 Astra 设计，目前仍在测试中，请自行承担使用风险。
+
 一块 48 × 28 mm 的双层 ESP32-C5 IO 板：USB-C 接口、一个 BOOT 按键、一排 12 针直角排针，外加双频 U.FL 天线。元件全部贴在顶层。
 
 [English](hardware.md) · [README](../README.zh.md) · [使用手册](cookbook.zh.md) · [自备开发板](bring-your-own-board.zh.md) · [KiCad 工程](../hardware/README.md)
