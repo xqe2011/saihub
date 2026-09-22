@@ -74,8 +74,6 @@ SAIHub-Mini 采用原生 USB，BOOT 键（GPIO28）位于 USB-C 旁边，板上�
 }
 ```
 
-![Cursor MCP 设置 — 截图占位](assets/placeholder-cursor-mcp.webp)
-
 ### Claude Code
 
 ```bash
@@ -88,8 +86,6 @@ claude mcp list
 ```bash
 claude mcp add --scope project --transport http saihub http://DEVICE_IP/mcp
 ```
-
-![Claude Code MCP — 截图占位](assets/placeholder-claude-mcp.webp)
 
 ### Codex CLI
 
@@ -105,8 +101,6 @@ url = "http://DEVICE_IP/mcp"
 ```
 
 在 TUI 中输入 `/mcp` 可查看服务器是否在线。
-
-![Codex CLI MCP — 截图占位](assets/placeholder-codex-mcp.webp)
 
 ### 智能体可用的工具
 
@@ -148,22 +142,13 @@ UART：`list_uarts`、`configure_uart`、`uart_transmit`、`uart_receive`、`uar
 
 ### 部署
 
-准备工作：一个 Cloudflare 账号、Node 或 [Bun](https://bun.sh)，以及 [Wrangler](https://developers.cloudflare.com/workers/wrangler/)。
+准备工作：一个 Cloudflare 账号。D1、Durable Object、环境变量和密钥会自动创建。
 
-```bash
-cd cloud/cloudflare
-bun install          # 或：npm install
-npx wrangler login
-npx wrangler d1 create saihub
-# 把返回的 database_id 填进 wrangler.jsonc
-openssl rand -hex 32
-npx wrangler secret put ROUTING_TOKEN_SECRET
-openssl rand -hex 32
-npx wrangler secret put ADMIN_TOKEN
-bun run deploy          # 先应用 D1 迁移，再 wrangler deploy
-```
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/xqe2011/saihub/tree/main/cloud/cloudflare)
 
-部署完成后，Wrangler 会输出 `*.workers.dev` 源站地址，例如 `https://saihub-cloud.<account>.workers.dev`。也可以在 Cloudflare 控制台绑定自定义域名。打开该源站的 `/admin`，输入 `ADMIN_TOKEN`，把设备 digest 加入白名单后才能连接；未列入的 digest 会返回 403。
+在配置页填入 `ROUTING_TOKEN_SECRET` 和 `ADMIN_TOKEN`（各用 `openssl rand -hex 32` 生成）。
+
+完成后控制台会给出 `*.workers.dev` 源站地址，例如 `https://saihub-cloud.<account>.workers.dev`。也可以绑定自定义域名。打开该源站的 `/admin`，输入 `ADMIN_TOKEN`，把设备 digest 加入白名单后才能连接；未列入的 digest 会返回 403。
 
 ### 配置固件指向你的 Worker
 
@@ -193,7 +178,7 @@ MCP 客户端则使用：
 
 `<digest>` 是板子的 Base58Check 设备 ID（由硬件 ECDSA 公钥派生）。板子鉴权成功后，串口日志会打印落地页 `https://<源站>/cloud/landing/<digest>/page`，打开即可复制 MCP、REST 和 OpenAPI 地址。
 
-`ROUTING_TOKEN_SECRET` 只能存放在 Wrangler secrets 中，切勿提交进仓库。
+`ROUTING_TOKEN_SECRET` 和 `ADMIN_TOKEN` 作为 Worker secrets 保存，切勿提交进仓库。
 
 Worker 的路由表、本地模拟设备联调和测试方法见[构建指南](build.zh.md)。
 

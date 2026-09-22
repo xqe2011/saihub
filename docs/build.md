@@ -29,7 +29,7 @@ Board-specific configuration is concentrated in `main/include/config.h`:
 
 Building for a board other than SAIHub-Mini: [bring your own board](bring-your-own-board.md).
 
-## Cloudflare Worker (reference relay)
+## Cloudflare Worker
 
 Requires [Bun](https://bun.sh) (or Node) and [Wrangler](https://developers.cloudflare.com/workers/wrangler/). Production deploy steps: [cookbook §5](cookbook.md#5-self-host-the-cloudflare-relay).
 
@@ -39,7 +39,7 @@ bun install
 bun run dev            # applies local D1 migrations, then wrangler dev → http://127.0.0.1:8787
 ```
 
-For a dev loop, point the firmware's `CONFIG_CLOUD_URL` at your machine over the LAN, e.g. `ws://<your-lan-ip>:8787`. `.dev.vars` supplies local `ROUTING_TOKEN_SECRET` and `ADMIN_TOKEN` for `wrangler dev`; production uses `wrangler secret put` — never commit a real secret.
+For a dev loop, point the firmware's `CONFIG_CLOUD_URL` at your machine over the LAN, e.g. `ws://<your-lan-ip>:8787`. Copy `.dev.vars.example` to `.dev.vars` for local `ROUTING_TOKEN_SECRET` and `ADMIN_TOKEN`. Production secrets are set on the Deploy to Cloudflare setup page — never commit a real secret.
 
 `wrangler.jsonc` binds the `DEVICE` Durable Object (SQLite class), a D1 `device_whitelist` database, and `AUTH_TIMEOUT_MS` / `REQUEST_TIMEOUT_MS` (10 s / 55 s); devices not in the whitelist get 403. `wrangler.test.jsonc` deploys a separate `saihub-cloud-test` worker with 2 s timeouts for integration tests.
 
@@ -74,6 +74,6 @@ bun run fake-device     # defaults to http://127.0.0.1:8787; pass another origin
 | `GET /cloud/device/{digest}` | Device WebSocket — no bearer; the challenge handshake authenticates |
 | `/device/{digest}/…` | Proxied REST + `/mcp` — bearer routing token, JSON only |
 | `GET /admin` | Admin UI — enter `ADMIN_TOKEN` to manage the device whitelist |
-| `GET /admin/devices/whitelist?page=` | Paginated whitelist (`Authorization: Bearer <ADMIN_TOKEN>`) |
+| `GET /admin/devices/whitelist?page=` | whitelist (`Authorization: Bearer <ADMIN_TOKEN>`) |
 | `POST /admin/devices/whitelist` | Add `{ "digest" }` to the whitelist |
 | `DELETE /admin/devices/whitelist/{digest}` | Remove a digest from the whitelist |

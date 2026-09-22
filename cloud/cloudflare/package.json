@@ -12,6 +12,22 @@
     "test:hardware": "bun ../../tests/hardware/smoke.ts",
     "fake-device": "bun ../../tests/cloud/cloudflare/fake-device.ts"
   },
+  "cloudflare": {
+    "bindings": {
+      "AUTH_TIMEOUT_MS": {
+        "description": "Milliseconds the device has to finish the cloud auth handshake (default `10000`)."
+      },
+      "REQUEST_TIMEOUT_MS": {
+        "description": "Milliseconds a proxied MCP/REST request may wait on the device (default `55000`)."
+      },
+      "ROUTING_TOKEN_SECRET": {
+        "description": "Seals routing tokens for MCP/REST. Generate with `openssl rand -hex 32`."
+      },
+      "ADMIN_TOKEN": {
+        "description": "Password for `/admin`. Generate with `openssl rand -hex 32`."
+      }
+    }
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250913.0",
     "@types/bun": "latest",

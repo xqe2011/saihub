@@ -29,7 +29,4 @@
     "AUTH_TIMEOUT_MS": "10000",
     "REQUEST_TIMEOUT_MS": "55000"
   }
-  // ROUTING_TOKEN_SECRET: set via `wrangler secret put ROUTING_TOKEN_SECRET`
-  // ADMIN_TOKEN: set via `wrangler secret put ADMIN_TOKEN`
-  // D1: `wrangler d1 create saihub` then replace database_id above
 }

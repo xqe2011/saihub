@@ -19,6 +19,7 @@
   · <a href="docs/cookbook.md">Cookbook</a>
   · <a href="docs/hardware.md">Hardware</a>
   · <a href="docs/design-notes.md">Protocol</a>
+  · <a href="docs/build.md">Build</a>
   · <a href="https://github.com/xqe2011/saihub/releases">Releases</a>
   · <a href="LICENSE">MIT</a>
 </p>
@@ -64,7 +65,7 @@ The LAN URL is all you need at the bench. To reach the board from anywhere, put 
 | Best for | Bench work, zero setup | Remote access under your own account | Remote access, zero ops |
 | MCP URL | `http://<device-ip>/mcp` | `https://<your-worker>/device/<digest>/mcp` | `https://<managed-cloud-origin>/device/<digest>/mcp` |
 | Reach | Same LAN only | Anywhere | Anywhere |
-| Setup | None after Wi-Fi | Deploy the [worker](docs/cookbook.md#5-self-host-the-cloudflare-relay), rebuild firmware with your origin | None — boards bought from us connect to the managed cloud |
+| Setup | None after Wi-Fi | Deploy to Cloudflare then rebuild firmware with your origin ([details](docs/cookbook.md#5-self-host-the-cloudflare-relay)) | None — boards bought from us connect to the managed cloud |
 | Auth | None (LAN trust) | OAuth through your relay | OAuth in the browser |
 | Traffic path | Direct to the board | Through your Cloudflare account | Through our infrastructure |
 | Cost | Free | Cloudflare free tier | Included with the board |

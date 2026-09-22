@@ -29,7 +29,7 @@ idf.py merge-bin   # 生成网页烧录器使用的合并镜像（烧到 0x0）
 
 为 SAIHub-Mini 以外的板子编译：见[自备开发板](bring-your-own-board.zh.md)。
 
-## Cloudflare Worker（参考中继实现）
+## Cloudflare Worker
 
 需要 [Bun](https://bun.sh)（或 Node）和 [Wrangler](https://developers.cloudflare.com/workers/wrangler/)。生产环境部署步骤见[使用手册第 5 节](cookbook.zh.md#5-自行部署-cloudflare-中继)。
 
@@ -39,7 +39,7 @@ bun install
 bun run dev            # 先应用本地 D1 迁移，再 wrangler dev → http://127.0.0.1:8787
 ```
 
-本地联调时，把固件的 `CONFIG_CLOUD_URL` 指向局域网里你的电脑，例如 `ws://<你的局域网IP>:8787`。`.dev.vars` 只为 `wrangler dev` 提供本地的 `ROUTING_TOKEN_SECRET` 和 `ADMIN_TOKEN`；生产环境用 `wrangler secret put` 管理，切勿提交真实密钥。
+本地联调时，把固件的 `CONFIG_CLOUD_URL` 指向局域网里你的电脑，例如 `ws://<你的局域网IP>:8787`。把 `.dev.vars.example` 复制为 `.dev.vars`，供 `wrangler dev` 使用本地的 `ROUTING_TOKEN_SECRET` 和 `ADMIN_TOKEN`。生产密钥在 Deploy to Cloudflare 配置页填写，切勿提交真实密钥。
 
 `wrangler.jsonc` 绑定 `DEVICE` Durable Object（SQLite 类）、D1 `device_whitelist` 数据库，并设置 `AUTH_TIMEOUT_MS` / `REQUEST_TIMEOUT_MS`（10 s / 55 s）；不在白名单中的设备会收到 403。`wrangler.test.jsonc` 会部署独立的 `saihub-cloud-test` Worker（超时 2 s），专供集成测试。
 
@@ -74,6 +74,6 @@ bun run fake-device     # 默认连 http://127.0.0.1:8787，也可传入其他�
 | `GET /cloud/device/{digest}` | 设备 WebSocket——无需 bearer，靠挑战握手鉴权 |
 | `/device/{digest}/…` | 代理 REST 和 `/mcp`——需要 bearer routing token，仅限 JSON |
 | `GET /admin` | 管理界面——输入 `ADMIN_TOKEN` 管理设备白名单 |
-| `GET /admin/devices/whitelist?page=` | 分页白名单（`Authorization: Bearer <ADMIN_TOKEN>`） |
+| `GET /admin/devices/whitelist?page=` | 白名单（`Authorization: Bearer <ADMIN_TOKEN>`） |
 | `POST /admin/devices/whitelist` | 将 `{ "digest" }` 加入白名单 |
 | `DELETE /admin/devices/whitelist/{digest}` | 从白名单删除 digest |

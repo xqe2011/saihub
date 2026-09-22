@@ -74,8 +74,6 @@ Settings → **Tools & MCP**, or edit `~/.cursor/mcp.json` / `.cursor/mcp.json`:
 }
 ```
 
-![Cursor MCP settings — screenshot placeholder](assets/placeholder-cursor-mcp.webp)
-
 ### Claude Code
 
 ```bash
@@ -88,8 +86,6 @@ Project-wide (writes `.mcp.json`):
 ```bash
 claude mcp add --scope project --transport http saihub http://DEVICE_IP/mcp
 ```
-
-![Claude Code MCP — screenshot placeholder](assets/placeholder-claude-mcp.webp)
 
 ### Codex CLI
 
@@ -105,8 +101,6 @@ url = "http://DEVICE_IP/mcp"
 ```
 
 In the TUI, `/mcp` shows whether the server is live.
-
-![Codex CLI MCP — screenshot placeholder](assets/placeholder-codex-mcp.webp)
 
 ### Tools the agent can call
 
@@ -148,22 +142,13 @@ The worker in `cloud/cloudflare/` proxies MCP and REST to the board over a Durab
 
 ### Deploy
 
-You need a Cloudflare account, Node or [Bun](https://bun.sh), and [Wrangler](https://developers.cloudflare.com/workers/wrangler/).
+You need a Cloudflare account. D1, the Durable Object, env vars, and secrets are auto-provisioned.
 
-```bash
-cd cloud/cloudflare
-bun install          # or: npm install
-npx wrangler login
-npx wrangler d1 create saihub
-# paste the returned database_id into wrangler.jsonc
-openssl rand -hex 32
-npx wrangler secret put ROUTING_TOKEN_SECRET
-openssl rand -hex 32
-npx wrangler secret put ADMIN_TOKEN
-bun run deploy          # applies D1 migrations, then wrangler deploy
-```
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/xqe2011/saihub/tree/main/cloud/cloudflare)
 
-Wrangler prints a `*.workers.dev` origin, for example `https://saihub-cloud.<account>.workers.dev`. Optional: attach a custom domain in the Cloudflare dashboard. Open `/admin` on that origin, enter `ADMIN_TOKEN`, and whitelist each device digest before it can connect. Unlisted digests get 403.
+On the setup page, set `ROUTING_TOKEN_SECRET` and `ADMIN_TOKEN` (each `openssl rand -hex 32`).
+
+The dashboard prints a `*.workers.dev` origin, for example `https://saihub-cloud.<account>.workers.dev`. Optional: attach a custom domain. Open `/admin` on that origin, enter `ADMIN_TOKEN`, and whitelist each device digest before it can connect. Unlisted digests get 403.
 
 ### Point firmware at your worker
 
@@ -193,7 +178,7 @@ MCP clients use:
 
 `<digest>` is the board’s Base58Check device id (from the hardware ECDSA public key). After the board authenticates, the serial log prints the landing page at `https://<origin>/cloud/landing/<digest>/page` — open that to copy the MCP, REST, and OpenAPI URLs.
 
-`ROUTING_TOKEN_SECRET` never leaves Wrangler secrets. Do not commit it.
+Keep `ROUTING_TOKEN_SECRET` and `ADMIN_TOKEN` as Worker secrets. Do not commit them.
 
 Worker routes, local dev with a fake device, and tests: [build.md](build.md).
 
