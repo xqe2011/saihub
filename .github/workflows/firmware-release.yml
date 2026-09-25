@@ -36,6 +36,32 @@ jobs:
           path: release/
           if-no-files-found: error
 
+  cloud-cache:
+    runs-on: ubuntu-latest
+    environment: cloud
+    env:
+      ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+      ADMIN_URL: ${{ vars.ADMIN_URL }}
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - name: Check cloud cache config
+        id: config
+        shell: bash
+        run: |
+          if [ -n "${ADMIN_URL}" ] && [ -n "${ADMIN_TOKEN}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping cloud cache upload; set environment cloud var ADMIN_URL and secret ADMIN_TOKEN."
+          fi
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.configured == 'true'
+      - uses: oven-sh/setup-bun@v2
+        if: steps.config.outputs.configured == 'true'
+      - name: Upload mcp.json and openapi.json
+        if: steps.config.outputs.configured == 'true'
+        working-directory: cloud/cloudflare
+        run: bun run upload-file-cache -- "$ADMIN_URL" "$ADMIN_TOKEN" "$VERSION"
+
   release:
     needs: build
     runs-on: ubuntu-latest

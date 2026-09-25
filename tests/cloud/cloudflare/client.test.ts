@@ -118,12 +118,15 @@ async function bearerFor(digest: string, grantSecret = "grant-secret"): Promise<
   return sealRoutingToken(ROUTING_TOKEN_SECRET, { devicePublicKeyDigest: digest, grantSecret });
 }
 
-async function applyLocalMigrations(persistTo: string): Promise<void> {
+const FILE_CACHE_VERSION = "cache-1.0.0";
+const FILE_CACHE_MCP = {
+  tools: [{ name: "cached_tool", description: "from file_cache", inputSchema: { type: "object", properties: {} } }],
+};
+const FILE_CACHE_OPENAPI = { openapi: "3.1.0", info: { title: "cached-openapi", version: "1.0.0" } };
+
+async function wranglerD1(args: string[], label: string): Promise<void> {
   const apply = spawn({
-    cmd: [
-      "bun", "run", "db:migrations:apply:local", "--",
-      "--config", "wrangler.test.jsonc", "--persist-to", persistTo,
-    ],
+    cmd: args,
     cwd: PACKAGE_DIR,
     stdout: "pipe",
     stderr: "pipe",
@@ -134,8 +137,33 @@ async function applyLocalMigrations(persistTo: string): Promise<void> {
   if (code !== 0) {
     const stdout = await new Response(apply.stdout).text();
     const stderr = await new Response(apply.stderr).text();
-    throw new Error(`d1 migrations apply failed: ${code}\n${stdout}\n${stderr}`);
+    throw new Error(`${label} failed: ${code}\n${stdout}\n${stderr}`);
   }
+}
+
+async function applyLocalMigrations(persistTo: string): Promise<void> {
+  await wranglerD1([
+    "bun", "run", "db:migrations:apply:local", "--",
+    "--config", "wrangler.test.jsonc", "--persist-to", persistTo,
+  ], "d1 migrations apply");
+}
+
+function sqlString(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+async function seedFileCache(persistTo: string): Promise<void> {
+  const row = (version: string, filename: string, content: string) =>
+    `(${sqlString(version)}, ${sqlString(filename)}, ${sqlString(content)})`;
+  const values = [
+    row(FILE_CACHE_VERSION, "mcp.json", JSON.stringify(FILE_CACHE_MCP)),
+    row(FILE_CACHE_VERSION, "openapi.json", JSON.stringify(FILE_CACHE_OPENAPI)),
+  ].join(", ");
+  await wranglerD1([
+    "bunx", "wrangler", "d1", "execute", "DB", "--local",
+    "--config", "wrangler.test.jsonc", "--persist-to", persistTo,
+    "--command", `INSERT OR REPLACE INTO file_cache (version, filename, content) VALUES ${values};`,
+  ], "d1 file_cache seed");
 }
 
 async function whitelistDigest(baseUrl: string, digest: string): Promise<void> {
@@ -303,6 +331,7 @@ describe("cloudflare device proxy e2e", () => {
     baseUrl = `http://127.0.0.1:${port}`;
     const persistTo = `.wrangler/e2e-${port}`;
     await applyLocalMigrations(persistTo);
+    await seedFileCache(persistTo);
 
     proc = spawn({
       cmd: [
@@ -1074,6 +1103,48 @@ describe("cloudflare device proxy e2e", () => {
     } finally { ws.close(); }
   });
 
+  test("serves tools/list from file_cache and still forwards other mcp methods", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    expect((await authenticateDevice(ws, other, { version: FILE_CACHE_VERSION })).success).toBe(true);
+    const token = await bearerFor(other.digest);
+    try {
+      const listed = await fetch(`${baseUrl}/device/${other.digest}/mcp`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/list" }),
+      });
+      expect(listed.status).toBe(200);
+      expect(await listed.json() as unknown).toEqual({ jsonrpc: "2.0", id: 7, result: FILE_CACHE_MCP });
+
+      const pending = waitForMessage(ws, (msg): msg is RequestMessage => msg.type === "request");
+      const call = fetch(`${baseUrl}/device/${other.digest}/mcp`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "echo" } }),
+      });
+      const request = await pending;
+      expect(request.body).toEqual({ jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "echo" } });
+      replyJson(ws, request.requestId, 200, { jsonrpc: "2.0", id: 8, result: { ok: true } });
+      expect((await call).status).toBe(200);
+    } finally { ws.close(); }
+  });
+
+  test("serves openapi.json from file_cache without forwarding", async () => {
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    expect((await authenticateDevice(ws, other, { version: FILE_CACHE_VERSION })).success).toBe(true);
+    const token = await bearerFor(other.digest);
+    try {
+      const res = await fetch(`${baseUrl}/device/${other.digest}/openapi.json`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("application/json");
+      expect(await res.json() as unknown).toEqual(FILE_CACHE_OPENAPI);
+    } finally { ws.close(); }
+  });
+
   test("receives a fragmented JSON response larger than the old 64 KiB limit", async () => {
     const other = await generateDeviceIdentity();
     await whitelistDigest(baseUrl, other.digest);
@@ -1288,6 +1359,7 @@ describe("cloudflare device proxy e2e", () => {
     expect(page.headers.get("content-type") ?? "").toContain("text/html");
     const html = await page.text();
     expect(html).toContain("Admin token");
+    expect(html).toContain("File cache");
     expect(html).toContain('failureMessage(body, "Request failed (" + res.status + ")")');
 
     const missing = await fetch(`${baseUrl}/admin/devices/whitelist`);
@@ -1335,6 +1407,67 @@ describe("cloudflare device proxy e2e", () => {
     const missingDelete = await fetch(`${baseUrl}/admin/devices/whitelist/${extra.digest}`, {
       method: "DELETE",
       headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(missingDelete.status).toBe(404);
+  }, 30_000);
+
+  test("admin file-cache api uploads version and filename", async () => {
+    const headers = { authorization: `Bearer ${ADMIN_TOKEN}`, "content-type": "application/json" };
+    expect((await fetch(`${baseUrl}/admin/file-cache`)).status).toBe(401);
+
+    const version = "admin-upload-1";
+    const payload = { tools: [{ name: "uploaded_tool", inputSchema: { type: "object", properties: {} } }] };
+    const created = await fetch(`${baseUrl}/admin/file-cache`, {
+      method: "POST", headers, body: JSON.stringify({ version, filename: "mcp.json", content: payload }),
+    });
+    expect(created.status).toBe(201);
+    expect(await created.json() as unknown).toEqual({ version, filename: "mcp.json" });
+
+    const replaced = await fetch(`${baseUrl}/admin/file-cache`, {
+      method: "POST", headers, body: JSON.stringify({ version, filename: "mcp.json", content: payload }),
+    });
+    expect(replaced.status).toBe(200);
+
+    const badName = await fetch(`${baseUrl}/admin/file-cache`, {
+      method: "POST", headers, body: JSON.stringify({ version, filename: "secret.json", content: payload }),
+    });
+    expect(badName.status).toBe(400);
+    expect(await badName.json() as unknown).toEqual({ reason: "invalid filename" });
+
+    const badVersion = await fetch(`${baseUrl}/admin/file-cache`, {
+      method: "POST", headers, body: JSON.stringify({ version: "", filename: "mcp.json", content: payload }),
+    });
+    expect(badVersion.status).toBe(400);
+    expect(await badVersion.json() as unknown).toEqual({ reason: "invalid version" });
+
+    const listed = await fetch(`${baseUrl}/admin/file-cache?page=1`, { headers: { authorization: `Bearer ${ADMIN_TOKEN}` } });
+    expect(listed.status).toBe(200);
+    const listBody = await listed.json() as { page: number; items: { version: string; filename: string; bytes: number }[] };
+    expect(listBody.page).toBe(1);
+    expect(listBody.items.some((item) => item.version === version && item.filename === "mcp.json" && item.bytes > 0)).toBe(true);
+
+    const other = await generateDeviceIdentity();
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    expect((await authenticateDevice(ws, other, { version })).success).toBe(true);
+    const token = await bearerFor(other.digest);
+    try {
+      const tools = await fetch(`${baseUrl}/device/${other.digest}/mcp`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/list" }),
+      });
+      expect(tools.status).toBe(200);
+      expect(await tools.json() as unknown).toEqual({ jsonrpc: "2.0", id: 3, result: payload });
+    } finally { ws.close(); }
+
+    const deleted = await fetch(`${baseUrl}/admin/file-cache/${encodeURIComponent(version)}/mcp.json`, {
+      method: "DELETE", headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(deleted.status).toBe(200);
+    expect(await deleted.json() as unknown).toEqual({ version, filename: "mcp.json" });
+
+    const missingDelete = await fetch(`${baseUrl}/admin/file-cache/${encodeURIComponent(version)}/mcp.json`, {
+      method: "DELETE", headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
     });
     expect(missingDelete.status).toBe(404);
   }, 30_000);

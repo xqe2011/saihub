@@ -8,6 +8,7 @@
     "db:migrations:apply": "wrangler d1 migrations apply DB --remote",
     "db:migrations:apply:local": "wrangler d1 migrations apply DB --local",
     "typecheck": "tsc --noEmit",
+    "upload-file-cache": "bun scripts/upload-file-cache.ts",
     "test": "bun test ../../tests/cloud/cloudflare/*.test.ts",
     "test:hardware": "bun ../../tests/hardware/smoke.ts",
     "fake-device": "bun ../../tests/cloud/cloudflare/fake-device.ts"

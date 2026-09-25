@@ -14,7 +14,6 @@
 
 #include <cJSON.h>
 #include <esp_app_desc.h>
-#include <esp_log.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,7 +24,6 @@ extern const uint8_t mcp_json_start[] asm("_binary_mcp_json_start");
 extern const uint8_t mcp_json_end[] asm("_binary_mcp_json_end");
 
 #define MCP_PROTOCOL_VERSION "2025-06-18"
-#define MCP_DEFS_REF_PREFIX "#/$defs/"
 
 static bool Route_McpOriginOk(HttpServer_Context* ctx)
 {
@@ -140,104 +138,23 @@ static cJSON* Route_McpToolResultErr(const char* reason)
   return result;
 }
 
-static bool Route_McpCollectDefs(const cJSON* node, const cJSON* allDefs, cJSON* selectedDefs)
-{
-  if (node == NULL) return true;
-
-  if (cJSON_IsObject(node)) {
-    const cJSON* ref = cJSON_GetObjectItemCaseSensitive((cJSON*)node, "$ref");
-    if (cJSON_IsString(ref) && ref->valuestring != NULL &&
-        strncmp(ref->valuestring, MCP_DEFS_REF_PREFIX, strlen(MCP_DEFS_REF_PREFIX)) == 0) {
-      const char* name = ref->valuestring + strlen(MCP_DEFS_REF_PREFIX);
-      if (name[0] == '\0' || strchr(name, '/') != NULL) return false;
-      if (cJSON_GetObjectItemCaseSensitive(selectedDefs, name) == NULL) {
-        const cJSON* definition = cJSON_GetObjectItemCaseSensitive((cJSON*)allDefs, name);
-        if (definition == NULL) return false;
-        cJSON* copy = cJSON_Duplicate(definition, 1);
-        if (copy == NULL || !cJSON_AddItemToObject(selectedDefs, name, copy)) {
-          cJSON_Delete(copy);
-          return false;
-        }
-        if (!Route_McpCollectDefs(definition, allDefs, selectedDefs)) return false;
-      }
-    }
-  }
-
-  if (cJSON_IsObject(node) || cJSON_IsArray(node)) {
-    const cJSON* child = NULL;
-    cJSON_ArrayForEach(child, node) {
-      if (!Route_McpCollectDefs(child, allDefs, selectedDefs)) return false;
-    }
-  }
-  return true;
-}
-
 static esp_err_t Route_McpSendToolsList(HttpServer_Context* ctx, cJSON* id)
 {
   size_t len = (size_t)(mcp_json_end - mcp_json_start);
-  cJSON* inventory = cJSON_ParseWithLength((const char*)mcp_json_start, len);
-  if (inventory == NULL) {
-    ESP_LOGE(tag, "mcp.json parse failed");
-    return Route_McpSendJsonRpc(ctx, 500, Route_McpJsonRpcError(id, -32603, "internal"));
-  }
-
-  cJSON* defs = cJSON_DetachItemFromObjectCaseSensitive(inventory, "$defs");
-  cJSON* tools = cJSON_GetObjectItemCaseSensitive(inventory, "tools");
-  if (!cJSON_IsArray(tools)) {
-    ESP_LOGE(tag, "mcp.json tools missing");
-    cJSON_Delete(defs);
-    cJSON_Delete(inventory);
-    return Route_McpSendJsonRpc(ctx, 500, Route_McpJsonRpcError(id, -32603, "internal"));
-  }
-
   esp_err_t ret = HttpServer_SendChunkBegin(ctx, 200, "application/json", NULL);
-  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "{\"jsonrpc\":\"2.0\",\"result\":{\"tools\":[", sizeof("{\"jsonrpc\":\"2.0\",\"result\":{\"tools\":[") - 1);
-  bool first = true;
-  cJSON* tool = NULL;
-  cJSON_ArrayForEach(tool, tools) {
-    cJSON* schema = cJSON_GetObjectItemCaseSensitive(tool, "inputSchema");
-    cJSON* selectedDefs = NULL;
-    if (ret == ESP_OK && defs != NULL && cJSON_IsObject(schema)) {
-      selectedDefs = cJSON_CreateObject();
-      if (selectedDefs == NULL || !Route_McpCollectDefs(schema, defs, selectedDefs)) {
-        ESP_LOGE(tag, "tool schema definition expansion failed");
-        ret = ESP_ERR_NO_MEM;
-      } else if (selectedDefs->child == NULL) {
-        cJSON_Delete(selectedDefs);
-        selectedDefs = NULL;
-      } else if (!cJSON_AddItemToObject(schema, "$defs", selectedDefs)) {
-        cJSON_Delete(selectedDefs);
-        selectedDefs = NULL;
-        ret = ESP_ERR_NO_MEM;
-      }
-    }
-
-    char* printed = ret == ESP_OK ? cJSON_PrintUnformatted(tool) : NULL;
-    if (ret == ESP_OK && printed == NULL) ret = ESP_ERR_NO_MEM;
-    if (ret == ESP_OK && !first) ret = HttpServer_SendChunk(ctx, ",", 1);
-    if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, printed, strlen(printed));
-    free(printed);
-
-    if (selectedDefs != NULL) {
-      cJSON* detached = cJSON_DetachItemFromObjectCaseSensitive(schema, "$defs");
-      cJSON_Delete(detached);
-    }
-    if (ret != ESP_OK) break;
-    first = false;
+  if (ret == ESP_OK) {
+    ret = HttpServer_SendChunk(ctx, "{\"jsonrpc\":\"2.0\",\"result\":", sizeof("{\"jsonrpc\":\"2.0\",\"result\":") - 1);
   }
-
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, mcp_json_start, len);
   char* printedId = ret == ESP_OK && id != NULL ? cJSON_PrintUnformatted(id) : NULL;
   if (ret == ESP_OK && id != NULL && printedId == NULL) ret = ESP_ERR_NO_MEM;
-  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "]},\"id\":", sizeof("]},\"id\":") - 1);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, ",\"id\":", sizeof(",\"id\":") - 1);
   if (ret == ESP_OK) {
     const char* idText = printedId != NULL ? printedId : "null";
     ret = HttpServer_SendChunk(ctx, idText, strlen(idText));
   }
   if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "}", 1);
   free(printedId);
-  cJSON_Delete(defs);
-  cJSON_Delete(inventory);
-
   esp_err_t endRet = HttpServer_SendChunkDone(ctx);
   return ret == ESP_OK ? endRet : ret;
 }

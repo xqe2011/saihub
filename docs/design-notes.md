@@ -82,6 +82,7 @@ On failure the relay closes the socket (reference: code 1008); the firmware trea
 - **JSON only**: if a content-type or non-empty body is present it must be `application/json`; `Accept` must permit JSON; violations get 415/406. The device enforces the same rule on its side.
 - `GET` / `DELETE` on `/device/<digest>/mcp` are rejected with `405 Allow: POST, OPTIONS` — the relay does not carry SSE streams, so MCP works in Streamable-HTTP POST mode only.
 - The reference worker forwards to its DO as `https://device/proxy?path=<path+query>`.
+- After a successful `authResponse`, the DO stores the firmware `version` on the socket attachment. `GET /openapi.json` and MCP `tools/list` first query D1 `file_cache` for that version and filename (`openapi.json` / `mcp.json`). A hit returns immediately: OpenAPI as the stored JSON bytes; `tools/list` as `{"jsonrpc":"2.0","result":<mcp.json>,"id":<request id>}`. `mcp.json` is the result object (`{"tools":[...]}`), not a JSON-RPC envelope. A miss keeps the existing device proxy. Operators upload rows through `POST /admin/file-cache` `{version, filename, content}` (`filename` is `mcp.json` or `openapi.json`). A git tag runs the firmware-release workflow, which POSTs the tagged commit’s `mcp.json` and `openapi.json` when GitHub Environment `cloud` has var `ADMIN_URL` and secret `ADMIN_TOKEN`; otherwise the upload is skipped. The cache `version` is the tag name, matching firmware `version.txt`.
 
 ### Relay → device message
 

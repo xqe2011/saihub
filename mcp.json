@@ -1,129 +1,4 @@
 {
-  "$defs": {
-    "pin": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 7
-    },
-    "pins": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 8,
-      "items": {
-        "$ref": "#/$defs/pin"
-      }
-    },
-    "lockId": {
-      "type": "string",
-      "minLength": 1,
-      "description": "Required when another lock holds the resource."
-    },
-    "level": {
-      "type": "integer",
-      "enum": [
-        0,
-        1
-      ]
-    },
-    "mode": {
-      "type": "string",
-      "enum": [
-        "disable",
-        "digitalInput",
-        "digitalOutput",
-        "digitalInputOutput",
-        "pwmOutput"
-      ]
-    },
-    "edge": {
-      "type": "string",
-      "enum": [
-        "raising",
-        "falling",
-        "both"
-      ],
-      "default": "both"
-    },
-    "rail": {
-      "type": "string",
-      "enum": [
-        "3v3",
-        "5v"
-      ]
-    },
-    "rails": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 2,
-      "uniqueItems": true,
-      "items": {
-        "$ref": "#/$defs/rail"
-      }
-    },
-    "lockMethod": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 2,
-      "uniqueItems": true,
-      "items": {
-        "type": "string",
-        "enum": [
-          "read",
-          "write"
-        ]
-      }
-    },
-    "uartId": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 0
-    },
-    "uartEncoding": {
-      "type": "string",
-      "enum": [
-        "utf8",
-        "byte"
-      ]
-    },
-    "uartParity": {
-      "type": "string",
-      "enum": [
-        "none",
-        "even",
-        "odd"
-      ]
-    },
-    "uartPins": {
-      "type": "object",
-      "required": [
-        "rx",
-        "tx"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "rx": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/pin"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "tx": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/pin"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    }
-  },
   "tools": [
     {
       "name": "list_pins",
@@ -176,6 +51,36 @@
           "lockId": {
             "$ref": "#/$defs/lockId"
           }
+        },
+        "$defs": {
+          "pins": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/pin"
+            }
+          },
+          "pin": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "disable",
+              "digitalInput",
+              "digitalOutput",
+              "digitalInputOutput",
+              "pwmOutput"
+            ]
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
         }
       }
     },
@@ -198,6 +103,26 @@
           },
           "lockId": {
             "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "pins": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/pin"
+            }
+          },
+          "pin": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
           }
         }
       }
@@ -226,6 +151,33 @@
           },
           "lockId": {
             "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "pins": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/pin"
+            }
+          },
+          "pin": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "level": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
           }
         }
       }
@@ -262,6 +214,33 @@
           "lockId": {
             "$ref": "#/$defs/lockId"
           }
+        },
+        "$defs": {
+          "pins": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/pin"
+            }
+          },
+          "pin": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "level": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
         }
       }
     },
@@ -284,6 +263,26 @@
           },
           "lockId": {
             "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "pins": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/pin"
+            }
+          },
+          "pin": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
           }
         }
       }
@@ -323,6 +322,26 @@
           "lockId": {
             "$ref": "#/$defs/lockId"
           }
+        },
+        "$defs": {
+          "pins": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/pin"
+            }
+          },
+          "pin": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
         }
       }
     },
@@ -356,6 +375,35 @@
           "lockId": {
             "$ref": "#/$defs/lockId"
           }
+        },
+        "$defs": {
+          "pins": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/pin"
+            }
+          },
+          "pin": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "edge": {
+            "type": "string",
+            "enum": [
+              "raising",
+              "falling",
+              "both"
+            ],
+            "default": "both"
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
         }
       }
     },
@@ -378,6 +426,20 @@
           },
           "lockId": {
             "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "rail": {
+            "type": "string",
+            "enum": [
+              "3v3",
+              "5v"
+            ]
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
           }
         }
       }
@@ -407,6 +469,20 @@
           },
           "lockId": {
             "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "rail": {
+            "type": "string",
+            "enum": [
+              "3v3",
+              "5v"
+            ]
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
           }
         }
       }
@@ -484,6 +560,68 @@
           "lockId": {
             "$ref": "#/$defs/lockId"
           }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "uartParity": {
+            "type": "string",
+            "enum": [
+              "none",
+              "even",
+              "odd"
+            ]
+          },
+          "uartEncoding": {
+            "type": "string",
+            "enum": [
+              "utf8",
+              "byte"
+            ]
+          },
+          "uartPins": {
+            "type": "object",
+            "required": [
+              "rx",
+              "tx"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "rx": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/pin"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tx": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/pin"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "pin": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
         }
       }
     },
@@ -524,6 +662,18 @@
           "lockId": {
             "$ref": "#/$defs/lockId"
           }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
         }
       }
     },
@@ -548,6 +698,18 @@
           "lockId": {
             "$ref": "#/$defs/lockId"
           }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
         }
       }
     },
@@ -571,6 +733,18 @@
           },
           "lockId": {
             "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
           }
         }
       }
@@ -667,6 +841,55 @@
               ]
             }
           }
+        },
+        "$defs": {
+          "pins": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/pin"
+            }
+          },
+          "pin": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "lockMethod": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "read",
+                "write"
+              ]
+            }
+          },
+          "rails": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/rail"
+            }
+          },
+          "rail": {
+            "type": "string",
+            "enum": [
+              "3v3",
+              "5v"
+            ]
+          },
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          }
         }
       }
     },
@@ -753,6 +976,13 @@
           },
           "lockId": {
             "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
           }
         }
       }
