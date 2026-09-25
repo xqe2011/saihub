@@ -13,6 +13,8 @@ import shutil
 import uuid
 import pcbnew as p
 from identity import identity, apply_board_identity
+from silkscreen import apply_reference_labels
+from header_protection import apply as apply_header_protection
 import wx
 app = wx.App(False)
 
@@ -78,6 +80,7 @@ symbol('ESPC5_32E_H4',[(i+1,n,'power_in' if n in ['GND','3V3','EPAD'] else 'inpu
 usb_pins=[('A4','VBUS'),('A9','VBUS'),('B4','VBUS'),('B9','VBUS'),('A1','GND'),('A12','GND'),('B1','GND'),('B12','GND'),('SH','SHIELD'),('A5','CC1'),('B5','CC2'),('A6','D+'),('B6','D+'),('A7','D-'),('B7','D-'),('A8','SBU1'),('B8','SBU2')]
 symbol('USB_C',[(n,v,'passive','L' if i<9 else 'R') for i,(n,v) in enumerate(usb_pins)])
 symbol('USBLC6_2SC6',[(1,'IO1','passive','L'),(2,'GND','power_in','L'),(3,'IO2','passive','L'),(6,'IO1','passive','R'),(5,'VBUS','power_in','R'),(4,'IO2','passive','R')])
+symbol('TPD4E05U06', [(1,'IO1','passive','L'),(2,'IO2','passive','L'),(4,'IO3','passive','L'),(5,'IO4','passive','L'),(3,'GND','power_in','R'),(8,'GND','power_in','R'),(6,'NC','no_connect','R'),(7,'NC','no_connect','R'),(9,'NC','no_connect','R'),(10,'NC','no_connect','R')])
 symbol('HEADER_12',[(i,str(i),'passive','L' if i<=4 else 'R') for i in range(1,13)])
 symbol('PWR_FLAG',[(1,'POWER','power_out','L')],'small')
 
@@ -116,7 +119,7 @@ c('C14','10n','BOOT_R','BS',(36,8),'power',(245,140))
 c('C15','100n','SS','GND',(27,9),'power',(245,170))
 c('C16','5.6n','COMP','COMP_RC',(23,14),'power',(245,200))
 
-module_nets={1:'GND',2:'V3V3',3:'EN',4:None,5:None,6:'IO2',7:'IO1',8:'IO6',9:None,10:'PWR3_EN',11:'PWR5_EN',12:'IO0',13:'MCU_DM',14:'MCU_DP',15:'BOOT',16:'IO5',17:'IO4',18:None,19:None,20:None,21:'IO3',22:None,23:'IO7',24:'BUZZ_PWM',25:'UART_TX',26:None,27:None,28:'GND',29:'GND'}
+module_nets={1:'GND',2:'V3V3',3:'EN',4:None,5:'FAULT5',6:'IO2',7:'IO1',8:'IO6',9:None,10:'PWR3_EN',11:'PWR5_EN',12:'IO0',13:'MCU_DM',14:'MCU_DP',15:'BOOT',16:'IO5',17:'IO4',18:None,19:'FAULT4',20:None,21:'IO3',22:None,23:'IO7',24:'BUZZ_PWM',25:'UART_TX',26:None,27:None,28:'GND',29:'GND'}
 add('U3','ESPC5-32E-H4','ESPC5_32E_H4','Saihub:ESPC5-32E-H4',module_nets,(15.25,17.5),'mcu',(80,70),url='https://atta.szlcsc.com/upload/public/pdf/source/20251016/AE26C73F5F73E1BD024C1C95B3A92329.pdf')
 c('C6','10u','V3V3','GND',(4.2,9.4),'mcu',(175,40),'Capacitor_SMD:C_0805_2012Metric',90)
 c('C7','100n','V3V3','GND',(4.2,12.5),'mcu',(260,40),rot=90)
@@ -131,18 +134,17 @@ add('J2','1x12 2.54mm right-angle','HEADER_12','Connector_PinHeader_2.54mm:PinHe
 for idx,vin,vout,en,x,scx in [(4,'V3V3','V3_SW','PWR3_EN',9,165),(5,'V5','V5_SW','PWR5_EN',22,265)]:
     add('U'+str(idx),'TPS2553DBVR','TPS2553','Package_TO_SOT_SMD:SOT-23-6',{1:vin,2:'GND',3:en,4:'FAULT'+str(idx),5:'ILIM'+str(idx),6:vout},(x,5.7),'outputs',(scx,45),url='https://www.ti.com/lit/ds/symlink/tps2553.pdf',rot=90)
     r('R'+str(idx+3),'26.1k','ILIM'+str(idx),'GND',(x+3.3,5.7),'outputs',(scx,80),90)
-    r('R'+str(idx+5),'100k',en,'GND',(x-3.3,5.7),'outputs',(scx,110),90)
+    r('R'+str(idx+5),'10k',en,'GND',(x-3.3,5.7),'outputs',(scx,110),90)
     c('C'+str(idx+5),'100n',vin,'GND',(x-0.8,8.8 if idx==4 else 9),'outputs',(scx,140))
     c('C'+str(idx+7),'1u',vout,'GND',(x+1.5,3.3),'outputs',(scx,170))
-    # Fault outputs are observable on probe pads without consuming GPIO.
-    r('R'+str(idx+9),'10k','V3V3','FAULT'+str(idx),(27.7,19+(idx-4)*3),'outputs',(scx,200),90)
+    # Separate active-low fault inputs also remain available on probe pads.
     add('TP'+str(idx+1),'FAULT'+str(idx),'TP','TestPoint:TestPoint_Pad_D1.0mm',{1:'FAULT'+str(idx)},(28.1,6.0+(idx-4)*3),'outputs',(scx,230),mpn='PCB test pad',desc='Do not populate')
 
 add('BZ1','KLJ-5020 3.3V','BUZZER','Saihub:KLJ-5020',{1:'V3V3',2:'BUZZ_LOW'},(6.5,50),'buzzer',(75,55),mpn='KLJ-5020',url='https://datasheet.lcsc.com/datasheet/pdf/5a334e56ebfeea427b46ed3bd7f9e2de.pdf?productCode=C556937')
 add('Q1','AO3400A','AO3400A','Package_TO_SOT_SMD:SOT-23',{1:'BUZZ_GATE',2:'GND',3:'BUZZ_LOW'},(17,45.5),'buzzer',(175,55),url='https://www.aosmd.com/sites/default/files/res/datasheets/AO3400A.pdf')
 add('D3','SS14','D','Diode_SMD:D_SMA',{1:'V3V3',2:'BUZZ_LOW'},(14.8,48),'buzzer',(75,100),url='https://www.diodes.com/assets/Datasheets/ds23001.pdf')
 r('R11','100','BUZZ_PWM','BUZZ_GATE',(20,43),'buzzer',(265,40))
-r('R12','100k','BUZZ_GATE','GND',(20,46),'buzzer',(265,75))
+r('R12','10k','BUZZ_GATE','GND',(20,46),'buzzer',(265,75))
 c('C13','100n','V3V3','GND',(2.1,44.2),'buzzer',(175,105),rot=90)
 
 # Compact top-only placement: header, small side-push BOOT, USB-C left to right.
@@ -150,11 +152,11 @@ c('C13','100n','V3V3','GND',(2.1,44.2),'buzzer',(175,105),rot=90)
 placement = {'J2': (1.8, 1.5, 90),
  'SW1': (34.35, 1.75, 180),
  'J1': (42.6, 3.5, 180),
- 'U3': (14.5, 13.6, 0),
- 'C6': (2.5, 5.5, 90),
- 'C7': (2.5, 9, 90),
- 'R5': (2.5, 12.5, 90),
- 'C8': (2.5, 15.8, 90),
+ 'U3': (14.5, 15.55, 0),
+ 'C6': (2.5, 8.8, 0),
+ 'C7': (2.5, 10.7, 0),
+ 'R5': (2.5, 12.4, 0),
+ 'C8': (2.5, 14.1, 0),
  'R3': (2.5, 18.5, 0),
  'R4': (2.5, 20.3, 0),
  'U4': (27.65, 5.7, 90),
@@ -167,15 +169,13 @@ placement = {'J2': (1.8, 1.5, 90),
  'R8': (30.3, 11.6, 90),
  'R10': (30.3, 14.8, 90),
  'C12': (27.3, 15.2, 0),
- 'TP1': (1.2, 23.1, 0),
- 'TP2': (3.4, 23.1, 0),
- 'TP3': (5.6, 25.1, 0),
- 'TP4': (7.8, 25.1, 0),
- 'TP5': (10, 25.1, 0),
- 'TP6': (12.2, 25.1, 0),
- 'R6': (2.5, 27, 0),
- 'R13': (6, 27, 0),
- 'R14': (9.5, 27, 0),
+ 'TP1': (1.2, 22.3, 0),
+ 'TP2': (3.4, 22.3, 0),
+ 'TP3': (5.6, 27, 0),
+ 'TP4': (7.8, 27, 0),
+ 'TP5': (10, 27, 0),
+ 'TP6': (12.2, 27, 0),
+ 'R6': (2.5, 15.8, 0),
  'U1': (33.5, 5.7, 90),
  'R1': (36.4, 5.05, 90),
  'R2': (36.4, 8.25, 90),
@@ -198,10 +198,18 @@ placement = {'J2': (1.8, 1.5, 90),
  'C14': (39.1, 25.7, 90),
  'BZ1': (28.1, 23.8, 90),
  'D3': (27.8, 18.2, 0),
- 'Q1': (20.5, 25.7, 0),
- 'R11': (16.7, 25.1, 0),
- 'C13': (16.7, 26.9, 0),
- 'R12': (23.4, 25.5, 90)}
+ 'Q1': (2.5, 25.5, 0),
+ 'R11': (15.3, 27, 0),
+ 'C13': (18.5, 27, 0),
+ 'R12': (22, 27, 0),
+ 'U6': (14.5, 4.3, -90),
+ 'U7': (22.2, 4.3, -90),
+ 'U10': (2.5, 5.5, 90),
+ 'C21': (6, 4.3, 0)}
+apply_header_protection(parts)
+unplaced = [a['ref'] for a in parts if a['ref'] not in placement]
+if unplaced:
+    raise SystemExit('PCB placement required for ' + ', '.join(unplaced) + '. Use schematic.py for schematic-only regeneration.')
 for a in parts:
     a['pos']=placement[a['ref']][:2]
     a['rot']=placement[a['ref']][2]
@@ -293,7 +301,7 @@ for a in parts:
         elif item.GetLayer()==p.F_SilkS: item.SetLayer(p.F_Fab)
     size=.85 if a['ref'] in ['U2','U3','L1','BZ1','J1','J2'] else .55
     fp.Reference().SetTextSize(xy(size,size));fp.Reference().SetTextThickness(mm(.1))
-    fp.Reference().SetVisible(True);fp.Reference().SetLayer(p.F_Fab)
+    fp.Reference().SetVisible(True);fp.Reference().SetLayer(p.F_SilkS)
     fp.Reference().SetPosition(fp.GetPosition());fp.Reference().SetTextAngle(p.EDA_ANGLE(0,p.DEGREES_T))
     for pad in fp.Pads():
         net=a['nets'].get(pad.GetNumber())
@@ -306,14 +314,19 @@ def label(txt,x,y,size=.8,layer=p.F_SilkS,angle=0):
     t=p.PCB_TEXT(board);t.SetText(txt);t.SetPosition(xy(x,y));t.SetTextSize(xy(size,size));t.SetTextThickness(mm(.12));t.SetLayer(layer);t.SetTextAngle(p.EDA_ANGLE(angle,p.DEGREES_T));
     if layer==p.B_SilkS:t.SetMirrored(True)
     board.Add(t)
-for i,txt in enumerate(['3V3','G','5V','G','0','1','2','3','4','5','6','7']): label(txt,1.8+2.54*i,3.3,.65)
+for i,txt in enumerate(['3V3','G','5V','G','0','1','2','3','4','5','6','7']): label(txt,1.8+2.54*i,3.0,.65)
 apply_board_identity(board)
 label('5V 3A',42.6,5,.85,p.B_SilkS)
 label('BOOT',34.35,4.5,.65,p.B_SilkS)
+apply_reference_labels(board)
 
 # Project settings explicitly define signals vs. power copper widths.
 project={'meta':{'filename':'saihub.kicad_pro','version':1},'board':{'design_settings':{'rules':{'min_clearance':.15,'min_track_width':.15,'min_via_diameter':.6,'min_through_hole_diameter':.3,'min_hole_to_hole':.25,'min_copper_edge_clearance':.25,'min_hole_clearance':.15,'min_text_height':.6},'rule_severities':{'silk_over_copper':'warning','silk_overlap':'warning'},'defaults':{'board_outline_line_width':.05,'copper_line_width':.2}}},'net_settings':{'classes':[{'name':'Default','clearance':.15,'track_width':.2,'via_diameter':.6,'via_drill':.3,'microvia_diameter':.3,'microvia_drill':.1,'diff_pair_width':.25,'diff_pair_gap':.15,'diff_pair_via_gap':.25},{'name':'Power','clearance':.2,'track_width':.6,'via_diameter':.8,'via_drill':.4,'microvia_diameter':.3,'microvia_drill':.1,'diff_pair_width':.25,'diff_pair_gap':.15,'diff_pair_via_gap':.25}],'netclass_assignments':{},'netclass_patterns':[{'netclass':'Power','pattern':n} for n in ['VBUS','V5','V3V3','V3_SW','V5_SW','SW']],'meta':{'version':4}},'schematic':{'annotate_start_num':0,'drawing':{'default_line_thickness':6.0},'meta':{'version':1}}}
-(ROOT/'saihub.kicad_pro').write_text(json.dumps(project,indent=2)+'\n')
+# Preserve existing user project settings during regeneration.
+if (ROOT/'saihub.kicad_pro').exists():
+    project=json.loads((ROOT/'saihub.kicad_pro').read_text())
+else:
+    (ROOT/'saihub.kicad_pro').write_text(json.dumps(project,indent=2)+'\n')
 (ROOT/'agent/routing/saihub-unrouted.kicad_pro').write_text(json.dumps(project,indent=2)+'\n')
 p.SaveBoard(str(ROOT/'agent/routing/saihub-unrouted.kicad_pcb'),board)
 (ROOT/'agent/routing/saihub-unrouted.kicad_pro').write_text(json.dumps(project,indent=2)+'\n')

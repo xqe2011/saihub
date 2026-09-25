@@ -1,0 +1,44 @@
+{
+  "reroute_nets": [
+    "CC2"
+  ],
+  "remove_vias": [
+    {
+      "net": "CC1",
+      "x": 37.1035,
+      "y": 5.1715,
+      "via": true
+    },
+    {
+      "net": "IO3",
+      "x": 22.2291,
+      "y": 16.03,
+      "via": true
+    },
+    {
+      "net": "IO7",
+      "x": 22.2166,
+      "y": 14.6722,
+      "via": true
+    },
+    {
+      "net": "FAULT5",
+      "x": 11.5187,
+      "y": 26.3187,
+      "via": true
+    },
+    {
+      "net": "BUZZ_PWM",
+      "x": 15.1832,
+      "y": 26.2918,
+      "via": true
+    },
+    {
+      "net": "UART_TX",
+      "x": 6.2726,
+      "y": 26.3258,
+      "via": true
+    }
+  ],
+  "reason": "Reroute connector CC2 clear of the fixed VBUS trunk; remove unused single-layer fanout vias."
+}

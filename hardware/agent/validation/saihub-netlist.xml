@@ -2,14 +2,14 @@
 <export version="E">
   <design>
     <source>/Users/xqe2011/Documents/Code/saihub/hardware/saihub.kicad_sch</source>
-    <date>2026-09-18T21:45:29</date>
+    <date>2026-09-25T00:00:38</date>
     <tool>Eeschema 10.0.6</tool>
     <sheet number="1" name="/" tstamps="/">
       <title_block>
         <title>SAIHub-Mini - ESP32-C5 GPIO CONTROLLER</title>
         <company>GPT6-Astra / xqe2011</company>
         <rev>A</rev>
-        <date>2026-09-18</date>
+        <date>2026-09-24</date>
         <source>saihub.kicad_sch</source>
         <comment number="1" value="48 x 28 mm / 2 layers / SGM6232 / prototype"/>
         <comment number="2" value=""/>
@@ -433,14 +433,38 @@
         </unit>
       </units>
     </comp>
+    <comp ref="C21">
+      <value>100n</value>
+      <footprint>Saihub:C_0603_1608Metric</footprint>
+      <fields>
+        <field name="MPN">100n</field>
+        <field name="Footprint">Saihub:C_0603_1608Metric</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Saihub" part="C" description=""/>
+      <property name="MPN" value="100n"/>
+      <property name="Sheetname" value="saihub"/>
+      <property name="Sheetfile" value="saihub.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>606619ff-8c26-5311-876c-bafea5be9022</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
     <comp ref="D1">
       <value>SS34</value>
       <footprint>Saihub:D_SMA</footprint>
-      <datasheet>https://www.diodes.com/assets/Datasheets/ds23013.pdf</datasheet>
+      <datasheet>https://datasheet.lcsc.com/datasheet/pdf/dfa1ff67dea875d0135103ba9ada713a.pdf?productCode=C8678</datasheet>
       <fields>
         <field name="MPN">SS34</field>
         <field name="Footprint">Saihub:D_SMA</field>
-        <field name="Datasheet">https://www.diodes.com/assets/Datasheets/ds23013.pdf</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/datasheet/pdf/dfa1ff67dea875d0135103ba9ada713a.pdf?productCode=C8678</field>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="D" description=""/>
@@ -484,17 +508,17 @@
       </units>
     </comp>
     <comp ref="D3">
-      <value>SS14</value>
+      <value>SS34</value>
       <footprint>Saihub:D_SMA</footprint>
-      <datasheet>https://www.diodes.com/assets/Datasheets/ds23001.pdf</datasheet>
+      <datasheet>https://datasheet.lcsc.com/datasheet/pdf/dfa1ff67dea875d0135103ba9ada713a.pdf?productCode=C8678</datasheet>
       <fields>
-        <field name="MPN">SS14</field>
+        <field name="MPN">SS34</field>
         <field name="Footprint">Saihub:D_SMA</field>
-        <field name="Datasheet">https://www.diodes.com/assets/Datasheets/ds23001.pdf</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/datasheet/pdf/dfa1ff67dea875d0135103ba9ada713a.pdf?productCode=C8678</field>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="D" description=""/>
-      <property name="MPN" value="SS14"/>
+      <property name="MPN" value="SS34"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -852,16 +876,16 @@
       </units>
     </comp>
     <comp ref="R9">
-      <value>100k</value>
+      <value>10k</value>
       <footprint>Saihub:R_0603_1608Metric</footprint>
       <fields>
-        <field name="MPN">100k</field>
+        <field name="MPN">10k</field>
         <field name="Footprint">Saihub:R_0603_1608Metric</field>
         <field name="Datasheet"/>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="R" description=""/>
-      <property name="MPN" value="100k"/>
+      <property name="MPN" value="10k"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -876,16 +900,16 @@
       </units>
     </comp>
     <comp ref="R10">
-      <value>100k</value>
+      <value>10k</value>
       <footprint>Saihub:R_0603_1608Metric</footprint>
       <fields>
-        <field name="MPN">100k</field>
+        <field name="MPN">10k</field>
         <field name="Footprint">Saihub:R_0603_1608Metric</field>
         <field name="Datasheet"/>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="R" description=""/>
-      <property name="MPN" value="100k"/>
+      <property name="MPN" value="10k"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -924,68 +948,20 @@
       </units>
     </comp>
     <comp ref="R12">
-      <value>100k</value>
+      <value>10k</value>
       <footprint>Saihub:R_0603_1608Metric</footprint>
       <fields>
-        <field name="MPN">100k</field>
+        <field name="MPN">10k</field>
         <field name="Footprint">Saihub:R_0603_1608Metric</field>
         <field name="Datasheet"/>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="R" description=""/>
-      <property name="MPN" value="100k"/>
+      <property name="MPN" value="10k"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
       <tstamps>e6325f08-e488-5d1d-8cc5-879778a7e705</tstamps>
-      <units>
-        <unit name="A">
-          <pins>
-            <pin num="1"/>
-            <pin num="2"/>
-          </pins>
-        </unit>
-      </units>
-    </comp>
-    <comp ref="R13">
-      <value>10k</value>
-      <footprint>Saihub:R_0603_1608Metric</footprint>
-      <fields>
-        <field name="MPN">10k</field>
-        <field name="Footprint">Saihub:R_0603_1608Metric</field>
-        <field name="Datasheet"/>
-        <field name="Description"/>
-      </fields>
-      <libsource lib="Saihub" part="R" description=""/>
-      <property name="MPN" value="10k"/>
-      <property name="Sheetname" value="saihub"/>
-      <property name="Sheetfile" value="saihub.kicad_sch"/>
-      <sheetpath names="/" tstamps="/"/>
-      <tstamps>cb699f1c-02f4-5b0d-a176-767f3a684fee</tstamps>
-      <units>
-        <unit name="A">
-          <pins>
-            <pin num="1"/>
-            <pin num="2"/>
-          </pins>
-        </unit>
-      </units>
-    </comp>
-    <comp ref="R14">
-      <value>10k</value>
-      <footprint>Saihub:R_0603_1608Metric</footprint>
-      <fields>
-        <field name="MPN">10k</field>
-        <field name="Footprint">Saihub:R_0603_1608Metric</field>
-        <field name="Datasheet"/>
-        <field name="Description"/>
-      </fields>
-      <libsource lib="Saihub" part="R" description=""/>
-      <property name="MPN" value="10k"/>
-      <property name="Sheetname" value="saihub"/>
-      <property name="Sheetfile" value="saihub.kicad_sch"/>
-      <sheetpath names="/" tstamps="/"/>
-      <tstamps>57252cbe-9c3b-55d3-9f3d-79121edaf9e6</tstamps>
       <units>
         <unit name="A">
           <pins>
@@ -1374,17 +1350,17 @@
       </units>
     </comp>
     <comp ref="U4">
-      <value>TPS2553DBVR</value>
+      <value>TPS2553DDBVR</value>
       <footprint>Saihub:SOT-23-6</footprint>
-      <datasheet>https://www.ti.com/lit/ds/symlink/tps2553.pdf</datasheet>
+      <datasheet>https://www.ti.com/lit/ds/symlink/tps2553d.pdf</datasheet>
       <fields>
-        <field name="MPN">TPS2553DBVR</field>
+        <field name="MPN">TPS2553DDBVR</field>
         <field name="Footprint">Saihub:SOT-23-6</field>
-        <field name="Datasheet">https://www.ti.com/lit/ds/symlink/tps2553.pdf</field>
+        <field name="Datasheet">https://www.ti.com/lit/ds/symlink/tps2553d.pdf</field>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="TPS2553" description=""/>
-      <property name="MPN" value="TPS2553DBVR"/>
+      <property name="MPN" value="TPS2553DDBVR"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -1403,17 +1379,17 @@
       </units>
     </comp>
     <comp ref="U5">
-      <value>TPS2553DBVR</value>
+      <value>TPS2553DDBVR</value>
       <footprint>Saihub:SOT-23-6</footprint>
-      <datasheet>https://www.ti.com/lit/ds/symlink/tps2553.pdf</datasheet>
+      <datasheet>https://www.ti.com/lit/ds/symlink/tps2553d.pdf</datasheet>
       <fields>
-        <field name="MPN">TPS2553DBVR</field>
+        <field name="MPN">TPS2553DDBVR</field>
         <field name="Footprint">Saihub:SOT-23-6</field>
-        <field name="Datasheet">https://www.ti.com/lit/ds/symlink/tps2553.pdf</field>
+        <field name="Datasheet">https://www.ti.com/lit/ds/symlink/tps2553d.pdf</field>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="TPS2553" description=""/>
-      <property name="MPN" value="TPS2553DBVR"/>
+      <property name="MPN" value="TPS2553DDBVR"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -1424,6 +1400,101 @@
             <pin num="1"/>
             <pin num="3"/>
             <pin num="2"/>
+            <pin num="6"/>
+            <pin num="5"/>
+            <pin num="4"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="U6">
+      <value>TPD4E05U06DQAR</value>
+      <footprint>Saihub:TPD4E05U06_DQA</footprint>
+      <datasheet>https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf</datasheet>
+      <fields>
+        <field name="MPN">TPD4E05U06DQAR</field>
+        <field name="Footprint">Saihub:TPD4E05U06_DQA</field>
+        <field name="Datasheet">https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf</field>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Saihub" part="TPD4E05U06" description=""/>
+      <property name="MPN" value="TPD4E05U06DQAR"/>
+      <property name="Sheetname" value="saihub"/>
+      <property name="Sheetfile" value="saihub.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>75e838de-11f5-502f-918e-054b2636aff3</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+            <pin num="4"/>
+            <pin num="5"/>
+            <pin num="3"/>
+            <pin num="8"/>
+            <pin num="6"/>
+            <pin num="7"/>
+            <pin num="9"/>
+            <pin num="10"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="U7">
+      <value>TPD4E05U06DQAR</value>
+      <footprint>Saihub:TPD4E05U06_DQA</footprint>
+      <datasheet>https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf</datasheet>
+      <fields>
+        <field name="MPN">TPD4E05U06DQAR</field>
+        <field name="Footprint">Saihub:TPD4E05U06_DQA</field>
+        <field name="Datasheet">https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf</field>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Saihub" part="TPD4E05U06" description=""/>
+      <property name="MPN" value="TPD4E05U06DQAR"/>
+      <property name="Sheetname" value="saihub"/>
+      <property name="Sheetfile" value="saihub.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>e660cb72-e014-5848-9e08-20c3545bd48e</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+            <pin num="4"/>
+            <pin num="5"/>
+            <pin num="3"/>
+            <pin num="8"/>
+            <pin num="6"/>
+            <pin num="7"/>
+            <pin num="9"/>
+            <pin num="10"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="U10">
+      <value>USBLC6-2SC6</value>
+      <footprint>Saihub:SOT-23-6</footprint>
+      <datasheet>https://www.st.com/resource/en/datasheet/usblc6-2.pdf</datasheet>
+      <fields>
+        <field name="MPN">USBLC6-2SC6</field>
+        <field name="Footprint">Saihub:SOT-23-6</field>
+        <field name="Datasheet">https://www.st.com/resource/en/datasheet/usblc6-2.pdf</field>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Saihub" part="USBLC6_2SC6" description=""/>
+      <property name="MPN" value="USBLC6-2SC6"/>
+      <property name="Sheetname" value="saihub"/>
+      <property name="Sheetfile" value="saihub.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>8d3aee07-77ba-582b-bb97-2f6e7cafaa84</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+            <pin num="3"/>
             <pin num="6"/>
             <pin num="5"/>
             <pin num="4"/>
@@ -1633,6 +1704,27 @@
         <pin num="1" name="TEST" type="passive"/>
       </pins>
     </libpart>
+    <libpart lib="Saihub" part="TPD4E05U06">
+      <fields>
+        <field name="Reference">U</field>
+        <field name="Value">TPD4E05U06</field>
+        <field name="Footprint"/>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <pins>
+        <pin num="1" name="IO1" type="passive"/>
+        <pin num="2" name="IO2" type="passive"/>
+        <pin num="3" name="GND" type="power_in"/>
+        <pin num="4" name="IO3" type="passive"/>
+        <pin num="5" name="IO4" type="passive"/>
+        <pin num="6" name="NC" type="no_connect"/>
+        <pin num="7" name="NC" type="no_connect"/>
+        <pin num="8" name="GND" type="power_in"/>
+        <pin num="9" name="NC" type="no_connect"/>
+        <pin num="10" name="NC" type="no_connect"/>
+      </pins>
+    </libpart>
     <libpart lib="Saihub" part="TPS2553">
       <fields>
         <field name="Reference">U</field>
@@ -1752,13 +1844,13 @@
       <node ref="U3" pin="3" pinfunction="EN_3" pintype="input"/>
     </net>
     <net code="12" name="FAULT4" class="Default">
-      <node ref="R13" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="TP5" pin="1" pinfunction="TEST_1" pintype="passive"/>
+      <node ref="U3" pin="19" pinfunction="GPIO15_19" pintype="bidirectional"/>
       <node ref="U4" pin="4" pinfunction="FAULT_N_4" pintype="open_collector"/>
     </net>
     <net code="13" name="FAULT5" class="Default">
-      <node ref="R14" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="TP6" pin="1" pinfunction="TEST_1" pintype="passive"/>
+      <node ref="U3" pin="5" pinfunction="GPIO3_5" pintype="bidirectional"/>
       <node ref="U5" pin="4" pinfunction="FAULT_N_4" pintype="open_collector"/>
     </net>
     <net code="14" name="FB" class="Default">
@@ -1774,6 +1866,7 @@
       <node ref="C13" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="C15" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="C2" pin="2" pinfunction="2_2" pintype="passive"/>
+      <node ref="C21" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="C3" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="C4" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="C5" pin="2" pinfunction="2_2" pintype="passive"/>
@@ -1803,6 +1896,7 @@
       <node ref="SW1" pin="2" pinfunction="GND_2" pintype="passive"/>
       <node ref="TP2" pin="1" pinfunction="TEST_1" pintype="passive"/>
       <node ref="U1" pin="2" pinfunction="GND_2" pintype="power_in"/>
+      <node ref="U10" pin="2" pinfunction="GND_2" pintype="power_in"/>
       <node ref="U2" pin="4" pinfunction="GND_4" pintype="power_in"/>
       <node ref="U2" pin="9" pinfunction="EP_GND_9" pintype="passive"/>
       <node ref="U3" pin="1" pinfunction="GND_1" pintype="power_in"/>
@@ -1810,6 +1904,10 @@
       <node ref="U3" pin="29" pinfunction="EPAD_29" pintype="power_in"/>
       <node ref="U4" pin="2" pinfunction="GND_2" pintype="power_in"/>
       <node ref="U5" pin="2" pinfunction="GND_2" pintype="power_in"/>
+      <node ref="U6" pin="3" pinfunction="GND_3" pintype="power_in"/>
+      <node ref="U6" pin="8" pinfunction="GND_8" pintype="power_in"/>
+      <node ref="U7" pin="3" pinfunction="GND_3" pintype="power_in"/>
+      <node ref="U7" pin="8" pinfunction="GND_8" pintype="power_in"/>
     </net>
     <net code="16" name="ILIM4" class="Default">
       <node ref="R7" pin="1" pinfunction="1_1" pintype="passive"/>
@@ -1822,34 +1920,42 @@
     <net code="18" name="IO0" class="Default">
       <node ref="J2" pin="5" pinfunction="5_5" pintype="passive"/>
       <node ref="U3" pin="12" pinfunction="GPIO10_12" pintype="bidirectional"/>
+      <node ref="U6" pin="1" pinfunction="IO1_1" pintype="passive"/>
     </net>
     <net code="19" name="IO1" class="Default">
       <node ref="J2" pin="6" pinfunction="6_6" pintype="passive"/>
       <node ref="U3" pin="7" pinfunction="GPIO1_7" pintype="bidirectional"/>
+      <node ref="U6" pin="2" pinfunction="IO2_2" pintype="passive"/>
     </net>
     <net code="20" name="IO2" class="Default">
       <node ref="J2" pin="7" pinfunction="7_7" pintype="passive"/>
       <node ref="U3" pin="6" pinfunction="GPIO0_6" pintype="bidirectional"/>
+      <node ref="U6" pin="4" pinfunction="IO3_4" pintype="passive"/>
     </net>
     <net code="21" name="IO3" class="Default">
       <node ref="J2" pin="8" pinfunction="8_8" pintype="passive"/>
       <node ref="U3" pin="21" pinfunction="GPIO23_21" pintype="bidirectional"/>
+      <node ref="U6" pin="5" pinfunction="IO4_5" pintype="passive"/>
     </net>
     <net code="22" name="IO4" class="Default">
       <node ref="J2" pin="9" pinfunction="9_9" pintype="passive"/>
       <node ref="U3" pin="17" pinfunction="GPIO4_17" pintype="bidirectional"/>
+      <node ref="U7" pin="1" pinfunction="IO1_1" pintype="passive"/>
     </net>
     <net code="23" name="IO5" class="Default">
       <node ref="J2" pin="10" pinfunction="10_10" pintype="passive"/>
       <node ref="U3" pin="16" pinfunction="GPIO5_16" pintype="bidirectional"/>
+      <node ref="U7" pin="2" pinfunction="IO2_2" pintype="passive"/>
     </net>
     <net code="24" name="IO6" class="Default">
       <node ref="J2" pin="11" pinfunction="11_11" pintype="passive"/>
       <node ref="U3" pin="8" pinfunction="GPIO6_8" pintype="bidirectional"/>
+      <node ref="U7" pin="4" pinfunction="IO3_4" pintype="passive"/>
     </net>
     <net code="25" name="IO7" class="Default">
       <node ref="J2" pin="12" pinfunction="12_12" pintype="passive"/>
       <node ref="U3" pin="23" pinfunction="GPIO24_23" pintype="bidirectional"/>
+      <node ref="U7" pin="5" pinfunction="IO4_5" pintype="passive"/>
     </net>
     <net code="26" name="MCU_DM" class="Default">
       <node ref="R3" pin="2" pinfunction="2_2" pintype="passive"/>
@@ -1907,8 +2013,6 @@
       <node ref="C9" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="D3" pin="1" pinfunction="K_1" pintype="passive"/>
       <node ref="L1" pin="2" pinfunction="2_2" pintype="passive"/>
-      <node ref="R13" pin="1" pinfunction="1_1" pintype="passive"/>
-      <node ref="R14" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="R15" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="R5" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="R6" pin="1" pinfunction="1_1" pintype="passive"/>
@@ -1919,20 +2023,26 @@
     <net code="36" name="V3_SW" class="Power,Default">
       <node ref="C11" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="J2" pin="1" pinfunction="1_1" pintype="passive"/>
+      <node ref="U10" pin="1" pinfunction="IO1_1" pintype="passive"/>
+      <node ref="U10" pin="6" pinfunction="IO1_6" pintype="passive"/>
       <node ref="U4" pin="6" pinfunction="OUT_6" pintype="power_out"/>
     </net>
     <net code="37" name="V5" class="Power,Default">
       <node ref="C10" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="C2" pin="1" pinfunction="1_1" pintype="passive"/>
+      <node ref="C21" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="C3" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="D2" pin="1" pinfunction="K_1" pintype="passive"/>
       <node ref="F1" pin="2" pinfunction="2_2" pintype="passive"/>
+      <node ref="U10" pin="5" pinfunction="VBUS_5" pintype="power_in"/>
       <node ref="U2" pin="2" pinfunction="IN_2" pintype="power_in"/>
       <node ref="U5" pin="1" pinfunction="IN_1" pintype="power_in"/>
     </net>
     <net code="38" name="V5_SW" class="Power,Default">
       <node ref="C12" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="J2" pin="3" pinfunction="3_3" pintype="passive"/>
+      <node ref="U10" pin="3" pinfunction="IO2_3" pintype="passive"/>
+      <node ref="U10" pin="4" pinfunction="IO2_4" pintype="passive"/>
       <node ref="U5" pin="6" pinfunction="OUT_6" pintype="power_out"/>
     </net>
     <net code="39" name="VBUS" class="Power,Default">
@@ -1956,29 +2066,47 @@
     <net code="43" name="unconnected-(U3-GPIO2-Pad4)" class="Default">
       <node ref="U3" pin="4" pinfunction="GPIO2_4" pintype="bidirectional+no_connect"/>
     </net>
-    <net code="44" name="unconnected-(U3-GPIO3-Pad5)" class="Default">
-      <node ref="U3" pin="5" pinfunction="GPIO3_5" pintype="bidirectional+no_connect"/>
-    </net>
-    <net code="45" name="unconnected-(U3-GPIO7-Pad9)" class="Default">
+    <net code="44" name="unconnected-(U3-GPIO7-Pad9)" class="Default">
       <node ref="U3" pin="9" pinfunction="GPIO7_9" pintype="bidirectional+no_connect"/>
     </net>
-    <net code="46" name="unconnected-(U3-GPIO15-Pad19)" class="Default">
-      <node ref="U3" pin="19" pinfunction="GPIO15_19" pintype="bidirectional+no_connect"/>
-    </net>
-    <net code="47" name="unconnected-(U3-GPIO25-Pad26)" class="Default">
+    <net code="45" name="unconnected-(U3-GPIO25-Pad26)" class="Default">
       <node ref="U3" pin="26" pinfunction="GPIO25_26" pintype="bidirectional+no_connect"/>
     </net>
-    <net code="48" name="unconnected-(U3-GPIO26-Pad27)" class="Default">
+    <net code="46" name="unconnected-(U3-GPIO26-Pad27)" class="Default">
       <node ref="U3" pin="27" pinfunction="GPIO26_27" pintype="bidirectional+no_connect"/>
     </net>
-    <net code="49" name="unconnected-(U3-GPIO27-Pad18)" class="Default">
+    <net code="47" name="unconnected-(U3-GPIO27-Pad18)" class="Default">
       <node ref="U3" pin="18" pinfunction="GPIO27_18" pintype="bidirectional+no_connect"/>
     </net>
-    <net code="50" name="unconnected-(U3-NC-Pad20)" class="Default">
+    <net code="48" name="unconnected-(U3-NC-Pad20)" class="Default">
       <node ref="U3" pin="20" pinfunction="NC_20" pintype="no_connect"/>
     </net>
-    <net code="51" name="unconnected-(U3-NC-Pad22)" class="Default">
+    <net code="49" name="unconnected-(U3-NC-Pad22)" class="Default">
       <node ref="U3" pin="22" pinfunction="NC_22" pintype="no_connect"/>
+    </net>
+    <net code="50" name="unconnected-(U6-NC-Pad6)" class="Default">
+      <node ref="U6" pin="6" pinfunction="NC_6" pintype="no_connect"/>
+    </net>
+    <net code="51" name="unconnected-(U6-NC-Pad7)" class="Default">
+      <node ref="U6" pin="7" pinfunction="NC_7" pintype="no_connect"/>
+    </net>
+    <net code="52" name="unconnected-(U6-NC-Pad9)" class="Default">
+      <node ref="U6" pin="9" pinfunction="NC_9" pintype="no_connect"/>
+    </net>
+    <net code="53" name="unconnected-(U6-NC-Pad10)" class="Default">
+      <node ref="U6" pin="10" pinfunction="NC_10" pintype="no_connect"/>
+    </net>
+    <net code="54" name="unconnected-(U7-NC-Pad6)" class="Default">
+      <node ref="U7" pin="6" pinfunction="NC_6" pintype="no_connect"/>
+    </net>
+    <net code="55" name="unconnected-(U7-NC-Pad7)" class="Default">
+      <node ref="U7" pin="7" pinfunction="NC_7" pintype="no_connect"/>
+    </net>
+    <net code="56" name="unconnected-(U7-NC-Pad9)" class="Default">
+      <node ref="U7" pin="9" pinfunction="NC_9" pintype="no_connect"/>
+    </net>
+    <net code="57" name="unconnected-(U7-NC-Pad10)" class="Default">
+      <node ref="U7" pin="10" pinfunction="NC_10" pintype="no_connect"/>
     </net>
   </nets>
 </export>
