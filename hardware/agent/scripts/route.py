@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 import pcbnew as p
+import wx
+app = wx.App(False)
 from identity import identity, apply_board_identity
 ROOT=Path(__file__).resolve().parents[2]
 for directory in ('agent/validation', 'agent/previews', 'agent/routing', 'docs'):
@@ -39,7 +41,7 @@ if mode=='prepare':
     wire('V5',[point('C2',1),(41.225,19.4),point('C3',1)],.6)
     wire('V3V3',[point('L1',2),(41.85,22.9),(39.075,22.9),point('C4',1)],.8)
     for pt in [(37.7,13.2),(37.7,14.0),(37.7,14.8)]:via('GND',pt,.6,.3)
-    for pt in [(14.3,11.3),(16.3,11.3),(14.3,13.3),(16.3,13.3)]:via('GND',pt,.6,.3)
+    for pt in [(14.3,13.25),(16.3,13.25),(14.3,15.25),(16.3,15.25)]:via('GND',pt,.6,.3)
     wire('GND',[point('U2',4),(39.8,12.095),(38.3,13.595),point('U2',9)],.6)
     for ref,num in [('C2',2),('C3',2),('C4',2),('D1',2)]:via('GND',point(ref,num),.8,.4)
     # Keep the feedback/compensation on the quiet side of the converter.
@@ -56,9 +58,29 @@ if mode=='prepare':
     for ref,cap,net,y in [('U4','C11','V3_SW',3.7),('U5','C12','V5_SW',10.2)]:
         wire(net,[point(ref,6),(26,y)],.6);via(net,(26,y),.8,.4)
         via(net,point(cap,1),.8,.4)
+    for ref in ['U6','U7']:
+        for num,dy in [(3,-.8),(8,.8)]:
+            x,y=point(ref,num); target=(x,y+dy)
+            wire('GND',[(x,y),target],.2);via('GND',target)
+    wire('V5',[point('U10',5),(2.5,3.3),(5.225,3.3),point('C21',1)],.3)
+    for ref,num in [('U10',2),('C21',2)]:
+        x,y=point(ref,num);target=(x,y+.95) if ref=='U10' else (x+.65,y)
+        wire('GND',[(x,y),target],.3);via('GND',target)
+    # Reserve supply links before signal routing crowds their escape paths.
+    wire('V5',[point('C21',1),(8,6.5)],.3);via('V5',(8,6.5))
+    wire('V5',[(8,6.5),(12,6.5),(19.5,14),(26,14)],.3,p.B_Cu)
+    wire('V5',[point('U2',2),(42,14.9)],.6);via('V5',(42,14.9),.8,.4)
+    via('V5',point('F1',2),.8,.4)
+    wire('V5',[(42,14.9),(41.1,14),(41.1,9.6)],.8,p.B_Cu)
+    via('VBUS',point('U1',5));via('VBUS',(31.5,9.4))
+    wire('VBUS',[point('C1',1),(31.5,9.4)],.3)
+    wire('VBUS',[point('U1',5),(32.5,5.5625),(30.5,5.5625),(30.5,9.4),(31.5,9.4)],.3,p.B_Cu)
+    via('V3V3',point('C6',1),.8,.4);via('V3V3',(6.8,8.41),.8,.4)
+    wire('V3V3',[point('U3',2),(6.8,8.41)],.6)
+    wire('V3V3',[point('C6',1),(6.41,8.8),(6.8,8.41)],.6,p.B_Cu)
     # Reserve the long USB pair on B.Cu before routing GPIOs.
-    wire('MCU_DM',[point('U3',13),(4.6,20.43),(4.6,18.5),point('R3',2)],.2)
-    wire('MCU_DP',[point('U3',14),(4.325,21.7),(3.325,20.7),point('R4',2)],.2)
+    wire('MCU_DM',[point('U3',13),(4.8,22.38),(4.8,18.5),point('R3',2)],.2)
+    wire('MCU_DP',[point('U3',14),(4.3,23.65),(4.3,20.3),point('R4',2)],.2)
     for net,ref,pt in [('USB_DM','R3',(1.15,18.5)),('USB_DP','R4',(1.15,20.3))]:
         wire(net,[point(ref,1),pt],.2);via(net,pt)
     via('USB_DM',(31.65,7.05));via('USB_DP',(35.3,6.84))
@@ -73,6 +95,15 @@ if mode=='prepare':
     print('Prepared SAIHub-Mini locked buck, current-limit and USB routes.')
 elif mode=='import':
     if not p.ImportSpecctraSES(b,str(ROOT/'agent/validation/saihub.ses')): raise SystemExit('SES import failed')
+    # Ground planes replace redundant autorouter ground tracks.
+    cleanup=json.loads((ROOT/'agent/validation/routing-cleanup.json').read_text())
+    for track in list(b.GetTracks()):
+        is_via=isinstance(track,p.PCB_VIA)
+        pt=track.GetStart()
+        unused_via=is_via and any(track.GetNetname()==a['net'] and abs(p.ToMM(pt.x)-a['x'])<.0001 and abs(p.ToMM(pt.y)-a['y'])<.0001 for a in cleanup['remove_vias'])
+        if track.GetNetname() in cleanup['reroute_nets'] or unused_via or (not is_via and track.GetNetname()=='GND' and not track.IsLocked()):
+            # Native removal avoids the wrapper ownership bug during bulk edits.
+            b.RemoveNative(track)
     finish=ROOT/'agent/validation/finish-routes.json'
     for route in json.loads(finish.read_text()) if finish.exists() else []:
         for a,c in zip(route['points'],route['points'][1:]):
@@ -96,7 +127,7 @@ elif mode=='import':
         b.Add(z)
     # Solid ground connections avoid isolated thermal islands at edge connectors
     # and maximize regulator EP heat spreading. Other pads retain thermals.
-    for ref in ['J1','J2','U2','C12']:
+    for ref in ['J1','J2','U2','U5','C12']:
         for pad in fps[ref].Pads():
             if pad.GetNetname()=='GND':pad.SetLocalZoneConnection(p.ZONE_CONNECTION_FULL)
     b.BuildConnectivity();p.ZONE_FILLER(b).Fill(b.Zones())

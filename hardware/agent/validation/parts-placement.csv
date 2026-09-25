@@ -10,7 +10,7 @@ F1,3A fuse,0467003.NR,Saihub:Fuse_1206_3216Metric,39.7,9.6,0,top,"Littelfuse 467
 D2,SMF5.0A,SMF5.0A,Saihub:D_SOD-123F,44.8,9.6,0,top,,https://www.yint-electronic.com/products/emsproduct/tvs/smf5-0a.html
 U2,SGM6232YPS8G/TR,SGM6232YPS8G/TR,Saihub:SGM6232_SOIC8_EP,38.3,14,180,top,EN open for auto-start; 3.314V divider; exposed pad GND,https://www.sg-micro.com/rect/assets/9fe04e94-334c-4982-964b-fc08001cd9ac/SGM6232.pdf
 L1,4.7uH,SRP5030TA-4R7M,Saihub:SRP5030TA,44.1,24.4,180,top,"Shielded 5.7x5.2x2.8mm; 4.6A Irms, 6A Isat per manufacturer drawing",https://bourns.com/docs/product-datasheets/SRP5030TA.pdf
-D1,SS34,SS34,Saihub:D_SMA,45.5,14.5,-90,top,,https://www.diodes.com/assets/Datasheets/ds23013.pdf
+D1,SS34,SS34,Saihub:D_SMA,45.5,14.5,-90,top,"MDD SS34, 40V / 3A, SMA (DO-214AC); do not substitute SMC variants",https://datasheet.lcsc.com/datasheet/pdf/dfa1ff67dea875d0135103ba9ada713a.pdf?productCode=C8678
 C2,22u,22u,Saihub:C_1210_3225Metric,38.3,19.4,180,top,"X7R, 10V minimum",
 C3,100n,100n,Saihub:C_0603_1608Metric,42,19.4,90,top,"X7R, 10V minimum",
 C4,47u,47u,Saihub:C_1210_3225Metric,35.8,24.7,180,top,"X7R, 10V minimum",
@@ -22,35 +22,37 @@ R18,10,10,Saihub:R_0603_1608Metric,45.7,19.2,0,top,"1%, 0603",
 C14,10n,10n,Saihub:C_0603_1608Metric,39.1,25.7,90,top,"X7R, 10V minimum",
 C15,100n,100n,Saihub:C_0603_1608Metric,32.4,24,90,top,"X7R, 10V minimum",
 C16,5.6n,5.6n,Saihub:C_0603_1608Metric,32.4,17.6,-90,top,"X7R, 10V minimum",
-U3,ESPC5-32E-H4,ESPC5-32E-H4,Saihub:ESPC5-32E-H4,14.5,13.6,0,top,,https://atta.szlcsc.com/upload/public/pdf/source/20251016/AE26C73F5F73E1BD024C1C95B3A92329.pdf
-C6,10u,10u,Saihub:C_0805_2012Metric,2.5,5.5,90,top,"X7R, 10V minimum",
-C7,100n,100n,Saihub:C_0603_1608Metric,2.5,9,90,top,"X7R, 10V minimum",
-R5,10k,10k,Saihub:R_0603_1608Metric,2.5,12.5,90,top,"1%, 0603",
-C8,1u,1u,Saihub:C_0603_1608Metric,2.5,15.8,90,top,"X7R, 10V minimum",
-R6,10k,10k,Saihub:R_0603_1608Metric,2.5,27,0,top,"1%, 0603",
+U3,ESPC5-32E-H4,ESPC5-32E-H4,Saihub:ESPC5-32E-H4,14.5,15.55,0,top,,https://atta.szlcsc.com/upload/public/pdf/source/20251016/AE26C73F5F73E1BD024C1C95B3A92329.pdf
+C6,10u,10u,Saihub:C_0805_2012Metric,2.5,8.8,0,top,"X7R, 10V minimum",
+C7,100n,100n,Saihub:C_0603_1608Metric,2.5,10.7,0,top,"X7R, 10V minimum",
+R5,10k,10k,Saihub:R_0603_1608Metric,2.5,12.4,0,top,"1%, 0603",
+C8,1u,1u,Saihub:C_0603_1608Metric,2.5,14.1,0,top,"X7R, 10V minimum",
+R6,10k,10k,Saihub:R_0603_1608Metric,2.5,15.8,0,top,"1%, 0603",
 SW1,BOOT,EVQP7A01P,Saihub:SW_SPST_EVQP7A,34.35,1.75,180,top,"3.5 x 2.9 mm body, 1.35 mm high, side-actuated toward connector edge",https://industry.panasonic.com/ap/en/products/control/switch/light-touch/number/evqp7a01p
-TP1,EN,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,1.2,23.1,0,top,Do not populate,
-TP2,GND,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,3.4,23.1,0,top,Do not populate,
-TP3,UART_TX,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,5.6,25.1,0,top,Do not populate,
-TP4,V3V3,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,7.8,25.1,0,top,Do not populate,
+TP1,EN,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,1.2,22.3,0,top,Do not populate,
+TP2,GND,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,3.4,22.3,0,top,Do not populate,
+TP3,UART_TX,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,5.6,27,0,top,Do not populate,
+TP4,V3V3,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,7.8,27,0,top,Do not populate,
 J2,1x12 2.54mm right-angle,61301211021,Saihub:PinHeader_1x12_P2.54mm_Horizontal,1.8,1.5,90,top,Wurth WR-PHD 2.54mm 1x12 right-angle male,https://www.we-online.com/components/products/datasheet/61301211021.pdf
-U4,TPS2553DBVR,TPS2553DBVR,Saihub:SOT-23-6,27.65,5.7,90,top,,https://www.ti.com/lit/ds/symlink/tps2553.pdf
+U4,TPS2553DDBVR,TPS2553DDBVR,Saihub:SOT-23-6,27.65,5.7,90,top,,https://www.ti.com/lit/ds/symlink/tps2553d.pdf
 R7,26.1k,26.1k,Saihub:R_0603_1608Metric,30.3,5.2,90,top,"1%, 0603",
-R9,100k,100k,Saihub:R_0603_1608Metric,30.3,8.4,90,top,"1%, 0603",
+R9,10k,10k,Saihub:R_0603_1608Metric,30.3,8.4,90,top,"1%, 0603",
 C9,100n,100n,Saihub:C_0603_1608Metric,24.95,5.6,90,top,"X7R, 10V minimum",
 C11,1u,1u,Saihub:C_0603_1608Metric,27.3,8.6,0,top,"X7R, 10V minimum",
-R13,10k,10k,Saihub:R_0603_1608Metric,6,27,0,top,"1%, 0603",
-TP5,FAULT4,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,10,25.1,0,top,Do not populate,
-U5,TPS2553DBVR,TPS2553DBVR,Saihub:SOT-23-6,27.65,12.2,90,top,,https://www.ti.com/lit/ds/symlink/tps2553.pdf
+TP5,FAULT4,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,10,27,0,top,Do not populate,
+U5,TPS2553DDBVR,TPS2553DDBVR,Saihub:SOT-23-6,27.65,12.2,90,top,,https://www.ti.com/lit/ds/symlink/tps2553d.pdf
 R8,26.1k,26.1k,Saihub:R_0603_1608Metric,30.3,11.6,90,top,"1%, 0603",
-R10,100k,100k,Saihub:R_0603_1608Metric,30.3,14.8,90,top,"1%, 0603",
+R10,10k,10k,Saihub:R_0603_1608Metric,30.3,14.8,90,top,"1%, 0603",
 C10,100n,100n,Saihub:C_0603_1608Metric,24.95,12.1,90,top,"X7R, 10V minimum",
 C12,1u,1u,Saihub:C_0603_1608Metric,27.3,15.2,0,top,"X7R, 10V minimum",
-R14,10k,10k,Saihub:R_0603_1608Metric,9.5,27,0,top,"1%, 0603",
-TP6,FAULT5,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,12.2,25.1,0,top,Do not populate,
+TP6,FAULT5,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,12.2,27,0,top,Do not populate,
 BZ1,KLJ-5020 3.3V,KLJ-5020,Saihub:KLJ-5020,28.1,23.8,90,top,,https://datasheet.lcsc.com/datasheet/pdf/5a334e56ebfeea427b46ed3bd7f9e2de.pdf?productCode=C556937
-Q1,AO3400A,AO3400A,Saihub:SOT-23,20.5,25.7,0,top,,https://www.aosmd.com/sites/default/files/res/datasheets/AO3400A.pdf
-D3,SS14,SS14,Saihub:D_SMA,27.8,18.2,0,top,,https://www.diodes.com/assets/Datasheets/ds23001.pdf
-R11,100,100,Saihub:R_0603_1608Metric,16.7,25.1,0,top,"1%, 0603",
-R12,100k,100k,Saihub:R_0603_1608Metric,23.4,25.5,90,top,"1%, 0603",
-C13,100n,100n,Saihub:C_0603_1608Metric,16.7,26.9,0,top,"X7R, 10V minimum",
+Q1,AO3400A,AO3400A,Saihub:SOT-23,2.5,25.5,0,top,,https://www.aosmd.com/sites/default/files/res/datasheets/AO3400A.pdf
+D3,SS34,SS34,Saihub:D_SMA,27.8,18.2,0,top,"MDD SS34, 40V / 3A, SMA (DO-214AC); do not substitute SMC variants",https://datasheet.lcsc.com/datasheet/pdf/dfa1ff67dea875d0135103ba9ada713a.pdf?productCode=C8678
+R11,100,100,Saihub:R_0603_1608Metric,15.3,27,0,top,"1%, 0603",
+R12,10k,10k,Saihub:R_0603_1608Metric,22,27,0,top,"1%, 0603",
+C13,100n,100n,Saihub:C_0603_1608Metric,18.5,27,0,top,"X7R, 10V minimum",
+U6,TPD4E05U06DQAR,TPD4E05U06DQAR,Saihub:TPD4E05U06_DQA,14.5,4.3,-90,top,Four GPIO ESD shunts; USON-10 2.5x1mm; no supply required,https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf
+U7,TPD4E05U06DQAR,TPD4E05U06DQAR,Saihub:TPD4E05U06_DQA,22.2,4.3,-90,top,Four GPIO ESD shunts; USON-10 2.5x1mm; no supply required,https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf
+U10,USBLC6-2SC6,USBLC6-2SC6,Saihub:SOT-23-6,2.5,5.5,90,top,Header power ESD shunt; place beside J2 with short ground return,https://www.st.com/resource/en/datasheet/usblc6-2.pdf
+C21,100n,100n,Saihub:C_0603_1608Metric,6,4.3,0,top,"X7R, 10V minimum; local ESD supply bypass",

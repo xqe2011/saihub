@@ -3,6 +3,8 @@
 import json, uuid, xml.etree.ElementTree as ET
 from pathlib import Path
 import pcbnew as p
+from identity import apply_board_identity
+from silkscreen import apply_reference_labels
 ROOT=Path(__file__).resolve().parents[2]
 for directory in ('agent/validation', 'agent/previews', 'agent/routing', 'docs'):
     (ROOT/directory).mkdir(parents=True, exist_ok=True)
@@ -17,8 +19,6 @@ for f in b.GetFootprints():
     ref=f.GetReference();a=parts[ref]
     f.SetPath(p.KIID_PATH('/'+root+'/'+a['uuid']))
     f.SetValue(a['value'])
-    if ref in ['U2','U3','L1','BZ1']:
-        f.Reference().SetVisible(True);f.Reference().SetLayer(p.F_Fab);f.Reference().SetPosition(f.GetPosition())
     f.GetField(p.FIELD_T_DATASHEET).SetText(a['url'])
     field=f.GetField('MPN') if f.HasField('MPN') else p.PCB_FIELD(f,p.FIELD_T_USER,'MPN')
     field.SetText(a['mpn']);field.SetVisible(False)
@@ -33,6 +33,8 @@ for f in b.GetFootprints():
             nets[name]=p.NETINFO_ITEM(b,name);b.Add(nets[name])
         assert not pad.GetNetname() or pad.GetNetname()==name,(ref,num,pad.GetNetname(),name)
         pad.SetNet(nets[name])
+apply_board_identity(b)
+apply_reference_labels(b)
 b.BuildConnectivity();p.ZONE_FILLER(b).Fill(b.Zones())
 p.SaveBoard(str(ROOT/'saihub.kicad_pcb'),b)
 (ROOT/'saihub.kicad_pro').write_text(project)

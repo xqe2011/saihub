@@ -59,10 +59,11 @@ positions={
  'C14':(190,148,0),'C15':(29,192,0),'C16':(73,192,0),
  'U4':(270,159,0),'U5':(366,159,0),'R7':(285,184,270),'R8':(381,184,270),
  'R9':(249,179,270),'R10':(345,179,270),'C9':(249,204,270),'C10':(345,204,270),
- 'C11':(298,168,270),'C12':(394,168,270),'R13':(273,220,270),'R14':(369,220,270),
+ 'C11':(298,168,270),'C12':(394,168,270),
  'TP5':(297,238,0),'TP6':(393,238,0),'J2':(187,243,0),
  'BZ1':(45,232,0),'Q1':(83,250,0),'D3':(60,221,0),'R11':(47,250,0),'R12':(66,260,270),'C13':(122,237,270),
 }
+positions.update({'U6': (470, 50, 0), 'U7': (470, 110, 0), 'U10': (458, 180, 0), 'C21': (544, 180, 270)})
 for a in parts.values():a['sch']=[grid(v) for v in positions[a['ref']][:2]];a['angle']=positions[a['ref']][2]
 for i,net in enumerate(['VBUS','V5','V3V3','GND']):
     ref='#FLG0'+str(i+1)
@@ -101,6 +102,13 @@ box(12,134,232,210,'03  SGM6232 / ALWAYS-ON 3.3 V')
 box(236,134,408,249,'04  SWITCHED OUTPUTS / 1 A NOMINAL LIMIT')
 box(12,214,144,275,'05  PASSIVE 5020 BUZZER')
 box(148,214,232,275,'06  12-PIN MALE HEADER')
+box(412,12,580,275,'07  HEADER ESD / SHUNT PROTECTION')
+txt('U6/U7: four channels each; no supply or bypass needed.',418,225,1.05)
+txt('IO0-IO7: 3.3 V only; final-board ESD test required.',418,242,1.05)
+txt('U10: switched rails. Power current bypasses the array.',418,249,1.05)
+txt('Place arrays and bypass capacitors directly beside J2.',418,256,1.05)
+txt('Short, wide ground returns; qualify ESD on final PCB.',418,263,1.05)
+txt('48 x 28 mm PCB - top-side component assembly.',17,290,1.5)
 
 # MCU bypass capacitors share actual supply / return buses.
 for num,net,yy in [(1,'V3V3',grid(25)),(2,'GND',grid(46))]:
@@ -152,8 +160,8 @@ txt('EN open: auto-start. EP to GND. FB divider 33k / 10.5k = 3.314 V.',17,205,1
 for u,ce,rpd in [('U4','C11','R9'),('U5','C12','R10')]:
     a=mark(u,6);b=mark(ce,1);wire([a,(b[0],a[1]),b]);label(parts[u]['nets']['6'],(b[0],a[1]),180);stub(ce,2)
     a=mark(u,3);b=mark(rpd,1);wire([a,(b[0],a[1]),b]);label(parts[u]['nets']['3'],(b[0],a[1]));stub(rpd,2)
-for r,tp in [('R13','TP5'),('R14','TP6')]:
-    a=mark(r,2);b=mark(tp,1);wire([a,(a[0],b[1]),b]);label(parts[r]['nets']['2'],(a[0],b[1]));stub(r,1)
+txt('Fault inputs: firmware must enable internal pullups.',240,222,1.02)
+txt('FAULT4 -> input 15; FAULT5 -> input 3. Active LOW.',240,251,1.02)
 txt('26.1k ILIM: nominal 0.989 A; bounds 0.908-1.081 A.',240,244,1.02)
 
 # Buzzer: low-side MOSFET and flyback diode, independent of switched outputs.
@@ -168,7 +176,7 @@ txt('4 kHz / 50% duty. GPIO12 reserved.',17,272,1.02)
 for ref,a in parts.items():
     x,y=a['sch'];angle=a['angle'];isflag=ref.startswith('#');sym=syms[a['sym']]
     inst=f'(symbol (lib_id "Saihub:{a["sym"]}") (at {x} {y} {angle}) (unit 1) (in_bom {"no" if isflag or ref.startswith("TP") else "yes"}) (on_board {"no" if isflag else "yes"}) (dnp no) (uuid "{a["uuid"]}")'
-    h=6 if a['sym']=='AO3400A' else 20.32 if a['sym']=='ESPC5_32E_H4' else 12.7 if a['sym']=='USB_C' else 11.43 if a['sym']=='HEADER_12' else 8.89 if a['sym']=='SGM6232' else 5.08 if a['sym'] in ['TPS2553','USBLC6_2SC6'] else 2.54
+    h=6 if a['sym']=='AO3400A' else 20.32 if a['sym']=='ESPC5_32E_H4' else 12.7 if a['sym']=='USB_C' else 11.43 if a['sym']=='HEADER_12' else 8.89 if a['sym'] in ['SGM6232','TPD4E05U06'] else 5.08 if a['sym'] in ['TPS2553','USBLC6_2SC6'] else 2.54
     vertical=angle in [90,270]
     val=a['value']
     for name,v,xx,yy,hide in [('Reference',ref,x+3.81 if vertical else x,y-1.27 if vertical else y-h-2.54,isflag),('Value',val,x+3.81 if vertical else x,y+1.27 if vertical else y+h+2.54,isflag),('Footprint',a['foot'],x,y,True),('Datasheet',a['url'],x,y,True),('MPN',a['mpn'],x,y,True)]:
@@ -190,7 +198,7 @@ txt('Check startup, dropout, ripple, heat.',238,260,.95)
 txt('Use specified 5 V / 3 A adapter.',238,265,.95)
 txt('Verify current limit and both loaded rails.',238,270,.95)
 info = identity()
-text = '(kicad_sch (version 20250114) (generator "eeschema") (uuid '+q(uid('root'))+') (paper "A3")'
+text = '(kicad_sch (version 20250114) (generator "eeschema") (uuid '+q(uid('root'))+') (paper "A2")'
 text += '(title_block (title '+q(info['name']+' - ESP32-C5 GPIO CONTROLLER')+') (date '+q(info['version'])+') (rev '+q(info['revision'])+') (company '+q(info['author']+' / '+info['co_author'])+') (comment 1 "48 x 28 mm / 2 layers / SGM6232 / prototype"))'
 text+='(lib_symbols '+''.join(dump(s).replace('(symbol '+q(name),'(symbol '+q('Saihub:'+name),1) for name,s in syms.items())+')'
 text+='\n'.join(items)+')\n'
@@ -198,4 +206,4 @@ text+='\n'.join(items)+')\n'
 for name in ['usb','power','mcu','outputs','buzzer']:
     old=ROOT/(name+'.kicad_sch')
     if old.exists():old.unlink()
-print('Created one-page A3 schematic with six wired functional sections.')
+print('Created one-page A2 schematic with seven wired functional sections.')

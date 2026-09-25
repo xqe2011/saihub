@@ -13,6 +13,7 @@ import subprocess
 
 from identity import identity
 from export_bom import write_bom
+from export_ibom import main as export_ibom
 
 from reportlab.lib.pagesizes import landscape, A4
 from reportlab.lib.utils import ImageReader
@@ -59,7 +60,8 @@ def main():
         pdf.showPage()
     pdf.save()
     write_bom(docs/'bom.csv', data['parts'])
-    print('Updated docs/bom.csv, docs/schematic.pdf and docs/pcb.pdf')
+    export_ibom()
+    print('Updated docs/bom.csv, docs/bom.html, docs/schematic.pdf and docs/pcb.pdf')
 
 if __name__ == '__main__':
     main()
