@@ -1,3 +1,4 @@
+import { tryServeCached } from "./cache.ts";
 import { DEFAULT_AUTH_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS, parseTimeoutMs, type Env } from "./env.ts";
 import { base64UrlToBytes, bytesToBase64Url, randomChallenge, verifyDeviceAuth } from "./crypto.ts";
 import { isJsonContentType, unsupportedContentType, jsonError, MAX_BODY_BYTES, MAX_PATH_LEN, parseDeviceMessage, pairingErrorStatus, selectForwardHeaders, type AuthRequestMessage, type AuthResultMessage, type PairingSessionRequestMessage, type PairingSessionResponseMessage, type PairingSessionTokenResponseMessage, type RequestMessage } from "./protocol.ts";
@@ -48,6 +49,7 @@ type SocketAttachment = {
   digest: string;
   authenticated: boolean;
   challenge?: string;
+  version?: string;
 };
 
 export class Device implements DurableObject {
@@ -331,7 +333,12 @@ export class Device implements DurableObject {
 
     state.challenge = null;
     state.authenticated = true;
-    ws.serializeAttachment({ digest: expectedDigest, connectedAt: attachment.connectedAt, authenticated: true } satisfies SocketAttachment);
+    ws.serializeAttachment({
+      digest: expectedDigest,
+      connectedAt: attachment.connectedAt,
+      authenticated: true,
+      version: message.version,
+    } satisfies SocketAttachment);
     await this.#clearAuthAlarm();
 
     const result: AuthResultMessage = { type: "authResult", success: true };
@@ -367,6 +374,12 @@ export class Device implements DurableObject {
       } catch {
         return jsonError(400, "body must be a JSON object");
       }
+    }
+
+    const attachment = this.#socket.deserializeAttachment() as SocketAttachment | null;
+    const cached = await tryServeCached(this.#env, attachment?.version, request.method, path, jsonBody);
+    if (cached) {
+      return cached;
     }
 
     const requestId = this.#nextRequestId();

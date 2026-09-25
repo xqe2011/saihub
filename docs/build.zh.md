@@ -29,6 +29,8 @@ idf.py merge-bin   # 生成网页烧录器使用的合并镜像（烧到 0x0）
 
 为 SAIHub-Mini 以外的板子编译：见[自备开发板](bring-your-own-board.zh.md)。
 
+推送 git tag 会跑 [`.github/workflows/firmware-release.yml`](../.github/workflows/firmware-release.yml)。tag 名写入 `version.txt`（固件 version 字符串），合并镜像发布为 GitHub Release。若 GitHub Environment `cloud` 配有变量 `ADMIN_URL`（含 `/admin` 的管理地址，例如 `https://example.com/admin`）和密钥 `ADMIN_TOKEN`，会在 `cloud/cloudflare` 下执行 `bun run upload-file-cache -- <adminUrl> <token> <version>`（把 `mcp.json` 和 `openapi.json` POST 到 `{ADMIN_URL}/file-cache`）。缺任一配置则跳过上传。
+
 ## Cloudflare Worker
 
 需要 [Bun](https://bun.sh)（或 Node）和 [Wrangler](https://developers.cloudflare.com/workers/wrangler/)。生产环境部署步骤见[使用手册第 5 节](cookbook.zh.md#5-自行部署-cloudflare-中继)。
@@ -41,7 +43,7 @@ bun run dev            # 先应用本地 D1 迁移，再 wrangler dev → http:/
 
 本地联调时，把固件的 `CONFIG_CLOUD_URL` 指向局域网里你的电脑，例如 `ws://<你的局域网IP>:8787`。把 `.dev.vars.example` 复制为 `.dev.vars`，供 `wrangler dev` 使用本地的 `ROUTING_TOKEN_SECRET` 和 `ADMIN_TOKEN`。生产密钥在 Deploy to Cloudflare 配置页填写，切勿提交真实密钥。
 
-`wrangler.jsonc` 绑定 `DEVICE` Durable Object（SQLite 类）、D1 `device_whitelist` 数据库，并设置 `AUTH_TIMEOUT_MS` / `REQUEST_TIMEOUT_MS`（10 s / 55 s）；不在白名单中的设备会收到 403。`wrangler.test.jsonc` 会部署独立的 `saihub-cloud-test` Worker（超时 2 s），专供集成测试。
+`wrangler.jsonc` 绑定 `DEVICE` Durable Object（SQLite 类）、D1 数据库（`device_whitelist` 与 `file_cache`），并设置 `AUTH_TIMEOUT_MS` / `REQUEST_TIMEOUT_MS`（10 s / 55 s）；不在白名单中的设备会收到 403。`file_cache` 以固件 `version` 加文件名（`mcp.json`、`openapi.json`）为键；命中时 MCP `tools/list` 和 `GET /openapi.json` 不必转发到设备。`wrangler.test.jsonc` 会部署独立的 `saihub-cloud-test` Worker（超时 2 s），专供集成测试。
 
 ### 检查与测试
 
@@ -73,7 +75,10 @@ bun run fake-device     # 默认连 http://127.0.0.1:8787，也可传入其他�
 | `GET /cloud/landing/{digest}/online` | `{ "online": true or false }`——当前是否有已鉴权的 WebSocket |
 | `GET /cloud/device/{digest}` | 设备 WebSocket——无需 bearer，靠挑战握手鉴权 |
 | `/device/{digest}/…` | 代理 REST 和 `/mcp`——需要 bearer routing token，仅限 JSON |
-| `GET /admin` | 管理界面——输入 `ADMIN_TOKEN` 管理设备白名单 |
+| `GET /admin` | 管理界面——输入 `ADMIN_TOKEN` 管理设备白名单和文件缓存 |
 | `GET /admin/devices/whitelist?page=` | 白名单（`Authorization: Bearer <ADMIN_TOKEN>`） |
 | `POST /admin/devices/whitelist` | 将 `{ "digest" }` 加入白名单 |
 | `DELETE /admin/devices/whitelist/{digest}` | 从白名单删除 digest |
+| `GET /admin/file-cache?page=` | 已缓存的 `mcp.json` / `openapi.json`（`version`、`filename`、`bytes`） |
+| `POST /admin/file-cache` | 上传 `{ "version", "filename", "content" }`（`mcp.json` 或 `openapi.json`；覆盖写入） |
+| `DELETE /admin/file-cache/{version}/{filename}` | 删除一条缓存 |

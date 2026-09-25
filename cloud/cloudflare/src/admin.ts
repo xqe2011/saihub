@@ -1,11 +1,14 @@
+import { deleteCachedFile, isCachedFilename, isCachedVersion, listCachedFiles, MAX_FILE_CACHE_BYTES, putCachedFile, serializeCacheContent } from "./cache.ts";
 import type { Env } from "./env.ts";
 import { isDigest, jsonError } from "./protocol.ts";
 import { deleteWhitelist, insertWhitelist, listWhitelist } from "./whitelist.ts";
 
 const ADMIN_WHITELIST_ITEM_RE = /^\/admin\/devices\/whitelist\/([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,33})$/;
+const ADMIN_FILE_CACHE_ITEM_RE = /^\/admin\/file-cache\/([^/]{1,64})\/(mcp\.json|openapi\.json)$/;
 
 export function isAdminPath(pathname: string): boolean {
-  return pathname === "/admin" || pathname === "/admin/" || pathname === "/admin/devices/whitelist" || ADMIN_WHITELIST_ITEM_RE.test(pathname);
+  return pathname === "/admin" || pathname === "/admin/" || pathname === "/admin/devices/whitelist" ||
+    pathname === "/admin/file-cache" || ADMIN_WHITELIST_ITEM_RE.test(pathname) || ADMIN_FILE_CACHE_ITEM_RE.test(pathname);
 }
 
 export function handleAdmin(request: Request, env: Env): Promise<Response> | Response {
@@ -16,9 +19,16 @@ export function handleAdmin(request: Request, env: Env): Promise<Response> | Res
   if (pathname === "/admin/devices/whitelist") {
     return handleAdminWhitelistCollection(request, env);
   }
+  if (pathname === "/admin/file-cache") {
+    return handleAdminFileCacheCollection(request, env);
+  }
   const item = ADMIN_WHITELIST_ITEM_RE.exec(pathname);
   if (item) {
     return handleAdminWhitelistItem(request, env, item[1]!);
+  }
+  const cached = ADMIN_FILE_CACHE_ITEM_RE.exec(pathname);
+  if (cached) {
+    return handleAdminFileCacheItem(request, env, cached[1]!, cached[2]!);
   }
   return jsonError(404, "not found");
 }
@@ -88,6 +98,69 @@ async function handleAdminWhitelistItem(request: Request, env: Env, digest: stri
   const stub = env.DEVICE.get(env.DEVICE.idFromName(digest));
   await stub.fetch(new Request("https://device/disconnect", { method: "POST" }));
   return Response.json({ digest });
+}
+
+async function handleAdminFileCacheCollection(request: Request, env: Env): Promise<Response> {
+  const auth = requireAdmin(request, env);
+  if (auth) {
+    return auth;
+  }
+  if (request.method === "GET") {
+    const raw = new URL(request.url).searchParams.get("page");
+    const page = raw === null || raw === "" ? 1 : Number.parseInt(raw, 10);
+    if (!Number.isInteger(page) || page < 1) {
+      return jsonError(400, "invalid page");
+    }
+    return Response.json(await listCachedFiles(env, page));
+  }
+  if (request.method === "POST") {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonError(400, "invalid body");
+    }
+    if (typeof body !== "object" || body === null) {
+      return jsonError(400, "invalid body");
+    }
+    const rec = body as Record<string, unknown>;
+    if (typeof rec.version !== "string" || !isCachedVersion(rec.version)) {
+      return jsonError(400, "invalid version");
+    }
+    if (typeof rec.filename !== "string" || !isCachedFilename(rec.filename)) {
+      return jsonError(400, "invalid filename");
+    }
+    const content = serializeCacheContent(rec.content);
+    if (content === null) {
+      return jsonError(400, "invalid content");
+    }
+    if (new TextEncoder().encode(content).byteLength > MAX_FILE_CACHE_BYTES) {
+      return jsonError(413, "content too large");
+    }
+    const result = await putCachedFile(env, rec.version, rec.filename, content);
+    return Response.json({ version: rec.version, filename: rec.filename }, { status: result.created ? 201 : 200 });
+  }
+  return jsonError(405, "method not allowed");
+}
+
+async function handleAdminFileCacheItem(request: Request, env: Env, version: string, filename: string): Promise<Response> {
+  const auth = requireAdmin(request, env);
+  if (auth) {
+    return auth;
+  }
+  if (request.method !== "DELETE") {
+    return jsonError(405, "method not allowed");
+  }
+  if (!isCachedVersion(version)) {
+    return jsonError(400, "invalid version");
+  }
+  if (!isCachedFilename(filename)) {
+    return jsonError(400, "invalid filename");
+  }
+  if (!(await deleteCachedFile(env, version, filename))) {
+    return jsonError(404, "not found");
+  }
+  return Response.json({ version, filename });
 }
 
 function requireAdmin(request: Request, env: Env): Response | null {
@@ -188,12 +261,19 @@ body{
 .when{margin:.25rem 0 0;font-size:.75rem;color:var(--md-sys-color-on-surface-variant)}
 .pager{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-top:1rem}
 .empty{margin:0;padding:1rem .35rem;color:var(--md-sys-color-on-surface-variant);font-size:.9rem}
+.stack{display:flex;flex-direction:column;gap:.65rem;margin-bottom:1rem}
+.field select,.field input[type=file]{
+  width:100%;appearance:none;border:1px solid var(--md-sys-color-outline);border-radius:var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-small) 0 0;border-bottom-width:2px;
+  background:var(--md-sys-color-surface-container-highest);color:var(--md-sys-color-on-surface);padding:1.35rem .85rem .55rem;font:inherit;font-size:.95rem;outline:none;
+}
+.field select:focus,.field input[type=file]:focus{border-color:var(--md-sys-color-primary);background:var(--md-sys-color-surface-container-high)}
+.split{margin-top:1.75rem}
 </style>
 </head>
 <body>
 <main class="app">
   <h1 class="brand">SAIHUB</h1>
-  <p class="subtitle">Device whitelist</p>
+  <p class="subtitle">Device whitelist and file cache</p>
   <section class="sheet" id="login">
     <h2 class="section-label">Admin</h2>
     <p class="hint">Enter the admin token to manage allowed devices.</p>
@@ -228,6 +308,35 @@ body{
       <span id="pageLabel"></span>
       <button class="btn ghost" type="button" id="next">Next</button>
     </div>
+    <h2 class="section-label split">File cache</h2>
+    <p class="hint">Upload mcp.json or openapi.json for a firmware version. Cached tools/list and OpenAPI skip the device.</p>
+    <form id="cacheForm">
+      <div class="stack">
+        <div class="field">
+          <input id="cacheVersion" class="mono" type="text" spellcheck="false" required maxlength="64"/>
+          <label for="cacheVersion">Version</label>
+        </div>
+        <div class="field">
+          <select id="cacheFilename" required>
+            <option value="mcp.json">mcp.json</option>
+            <option value="openapi.json">openapi.json</option>
+          </select>
+          <label for="cacheFilename">Filename</label>
+        </div>
+        <div class="field">
+          <input id="cacheFile" type="file" accept="application/json,.json" required/>
+          <label for="cacheFile">JSON file</label>
+        </div>
+      </div>
+      <button class="btn" type="submit">Upload</button>
+    </form>
+    <div class="list" id="cacheItems"></div>
+    <p class="empty hidden" id="cacheEmpty">No cached files yet.</p>
+    <div class="pager">
+      <button class="btn ghost" type="button" id="cachePrev">Previous</button>
+      <span id="cachePageLabel"></span>
+      <button class="btn ghost" type="button" id="cacheNext">Next</button>
+    </div>
   </section>
 </main>
 <script>
@@ -241,9 +350,17 @@ const emptyEl = document.getElementById("empty");
 const pageLabel = document.getElementById("pageLabel");
 const prevBtn = document.getElementById("prev");
 const nextBtn = document.getElementById("next");
+const cacheItemsEl = document.getElementById("cacheItems");
+const cacheEmptyEl = document.getElementById("cacheEmpty");
+const cachePageLabel = document.getElementById("cachePageLabel");
+const cachePrevBtn = document.getElementById("cachePrev");
+const cacheNextBtn = document.getElementById("cacheNext");
 let page = 1;
 let total = 0;
 let pageSize = 50;
+let cachePage = 1;
+let cacheTotal = 0;
+let cachePageSize = 50;
 
 function token() {
   return sessionStorage.getItem(TOKEN_KEY) || "";
@@ -323,6 +440,64 @@ async function load() {
   pageLabel.textContent = "Page " + page + " of " + pages;
   prevBtn.disabled = page <= 1;
   nextBtn.disabled = page >= pages;
+  await loadCache();
+}
+
+async function loadCache() {
+  const { res, body } = await api("/admin/file-cache?page=" + cachePage);
+  if (res.status === 401) {
+    sessionStorage.removeItem(TOKEN_KEY);
+    setAuthed(false);
+    showError(loginError, "Invalid admin token.");
+    return;
+  }
+  if (!res.ok) {
+    showError(panelError, failureMessage(body, "Request failed (" + res.status + ")"));
+    return;
+  }
+  cachePage = body.page;
+  cachePageSize = body.pageSize;
+  cacheTotal = body.total;
+  const items = body.items || [];
+  cacheItemsEl.innerHTML = "";
+  cacheEmptyEl.classList.toggle("hidden", items.length !== 0);
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "item";
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const name = document.createElement("p");
+    name.className = "digest";
+    name.textContent = item.version + " / " + item.filename;
+    const when = document.createElement("p");
+    when.className = "when";
+    when.textContent = item.bytes + " bytes";
+    meta.appendChild(name);
+    meta.appendChild(when);
+    const del = document.createElement("button");
+    del.className = "btn danger";
+    del.type = "button";
+    del.textContent = "Delete";
+    del.addEventListener("click", () => removeCache(item.version, item.filename));
+    row.appendChild(meta);
+    row.appendChild(del);
+    cacheItemsEl.appendChild(row);
+  }
+  const pages = Math.max(1, Math.ceil(cacheTotal / cachePageSize) || 1);
+  cachePageLabel.textContent = "Page " + cachePage + " of " + pages;
+  cachePrevBtn.disabled = cachePage <= 1;
+  cacheNextBtn.disabled = cachePage >= pages;
+}
+
+async function removeCache(version, filename) {
+  showError(panelError, "");
+  const path = "/admin/file-cache/" + encodeURIComponent(version) + "/" + encodeURIComponent(filename);
+  const { res, body } = await api(path, { method: "DELETE" });
+  if (!res.ok) {
+    showError(panelError, failureMessage(body, "Delete failed (" + res.status + ")"));
+    return;
+  }
+  await loadCache();
 }
 
 async function remove(digest) {
@@ -357,8 +532,36 @@ document.getElementById("addForm").addEventListener("submit", async (event) => {
   await load();
 });
 
+document.getElementById("cacheForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  showError(panelError, "");
+  const version = document.getElementById("cacheVersion").value.trim();
+  const filename = document.getElementById("cacheFilename").value;
+  const file = document.getElementById("cacheFile").files[0];
+  if (!file) {
+    showError(panelError, "Choose a JSON file.");
+    return;
+  }
+  let content;
+  try { content = JSON.parse(await file.text()); }
+  catch {
+    showError(panelError, "File must be JSON.");
+    return;
+  }
+  const { res, body } = await api("/admin/file-cache", { method: "POST", body: JSON.stringify({ version, filename, content }) });
+  if (!res.ok) {
+    showError(panelError, failureMessage(body, "Upload failed (" + res.status + ")"));
+    return;
+  }
+  document.getElementById("cacheFile").value = "";
+  cachePage = 1;
+  await loadCache();
+});
+
 prevBtn.addEventListener("click", async () => { if (page > 1) { page -= 1; await load(); } });
 nextBtn.addEventListener("click", async () => { page += 1; await load(); });
+cachePrevBtn.addEventListener("click", async () => { if (cachePage > 1) { cachePage -= 1; await loadCache(); } });
+cacheNextBtn.addEventListener("click", async () => { cachePage += 1; await loadCache(); });
 
 if (token()) load();
 </script>
