@@ -5,6 +5,7 @@
 #include "cloud.h"
 #include "gpio_ctrl.h"
 #include "http_server.h"
+#include "pwm_ctrl.h"
 #include "lock.h"
 #include "ntp.h"
 #include "nvs.h"
@@ -23,6 +24,7 @@ void app_main(void)
   bool someModuleFailed = false;
   MAIN_LOAD_MODULE(Nvs_Init(), "Nvs");
   MAIN_LOAD_MODULE(Cloud_Init(), "Cloud");
+  MAIN_LOAD_MODULE(PwmCtrl_Init(), "Pwm");
   MAIN_LOAD_MODULE(GpioCtrl_Init(), "Gpio");
   MAIN_LOAD_MODULE(Buzzer_Init(), "Buzzer");
   MAIN_LOAD_MODULE(Lock_Init(), "Lock");
