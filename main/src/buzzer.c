@@ -30,7 +30,7 @@ _Static_assert(CONFIG_BUZZER_DUTY_PERCENT > 0 && CONFIG_BUZZER_DUTY_PERCENT < 10
 _Static_assert((BUZZER_RMT_RESOLUTION_HZ / CONFIG_BUZZER_FREQ_HZ) >= 2, "buzzer period is too short");
 _Static_assert((BUZZER_RMT_RESOLUTION_HZ / CONFIG_BUZZER_FREQ_HZ) <= (2 * BUZZER_RMT_DURATION_MAX),
                "buzzer period is too long");
-_Static_assert(CONFIG_BUZZER_DOT_US > 0 && CONFIG_BUZZER_DASH_US > 0 && CONFIG_BUZZER_GAP_US > 0, "buzzer timings");
+_Static_assert(CONFIG_BUZZER_WPM > 0 && CONFIG_BUZZER_WPM <= 1200U, "buzzer WPM must be 1-1200");
 _Static_assert(CONFIG_BUZZER_MAX_SEQUENCE > 0, "buzzer sequence limit");
 
 static rmt_channel_handle_t txChannel;
@@ -76,6 +76,12 @@ static bool Buzzer_CheckSequence(const char* sequence, char* reason, size_t reas
   return true;
 }
 
+/* PARIS Morse: 50 units per word, so one dit is 1.2 s / WPM. */
+static uint64_t Buzzer_DitUs(void)
+{
+  return 1200000ULL / (uint64_t)CONFIG_BUZZER_WPM;
+}
+
 static void Buzzer_DelayUs(uint64_t us)
 {
   if (us == 0) return;
@@ -101,16 +107,17 @@ static esp_err_t Buzzer_Tone(uint64_t durationUs)
 uint64_t Buzzer_SequenceDurationUs(const char* sequence)
 {
   if (!Buzzer_CheckSequence(sequence, NULL, 0)) return 0;
+  uint64_t ditUs = Buzzer_DitUs();
   uint64_t total = 0;
   bool needGap = false;
   for (const char* p = sequence; *p; p++) {
     if (*p == ' ') {
-      total += CONFIG_BUZZER_LETTER_GAP_US;
+      total += 3ULL * ditUs;
       continue;
     }
-    if (needGap) total += CONFIG_BUZZER_GAP_US;
+    if (needGap) total += ditUs;
     needGap = true;
-    total += (*p == '-') ? CONFIG_BUZZER_DASH_US : CONFIG_BUZZER_DOT_US;
+    total += (*p == '-') ? (3ULL * ditUs) : ditUs;
   }
   return total;
 }
@@ -132,17 +139,18 @@ esp_err_t Buzzer_Play(const char* sequence, char* reason, size_t reasonLen)
     return ESP_ERR_INVALID_STATE;
   }
 
-  ESP_LOGI(tag, "play sequence=%s", sequence);
+  ESP_LOGI(tag, "play sequence=%s wpm=%u", sequence, (unsigned)CONFIG_BUZZER_WPM);
+  uint64_t ditUs = Buzzer_DitUs();
   esp_err_t ret = ESP_OK;
   bool needGap = false;
   for (const char* p = sequence; *p && ret == ESP_OK; p++) {
     if (*p == ' ') {
-      Buzzer_DelayUs(CONFIG_BUZZER_LETTER_GAP_US);
+      Buzzer_DelayUs(3ULL * ditUs);
       continue;
     }
-    if (needGap) Buzzer_DelayUs(CONFIG_BUZZER_GAP_US);
+    if (needGap) Buzzer_DelayUs(ditUs);
     needGap = true;
-    ret = Buzzer_Tone((*p == '-') ? CONFIG_BUZZER_DASH_US : CONFIG_BUZZER_DOT_US);
+    ret = Buzzer_Tone((*p == '-') ? (3ULL * ditUs) : ditUs);
   }
 
   xSemaphoreGive(playMutex);
@@ -188,7 +196,7 @@ esp_err_t Buzzer_Init(void)
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(rmt_enable(txChannel), "buzzer rmt enable failed");
 
   ready = true;
-  ESP_LOGI(tag, "buzzer ready pin=%d freq=%u duty=%u", CONFIG_BUZZER_PIN, (unsigned)CONFIG_BUZZER_FREQ_HZ,
-           (unsigned)CONFIG_BUZZER_DUTY_PERCENT);
+  ESP_LOGI(tag, "buzzer ready pin=%d freq=%u duty=%u wpm=%u", CONFIG_BUZZER_PIN,
+           (unsigned)CONFIG_BUZZER_FREQ_HZ, (unsigned)CONFIG_BUZZER_DUTY_PERCENT, (unsigned)CONFIG_BUZZER_WPM);
   return ESP_OK;
 }
