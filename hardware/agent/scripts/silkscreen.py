@@ -17,7 +17,17 @@ def apply_reference_labels(board):
     for fp in footprints:
         text = fp.Reference()
         text.SetVisible(True)
+        if fp.IsFlipped():
+            # Back-side debug test pad; keep its label clear of board identity.
+            text.SetLayer(p.B_SilkS)
+            text.SetMirrored(True)
+            text.SetTextSize(p.VECTOR2I(p.FromMM(.6), p.FromMM(.6)))
+            text.SetTextThickness(p.FromMM(.1))
+            text.SetTextAngle(p.EDA_ANGLE(0,p.DEGREES_T))
+            text.SetPosition(p.VECTOR2I(p.FromMM(2.6),p.FromMM(14.5)))
+            continue
         text.SetLayer(p.F_SilkS)
+        text.SetMirrored(False)
         text.SetTextSize(p.VECTOR2I(p.FromMM(.6), p.FromMM(.6)))
         text.SetTextThickness(p.FromMM(.1))
         text.SetTextAngle(p.EDA_ANGLE(0, p.DEGREES_T))
@@ -32,6 +42,8 @@ def apply_reference_labels(board):
             text.SetPosition(p.VECTOR2I(p.FromMM(x+dx), p.FromMM(y+dy)))
             box = bounds(text, .03)
             if box[0] < .2 or box[1] < .2 or box[2] > 47.8 or box[3] > 27.8:
+                continue
+            if box[0] < 22.05 and box[3] > 20.3:
                 continue
             if not any(overlaps(box, obstacle) for obstacle in obstacles):
                 obstacles.append(box)

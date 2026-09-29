@@ -37,9 +37,7 @@ def write_bom(path, parts):
             refs = sorted(group['refs'], key=reference_key)
             writer.writerow([', '.join(refs), len(refs), value, spec, footprint,
                              '; '.join(group['notes']), '; '.join(group['urls'])])
-        writer.writerow(['ANT1 (off-board)', 1, 'Dual-band external antenna',
-                         '50 ohm 2.4/5GHz U.FL-compatible antenna; qualify with final enclosure',
-                         'Not PCB mounted', 'Required accessory; not included in placement file', ''])
+
 
 
 if __name__ == '__main__':

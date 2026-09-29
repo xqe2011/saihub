@@ -2,7 +2,7 @@
 
 > **提示：** 本板由 GPT-6 Astra 设计，目前仍在测试中，请自行承担使用风险。
 
-一块 48 × 28 mm 的双层 ESP32-C5 IO 板：USB-C 接口、一个 BOOT 按键、一排 12 针直角排针，外加双频 U.FL 天线。元件全部贴在顶层。
+一块 48 × 28 mm 的双层 IO 板：USB-C 接口、一个 BOOT 按键、一排 12 针直角排针，内置 PCB 天线。元件全部贴在顶层。
 
 [English](hardware.md) · [README](../README.zh.md) · [使用手册](cookbook.zh.md) · [自备开发板](bring-your-own-board.zh.md) · [KiCad 工程](../hardware/README.md)
 
@@ -16,7 +16,7 @@
 
 第 1 脚为方孔焊盘，丝印标注 `3V3`。俯视板子、排针朝上时，引脚从左到右依次为：
 
-| 引脚 | 名称 | ESP32-C5 GPIO | 说明 |
+| 引脚 | 名称 | Internal pin | 说明 |
 | --- | --- | --- | --- |
 | 1 | 3V3_SW | — | 可控 3.3 V 输出，GPIO8 使能，**默认关闭** |
 | 2 | GND | — | |
@@ -25,11 +25,11 @@
 | 5 | IO0 | GPIO10 | 3.3 V 逻辑电平 |
 | 6 | IO1 | GPIO1 | 3.3 V 逻辑电平 |
 | 7 | IO2 | GPIO0 | 3.3 V 逻辑电平 |
-| 8 | IO3 | GPIO23 | 3.3 V 逻辑电平 |
+| 8 | IO3 | GPIO2 | 3.3 V 逻辑电平 |
 | 9 | IO4 | GPIO4 | 3.3 V 逻辑电平 |
 | 10 | IO5 | GPIO5 | 3.3 V 逻辑电平 |
 | 11 | IO6 | GPIO6 | 3.3 V 逻辑电平 |
-| 12 | IO7 | GPIO24 | 3.3 V 逻辑电平 |
+| 12 | IO7 | GPIO7 | 3.3 V 逻辑电平 |
 
 智能体通过 MCP / REST 工具操作这些引脚；映射关系固化在固件的 `CONFIG_GPIO_LOGICAL_TO_HW`（`main/include/config.h`）中。
 
@@ -54,11 +54,11 @@
 | --- | --- |
 | BOOT（SW1，GPIO28） | 运行中按一下：开启 Wi-Fi 配对；复位 / 上电时按住：进入 ROM 下载模式 |
 | TP1 / TP2 | EN / GND 复位焊盘（板顶），短接一下即复位 |
-| TP3 | 控制台 UART TX（GPIO11，115200 波特率），输出固件日志 |
+| TP3 | 背面测试点，控制台 UART TX（GPIO11，115200 波特率），输出固件日志 |
 | TP4 | 常供 3.3 V |
 | TP5 / TP6 | 两路电源开关的低有效故障输出 |
 
-SW1 采用松下 EVQP7A01P（本体 3.5 × 2.9 mm，高 1.35 mm，侧按，朝向接口边缘）。
+SW1 采用 TS-2435VS（C47734518），无定位柱，侧按，朝向接口边缘。
 
 ## UART
 
@@ -69,14 +69,14 @@ SW1 采用松下 EVQP7A01P（本体 3.5 × 2.9 mm，高 1.35 mm，侧按，朝�
 
 - GPIO12 驱动 5020 无源蜂鸣器（4 kHz / 50% 占空比）。
 - 原生 USB 走 GPIO13 / GPIO14（D- / D+），带 USBLC6-2SC6 ESD 保护。
-- ESP32-C5 模组：ESPC5-32E-H4，4 MB Flash。
+- 16 × 24 mm 模组，内置 PCB 天线，4 MB Flash。
 
 ## 天线
 
-Wi-Fi 必须外接双频 U.FL 天线。
+内置天线位于左下角，天线下方挖空，缺口连通左边和底边，并向天线右侧延伸 5 mm。PCB 外形尺寸仍为 48 × 28 mm。IO3 和 IO7 的内部引脚映射已更新，请使用与本板配套的固件映射。
 
 ## 设计文件与状态
 
 KiCad 10 工程、采购 BOM、原理图和 PCB 审阅 PDF 见 [`hardware/`](../hardware/README.md)。
 
-**打样状态**：布线已完成，ERC / DRC 零报错，但尚未打样和上电实测。热性能、供电负载和 USB 工作情况还需验证，详见 `hardware/agent/docs/prototype-test.md`。
+**打样状态**：更换器件后的布局已通过 CAD 检查，尚未打样和上电实测。热性能、供电负载和 USB 工作情况还需验证，详见 `hardware/agent/docs/prototype-test.md`。
