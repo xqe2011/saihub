@@ -3,6 +3,10 @@ import { URL } from "node:url";
 const DEFAULT_TARGET = "192.168.88.160";
 const OUTPUT_A = 6;
 const OUTPUT_B = 7;
+const PWM_CHANNEL_COUNT = 4;
+const PWM_LOOP_PIN = OUTPUT_A;
+const PWM_PROBE_PIN = OUTPUT_B;
+const PWM_SLOT_FREQUENCIES = [500, 2000, 10000, 50000] as const;
 const UART_ID = 0;
 const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_REQUEST_TIMEOUT_MS ?? "5000", 10);
 const UART_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_UART_TIMEOUT_MS ?? "1500", 10);
@@ -545,13 +549,36 @@ async function collectMcpUart(marker: number[]): Promise<number[]> {
   return received;
 }
 
+function medianNumber(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
+}
+
+function measuredFrequencyHz(events: Array<{ edge: string; time: number }>): number | undefined {
+  const times = events.filter((event) => event.edge === "raising").map((event) => event.time);
+  if (times.length < 3) return undefined;
+  const periods: number[] = [];
+  for (let i = 1; i < times.length; i += 1) {
+    const period = times[i]! - times[i - 1]!;
+    if (period > 0) periods.push(period);
+  }
+  if (periods.length < 2) return undefined;
+  return 1_000_000 / medianNumber(periods);
+}
+
+function assertFrequencyClose(actual: number, expected: number, label: string): void {
+  const tolerance = Math.max(40, expected * 0.12);
+  assert(Math.abs(actual - expected) <= tolerance, `${label}: expected ${expected} Hz, measured ${actual.toFixed(1)} Hz`);
+}
+
 async function testPwmResourcesAndTraceRaces(): Promise<void> {
   log("independent PWM resources, frequency churn, trace saturation, and overlapping traces");
   const resourcePins = [0, 1, 2, 3, 4, 5, 6, 7];
+  const pwmPins = [0, 1, 2, 3];
   try {
     // Start from a known allocation state; earlier sections may leave PWM timers/channels active.
     for (const pin of resourcePins) await configureRestPin(pin, "disable");
-    const pwmPins = [0, 1, 2, 3];
     for (const pin of pwmPins) {
       await configureRestPin(pin, "pwmOutput");
       await requestJson<void>("POST", `/pin/${pin}/pwm`, { frequency: 2000, duty: 20 + pin * 10 }, 204);
@@ -589,6 +616,50 @@ async function testPwmResourcesAndTraceRaces(): Promise<void> {
   assert(saturated.events.length > 0 && saturated.events.length <= 1024, "High-frequency trace returned an invalid event count");
   await configureRestPin(OUTPUT_A, "disable");
   await configureRestPin(OUTPUT_B, "disable");
+}
+
+async function testFourPwmChannels(): Promise<void> {
+  log("four PWM channels at distinct frequencies, pin 7 looped as probe");
+  const resourcePins = [0, 1, 2, 3, 4, 5, 6, 7];
+  const idlePins = [0, 1, 2];
+  assert(idlePins.length === PWM_CHANNEL_COUNT - 1, "Expected three idle PWM pins besides the looped pair");
+  try {
+    for (let slot = 0; slot < PWM_CHANNEL_COUNT; slot += 1) {
+      for (const pin of resourcePins) await configureRestPin(pin, "disable");
+      await configureRestPin(PWM_PROBE_PIN, "digitalInput", true);
+      const order = [...idlePins.slice(0, slot), PWM_LOOP_PIN, ...idlePins.slice(slot)];
+      assert(order.length === PWM_CHANNEL_COUNT && order[slot] === PWM_LOOP_PIN,
+        `PWM enable order for slot ${slot} did not place the looped pin`);
+      for (let i = 0; i < PWM_CHANNEL_COUNT; i += 1) {
+        await configureRestPin(order[i]!, "pwmOutput");
+        await requestJson<void>("POST", `/pin/${order[i]}/pwm`, { frequency: PWM_SLOT_FREQUENCIES[i], duty: 50 }, 204);
+      }
+      const states = await Promise.all(order.map((pin) => requestJson<PwmState>("GET", `/pin/${pin}/pwm`)));
+      for (let i = 0; i < PWM_CHANNEL_COUNT; i += 1) {
+        const expected = PWM_SLOT_FREQUENCIES[i]!;
+        assert(Math.abs(states[i]!.frequency - expected) < Math.max(2, expected * 0.02),
+          `PWM pin ${order[i]} frequency ${expected} did not round-trip`);
+      }
+
+      const expectedHz = PWM_SLOT_FREQUENCIES[slot]!;
+      const duration = Math.min(80_000, Math.max(40_000, Math.round(10_000_000 / expectedHz)));
+      const trace = await requestJson<{ events: Array<{ edge: string; time: number }> }>(
+        "GET", `/pin/${PWM_PROBE_PIN}/trace?edge=raising&duration=${duration}`,
+      );
+      const measured = measuredFrequencyHz(trace.events);
+      assert(measured !== undefined, `PWM slot ${slot} produced too few edges on pin ${PWM_PROBE_PIN}`);
+      assertFrequencyClose(measured, expectedHz, `PWM slot ${slot} (loop pin ${PWM_LOOP_PIN} -> probe ${PWM_PROBE_PIN})`);
+      log(`PWM slot ${slot}: commanded ${expectedHz} Hz, measured ${measured.toFixed(1)} Hz from ${trace.events.length} edges`);
+    }
+
+    const exhausted = await rawRequest("PUT", `/pin/${PWM_PROBE_PIN}`, {
+      mode: "pwmOutput", openDrain: false, pullUp: false, pullDown: false,
+    });
+    assert(exhausted.status === 422 && exhausted.text.includes("PWM output limit reached"),
+      `Fifth PWM output returned ${exhausted.status}, expected resource exhaustion`);
+  } finally {
+    for (const pin of resourcePins) await configureRestPin(pin, "disable");
+  }
 }
 
 async function testOverlappingTraceRace(): Promise<void> {
@@ -1052,7 +1123,7 @@ async function main(): Promise<void> {
   if (process.argv.includes("--help")) {
     console.log("SAIHUB_TARGET=192.168.88.160 bun tests/hardware/smoke.ts");
     console.log("Cloud: SAIHUB_TARGET=https://<cloud-host>/device/<device-digest> SAIHUB_ROUTING_TOKEN=<token> bun tests/hardware/smoke.ts");
-    console.log("Only connected pins 6 and 7 are driven. Other pins are inventory-checked but never configured or driven.");
+    console.log("Pins 6 and 7 must be jumpered. Four-channel PWM drives 0-2 plus 6 and probes pin 7; other tests drive only 6 and 7.");
     return;
   }
   assert(Number.isFinite(REQUEST_TIMEOUT_MS) && REQUEST_TIMEOUT_MS > 0, "SAIHUB_REQUEST_TIMEOUT_MS must be positive");
@@ -1070,6 +1141,7 @@ async function main(): Promise<void> {
   await runSection("REST pins", testRestPins, disableTestPins);
   await runSection("MCP pins", testMcpPins, disableTestPins);
   await runSection("PWM resources and trace races", testPwmResourcesAndTraceRaces);
+  await runSection("four PWM channels", testFourPwmChannels);
   await runSection("REST UART", testRestUart);
   await runSection("reset after REST UART", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
   await runSection("MCP UART", testMcpUart);
