@@ -21,7 +21,7 @@ Run `agent/scripts/route.py prepare` with KiCad Python, route `agent/validation/
 
 From the repository root, run `python3 hardware/agent/scripts/export_placement.py --routed`. Set `KICAD_CLI` and `KICAD_PYTHON` if needed. The host Python needs `reportlab`, and ImageMagick must be on PATH. Set `INTERACTIVE_HTML_BOM` to the upstream `InteractiveHtmlBom/generate_interactive_bom.py` script; document exports also compile the offline `docs/bom.html`. The export first writes a netlist, synchronizes symbol UUIDs and explicit NC nets, fills zones, then runs ERC and DRC with schematic parity. Routed acceptance requires zero violations, parity findings and unconnected items. Without `--routed`, unconnected items are allowed for placement review only.
 
-Inspect the top and mirrored bottom pages of `docs/pcb.pdf` and the schematic PDF after exporting. KiCad SVG contains invisible searchable text; strip those text nodes before ImageMagick rasterization to avoid duplicated labels. `export_docs.py` performs that conversion and refreshes the procurement BOM, excluding test pads and including the external antenna. `agent/validation/parts-placement.csv` retains all footprints for placement review.
+Inspect the top and mirrored bottom pages of `docs/pcb.pdf` and the schematic PDF after exporting. KiCad SVG contains invisible searchable text; strip those text nodes before ImageMagick rasterization to avoid duplicated labels. `export_docs.py` performs that conversion and refreshes the procurement BOM, excluding test pads; the current antenna is built into the module. `agent/validation/parts-placement.csv` retains all footprints for placement review.
 
 ## Retained evidence
 
@@ -29,4 +29,4 @@ Keep current `agent/validation/` and routing reconstruction inputs in Git. Do no
 
 Only run `agent/scripts/export.py` when fabrication exports are needed. CAD checks do not establish measured power, thermal or USB performance; use the prototype test procedure for those claims.
 
-`silkscreen.py` places all footprint references on front silkscreen, avoiding exposed pads and other labels. Generation and board synchronization both apply it. Keep the approved date in PCB title metadata for the interactive BOM.
+`silkscreen.py` places mounted-part references on front silkscreen and the back test-pad reference on back silkscreen, avoiding exposed pads and other labels. Generation and board synchronization both apply it. Keep the approved date in PCB title metadata for the interactive BOM.

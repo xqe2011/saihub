@@ -14,7 +14,7 @@
     "source_current_a": 3
   },
   "channel_limit_nominal_a": 1,
-  "assembly": "top-only",
+  "assembly": "top-only; TP3 test pad on bottom",
   "parts": [
     {
       "ref": "J1",
@@ -41,7 +41,7 @@
         "B8": null
       },
       "pos": [
-        42.6,
+        42.8,
         3.5
       ],
       "page": "usb",
@@ -52,7 +52,7 @@
       "mpn": "USB4105-GF-A",
       "desc": "",
       "url": "https://gct.co/files/drawings/usb4105.pdf",
-      "rot": 180,
+      "rot": 180.0,
       "uuid": "d044ea65-0701-5990-9110-e73d832cfa01",
       "side": "top"
     },
@@ -66,8 +66,8 @@
         "2": "GND"
       },
       "pos": [
-        36.4,
-        5.05
+        36.49,
+        6.46
       ],
       "page": "usb",
       "sch": [
@@ -77,7 +77,7 @@
       "mpn": "5.1k",
       "desc": "1%, 0603",
       "url": "",
-      "rot": 90,
+      "rot": 90.0,
       "uuid": "4d1d73b6-2380-5424-a047-517e25670b8b",
       "side": "top"
     },
@@ -91,8 +91,8 @@
         "2": "GND"
       },
       "pos": [
-        36.4,
-        8.25
+        35.66,
+        9.07
       ],
       "page": "usb",
       "sch": [
@@ -102,7 +102,7 @@
       "mpn": "5.1k",
       "desc": "1%, 0603",
       "url": "",
-      "rot": 90,
+      "rot": 180.0,
       "uuid": "9dbb4585-ef40-5adc-95a8-a0d3ecbd9839",
       "side": "top"
     },
@@ -120,8 +120,8 @@
         "6": "USB_DM"
       },
       "pos": [
-        33.5,
-        5.7
+        33.63,
+        6.13
       ],
       "page": "usb",
       "sch": [
@@ -131,7 +131,7 @@
       "mpn": "USBLC6-2SC6",
       "desc": "",
       "url": "https://www.st.com/resource/en/datasheet/usblc6-2.pdf",
-      "rot": 90,
+      "rot": 180.0,
       "uuid": "6499408f-0b6e-5a32-9e32-e55108766c34",
       "side": "top"
     },
@@ -145,8 +145,8 @@
         "2": "GND"
       },
       "pos": [
-        33.3,
-        8.6
+        32.59,
+        8.9
       ],
       "page": "usb",
       "sch": [
@@ -156,7 +156,7 @@
       "mpn": "100n",
       "desc": "X7R, 10V minimum",
       "url": "",
-      "rot": 0,
+      "rot": 0.0,
       "uuid": "8c7b077e-feef-5f4e-973c-68df450e6e4d",
       "side": "top"
     },
@@ -170,8 +170,8 @@
         "2": "MCU_DM"
       },
       "pos": [
-        2.5,
-        18.5
+        19.04,
+        16.89
       ],
       "page": "usb",
       "sch": [
@@ -181,7 +181,7 @@
       "mpn": "22",
       "desc": "1%, 0603",
       "url": "",
-      "rot": 0,
+      "rot": 180.0,
       "uuid": "e947f71c-755b-51a5-bbc5-7e26c7ee1148",
       "side": "top"
     },
@@ -195,8 +195,8 @@
         "2": "MCU_DP"
       },
       "pos": [
-        2.5,
-        20.3
+        20.2,
+        14.53
       ],
       "page": "usb",
       "sch": [
@@ -206,7 +206,7 @@
       "mpn": "22",
       "desc": "1%, 0603",
       "url": "",
-      "rot": 0,
+      "rot": 90.0,
       "uuid": "f77b7d45-206a-534f-b449-2dc60094bc41",
       "side": "top"
     },
@@ -619,53 +619,47 @@
     },
     {
       "ref": "U3",
-      "value": "ESPC5-32E-H4",
-      "sym": "ESPC5_32E_H4",
-      "foot": "Saihub:ESPC5-32E-H4",
+      "value": "ESPC5-12-H4",
+      "sym": "ESPC5_12_H4",
+      "foot": "Saihub:ESPC5-12-H4",
       "nets": {
-        "1": "GND",
-        "2": "V3V3",
+        "1": "IO2",
+        "2": "IO1",
         "3": "EN",
-        "4": null,
+        "4": "IO3",
         "5": "FAULT5",
-        "6": "IO2",
-        "7": "IO1",
-        "8": "IO6",
-        "9": null,
+        "6": "IO4",
+        "7": "IO5",
+        "8": "V3V3",
+        "9": "IO7",
         "10": "PWR3_EN",
         "11": "PWR5_EN",
         "12": "IO0",
         "13": "MCU_DM",
         "14": "MCU_DP",
-        "15": "BOOT",
-        "16": "IO5",
-        "17": "IO4",
-        "18": null,
-        "19": "FAULT4",
+        "15": "GND",
+        "16": "IO6",
+        "17": "FAULT4",
+        "18": "BOOT",
+        "19": null,
         "20": null,
-        "21": "IO3",
-        "22": null,
-        "23": "IO7",
-        "24": "BUZZ_PWM",
-        "25": "UART_TX",
-        "26": null,
-        "27": null,
-        "28": "GND",
-        "29": "GND"
+        "21": "BUZZ_PWM",
+        "22": "UART_TX",
+        "23": "GND"
       },
       "pos": [
-        14.5,
-        15.55
+        8.85,
+        16
       ],
       "page": "mcu",
       "sch": [
         80,
         70
       ],
-      "mpn": "ESPC5-32E-H4",
-      "desc": "",
-      "url": "https://atta.szlcsc.com/upload/public/pdf/source/20251016/AE26C73F5F73E1BD024C1C95B3A92329.pdf",
-      "rot": 0,
+      "mpn": "ESPC5-12-H4",
+      "desc": "16 x 24 mm module; built-in PCB antenna over bottom-left board cutout",
+      "url": "https://atta.szlcsc.com/upload/public/pdf/source/20251016/3D572157C42EA1AA3992B58D4700E12F.pdf",
+      "rot": 180,
       "uuid": "9d8bf8ca-0868-5cbe-aa9c-4493706057e8",
       "side": "top"
     },
@@ -679,8 +673,8 @@
         "2": "GND"
       },
       "pos": [
-        2.5,
-        8.8
+        18.68,
+        11.12
       ],
       "page": "mcu",
       "sch": [
@@ -690,7 +684,7 @@
       "mpn": "10u",
       "desc": "X7R, 10V minimum",
       "url": "",
-      "rot": 0,
+      "rot": 90.0,
       "uuid": "af6adb57-c326-5c65-a732-a3e4a8c051a2",
       "side": "top"
     },
@@ -704,8 +698,8 @@
         "2": "GND"
       },
       "pos": [
-        2.5,
-        10.7
+        21.15,
+        11.32
       ],
       "page": "mcu",
       "sch": [
@@ -715,7 +709,7 @@
       "mpn": "100n",
       "desc": "X7R, 10V minimum",
       "url": "",
-      "rot": 0,
+      "rot": 90.0,
       "uuid": "de037cb8-52ea-5683-9159-95ac150d1ab3",
       "side": "top"
     },
@@ -729,8 +723,8 @@
         "2": "EN"
       },
       "pos": [
-        2.5,
-        12.4
+        18.67,
+        14.41
       ],
       "page": "mcu",
       "sch": [
@@ -740,7 +734,7 @@
       "mpn": "10k",
       "desc": "1%, 0603",
       "url": "",
-      "rot": 0,
+      "rot": 90.0,
       "uuid": "0b63e184-ed89-5a7a-b133-4cf823cd8545",
       "side": "top"
     },
@@ -754,8 +748,8 @@
         "2": "GND"
       },
       "pos": [
-        2.5,
-        14.1
+        21.74,
+        15.09
       ],
       "page": "mcu",
       "sch": [
@@ -765,7 +759,7 @@
       "mpn": "1u",
       "desc": "X7R, 10V minimum",
       "url": "",
-      "rot": 0,
+      "rot": 90.0,
       "uuid": "e73af54d-340d-54c9-9bc5-643f5f17f368",
       "side": "top"
     },
@@ -779,8 +773,8 @@
         "2": "BOOT"
       },
       "pos": [
-        2.5,
-        15.8
+        24.14,
+        15.24
       ],
       "page": "mcu",
       "sch": [
@@ -790,7 +784,7 @@
       "mpn": "10k",
       "desc": "1%, 0603",
       "url": "",
-      "rot": 0,
+      "rot": 180.0,
       "uuid": "3f0b4d4f-6ffd-55f8-8c47-30f5537b68d6",
       "side": "top"
     },
@@ -798,24 +792,24 @@
       "ref": "SW1",
       "value": "BOOT",
       "sym": "BOOT",
-      "foot": "Saihub:SW_SPST_EVQP7A",
+      "foot": "Saihub:SW_SPST_TS2435VS",
       "nets": {
         "1": "BOOT",
         "2": "GND"
       },
       "pos": [
-        34.35,
-        1.75
+        34.5,
+        1.55
       ],
       "page": "mcu",
       "sch": [
         260,
         110
       ],
-      "mpn": "EVQP7A01P",
-      "desc": "3.5 x 2.9 mm body, 1.35 mm high, side-actuated toward connector edge",
-      "url": "https://industry.panasonic.com/ap/en/products/control/switch/light-touch/number/evqp7a01p",
-      "rot": 180,
+      "mpn": "TS-2435VS",
+      "desc": "C47734518; side-push, no locating posts; manufacturer PCB land pattern",
+      "url": "https://atta.szlcsc.com/upload/public/pdf/source/20250414/8774CEBD0F324351C3CF1F5D7421BC0B.pdf",
+      "rot": 0,
       "uuid": "e74e6baf-7029-5f38-a8b9-4284c5f3f855",
       "side": "top"
     },
@@ -828,8 +822,8 @@
         "1": "EN"
       },
       "pos": [
-        1.2,
-        22.3
+        18.54,
+        19.32
       ],
       "page": "mcu",
       "sch": [
@@ -839,7 +833,7 @@
       "mpn": "PCB test pad",
       "desc": "Do not populate",
       "url": "",
-      "rot": 0,
+      "rot": 0.0,
       "uuid": "0b82b8ad-c47c-5802-8c96-04f6bd2ac8c7",
       "side": "top"
     },
@@ -852,8 +846,8 @@
         "1": "GND"
       },
       "pos": [
-        3.4,
-        22.3
+        20.79,
+        19.39
       ],
       "page": "mcu",
       "sch": [
@@ -863,7 +857,7 @@
       "mpn": "PCB test pad",
       "desc": "Do not populate",
       "url": "",
-      "rot": 0,
+      "rot": 0.0,
       "uuid": "08852ad3-d398-5ffe-a384-cd85acc7df5d",
       "side": "top"
     },
@@ -876,8 +870,8 @@
         "1": "UART_TX"
       },
       "pos": [
-        5.6,
-        27
+        2.6,
+        19.5
       ],
       "page": "mcu",
       "sch": [
@@ -887,9 +881,9 @@
       "mpn": "PCB test pad",
       "desc": "Do not populate",
       "url": "",
-      "rot": 0,
+      "rot": 0.0,
       "uuid": "d6bfe531-6a63-500b-8c29-3ff0bdd795f9",
-      "side": "top"
+      "side": "bottom"
     },
     {
       "ref": "TP4",
@@ -900,8 +894,8 @@
         "1": "V3V3"
       },
       "pos": [
-        7.8,
-        27
+        23.05,
+        12.55
       ],
       "page": "mcu",
       "sch": [
@@ -911,7 +905,7 @@
       "mpn": "PCB test pad",
       "desc": "Do not populate",
       "url": "",
-      "rot": 0,
+      "rot": 0.0,
       "uuid": "9d60c432-6e0c-5b40-8b7d-f0d703d77b9b",
       "side": "top"
     },
@@ -1088,8 +1082,8 @@
         "1": "FAULT4"
       },
       "pos": [
-        10,
-        27
+        22.87,
+        19.37
       ],
       "page": "outputs",
       "sch": [
@@ -1099,7 +1093,7 @@
       "mpn": "PCB test pad",
       "desc": "Do not populate",
       "url": "",
-      "rot": 0,
+      "rot": 0.0,
       "uuid": "1bb3bb04-d2e1-54b5-99a4-345ee919d49a",
       "side": "top"
     },
@@ -1241,8 +1235,8 @@
         "1": "FAULT5"
       },
       "pos": [
-        12.2,
-        27
+        34.48,
+        20.28
       ],
       "page": "outputs",
       "sch": [
@@ -1252,7 +1246,7 @@
       "mpn": "PCB test pad",
       "desc": "Do not populate",
       "url": "",
-      "rot": 0,
+      "rot": 0.0,
       "uuid": "dcad36fd-25da-51e3-bd83-dc9be7d56042",
       "side": "top"
     },
@@ -1266,8 +1260,8 @@
         "2": "BUZZ_LOW"
       },
       "pos": [
-        28.1,
-        23.8
+        28.49,
+        24.32
       ],
       "page": "buzzer",
       "sch": [
@@ -1277,7 +1271,7 @@
       "mpn": "KLJ-5020",
       "desc": "",
       "url": "https://datasheet.lcsc.com/datasheet/pdf/5a334e56ebfeea427b46ed3bd7f9e2de.pdf?productCode=C556937",
-      "rot": 90,
+      "rot": 90.0,
       "uuid": "eb2d0506-6656-518a-8014-72820491fdf6",
       "side": "top"
     },
@@ -1292,8 +1286,8 @@
         "3": "BUZZ_LOW"
       },
       "pos": [
-        2.5,
-        25.5
+        23.61,
+        25.93
       ],
       "page": "buzzer",
       "sch": [
@@ -1303,7 +1297,7 @@
       "mpn": "AO3400A",
       "desc": "",
       "url": "https://www.aosmd.com/sites/default/files/res/datasheets/AO3400A.pdf",
-      "rot": 0,
+      "rot": 90.0,
       "uuid": "848f1df3-b9c6-537c-98d7-163361956548",
       "side": "top"
     },
@@ -1342,8 +1336,8 @@
         "2": "BUZZ_GATE"
       },
       "pos": [
-        15.3,
-        27
+        22.73,
+        17.5
       ],
       "page": "buzzer",
       "sch": [
@@ -1353,7 +1347,7 @@
       "mpn": "100",
       "desc": "1%, 0603",
       "url": "",
-      "rot": 0,
+      "rot": 180.0,
       "uuid": "a92c0177-9ff2-5e66-ba40-ad8ce52d59f1",
       "side": "top"
     },
@@ -1367,8 +1361,8 @@
         "2": "GND"
       },
       "pos": [
-        22,
-        27
+        23.71,
+        22.55
       ],
       "page": "buzzer",
       "sch": [
@@ -1378,7 +1372,7 @@
       "mpn": "10k",
       "desc": "1%, 0603",
       "url": "",
-      "rot": 0,
+      "rot": 180.0,
       "uuid": "e6325f08-e488-5d1d-8cc5-879778a7e705",
       "side": "top"
     },
@@ -1392,8 +1386,8 @@
         "2": "GND"
       },
       "pos": [
-        18.5,
-        27
+        33.12,
+        27.08
       ],
       "page": "buzzer",
       "sch": [
@@ -1403,17 +1397,17 @@
       "mpn": "100n",
       "desc": "X7R, 10V minimum",
       "url": "",
-      "rot": 0,
+      "rot": 0.0,
       "uuid": "a85cfe68-3882-552b-919f-457dee7eceb9",
       "side": "top"
     },
     {
       "ref": "U6",
       "pos": [
-        14.5,
-        4.3
+        19.39,
+        4.32
       ],
-      "rot": -90,
+      "rot": -90.0,
       "side": "top",
       "page": "header_esd",
       "sch": [
@@ -1443,10 +1437,10 @@
     {
       "ref": "U7",
       "pos": [
-        22.2,
-        4.3
+        22.92,
+        5.15
       ],
-      "rot": -90,
+      "rot": 0.0,
       "side": "top",
       "page": "header_esd",
       "sch": [
@@ -1490,10 +1484,10 @@
       "desc": "Header power ESD shunt; place beside J2 with short ground return",
       "url": "https://www.st.com/resource/en/datasheet/usblc6-2.pdf",
       "pos": [
-        2.5,
-        5.5
+        19.74,
+        7.71
       ],
-      "rot": 90,
+      "rot": 180.0,
       "side": "top",
       "page": "header_esd",
       "sch": [
@@ -1515,10 +1509,10 @@
       "desc": "X7R, 10V minimum; local ESD supply bypass",
       "url": "",
       "pos": [
-        6,
-        4.3
+        22.67,
+        8.23
       ],
-      "rot": 0,
+      "rot": 90.0,
       "side": "top",
       "page": "header_esd",
       "sch": [

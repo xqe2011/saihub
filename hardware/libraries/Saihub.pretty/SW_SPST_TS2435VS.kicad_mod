@@ -1,0 +1,148 @@
+(footprint "SW_SPST_TS2435VS"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "TS-2435VS C47734518; manufacturer drawing A/0; no locating posts")
+	(property "Reference" "REF**"
+		(at 0 -11 0)
+		(layer "F.SilkS")
+		(uuid "7f612a86-cbae-4b20-9c2e-5edb369e414e")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(property "Value" "SW_SPST_TS2435VS"
+		(at 0 11 0)
+		(layer "F.Fab")
+		(uuid "15d75ea9-4fa8-4983-a00c-4389ea289f15")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "047bed3d-e5da-4855-84a4-88cf200e998f")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "f6d8547d-35c9-46ff-8029-1c0a0cbf65be")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
+	(fp_rect
+		(start -2.9 -1.5)
+		(end 2.9 2.45)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "b800a542-1a75-42f1-ad6c-dfa922045c3a")
+	)
+	(fp_rect
+		(start -2.3 -1.1)
+		(end 2.3 1.1)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "1409aa53-790c-4507-b171-8d76a05e3ce0")
+	)
+	(fp_rect
+		(start -1 -2)
+		(end 1 -1.1)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "3230f1a7-2b39-4d25-a28c-28e4c17d3e30")
+	)
+	(fp_circle
+		(center -0.8 0.4)
+		(end -0.4 0.4)
+		(stroke
+			(width 0.15)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "6f17ef4a-e086-4d85-92d7-180999d36bac")
+	)
+	(pad "" smd custom
+		(at -2.325 -0.6)
+		(size 0.3 0.3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(options
+			(clearance outline)
+			(anchor rect)
+		)
+		(primitives
+			(gr_poly
+				(pts
+					(xy 0.725 -0.65) (xy -0.325 -0.65) (xy -0.325 0.65) (xy 0.325 0.65) (xy 0.325 0.05) (xy 0.725 0.05)
+				)
+				(width 0)
+				(fill yes)
+			)
+		)
+		(uuid "e9ce77f6-30ca-4e35-ae60-813a1c291cb0")
+	)
+	(pad "" smd custom
+		(at 2.325 -0.6)
+		(size 0.3 0.3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(options
+			(clearance outline)
+			(anchor rect)
+		)
+		(primitives
+			(gr_poly
+				(pts
+					(xy -0.725 -0.65) (xy 0.325 -0.65) (xy 0.325 0.65) (xy -0.325 0.65) (xy -0.325 0.05) (xy -0.725 0.05)
+				)
+				(width 0)
+				(fill yes)
+			)
+		)
+		(uuid "db86d38d-6430-4995-bed4-ed363143f48f")
+	)
+	(pad "1" smd rect
+		(at -1.7 1.35)
+		(size 0.6 1.2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "02fb8218-c571-4002-a5ea-6499c50a1f84")
+	)
+	(pad "2" smd rect
+		(at 1.7 1.35)
+		(size 0.6 1.2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "a45ba2ac-8ec9-4cfe-bd1e-e0d5efe57442")
+	)
+	(embedded_fonts no)
+)

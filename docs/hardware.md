@@ -2,7 +2,7 @@
 
 > **Tip:** Experimental board designed by GPT-6 Astra; still under evaluation. Use at your own risk.
 
-A 48 × 28 mm, two-layer ESP32-C5 IO board: USB-C, one BOOT button, a 12-pin right-angle header, and an external dual-band U.FL antenna. Top-side assembly only.
+A 48 × 28 mm, two-layer IO board: USB-C, one BOOT button, a 12-pin right-angle header, and a built-in PCB antenna. Top-side assembly only.
 
 [中文](hardware.zh.md) · [README](../README.md) · [Cookbook](cookbook.md) · [Bring your own board](bring-your-own-board.md) · [KiCad project](../hardware/README.md)
 
@@ -16,7 +16,7 @@ Left to right: **12-pin header (J2) → BOOT button → USB-C**. The board width
 
 Pin 1 is square and marked `3V3`. Looking at the top with the connector edge up, pins run left to right:
 
-| Pin | Name | ESP32-C5 GPIO | Notes |
+| Pin | Name | Internal pin | Notes |
 | --- | --- | --- | --- |
 | 1 | 3V3_SW | — | Switched 3.3 V output, enabled by GPIO8, **off by default** |
 | 2 | GND | — | |
@@ -25,11 +25,11 @@ Pin 1 is square and marked `3V3`. Looking at the top with the connector edge up,
 | 5 | IO0 | GPIO10 | 3.3 V logic |
 | 6 | IO1 | GPIO1 | 3.3 V logic |
 | 7 | IO2 | GPIO0 | 3.3 V logic |
-| 8 | IO3 | GPIO23 | 3.3 V logic |
+| 8 | IO3 | GPIO2 | 3.3 V logic |
 | 9 | IO4 | GPIO4 | 3.3 V logic |
 | 10 | IO5 | GPIO5 | 3.3 V logic |
 | 11 | IO6 | GPIO6 | 3.3 V logic |
-| 12 | IO7 | GPIO24 | 3.3 V logic |
+| 12 | IO7 | GPIO7 | 3.3 V logic |
 
 Agents drive these through the MCP / REST tools; the mapping lives in firmware `CONFIG_GPIO_LOGICAL_TO_HW` (`main/include/config.h`).
 
@@ -54,11 +54,11 @@ Agents drive these through the MCP / REST tools; the mapping lives in firmware `
 | --- | --- |
 | BOOT (SW1, GPIO28) | Click once while running: Wi-Fi pairing. Hold during reset / power-on: ROM download mode |
 | TP1 / TP2 | EN / GND reset pads (top). Short briefly to reset |
-| TP3 | Console UART TX (GPIO11, 115200 baud) — firmware logs |
+| TP3 | Console UART TX (GPIO11, 115200 baud), back-side test pad — firmware logs |
 | TP4 | Always-on 3.3 V |
 | TP5 / TP6 | Active-low fault outputs of the two power switches |
 
-SW1 is a Panasonic EVQP7A01P (3.5 × 2.9 mm body, 1.35 mm height, side actuator facing the connector edge).
+SW1 is TS-2435VS (C47734518), a side-push switch without locating posts. The actuator faces the connector edge.
 
 ## UART
 
@@ -69,14 +69,14 @@ SW1 is a Panasonic EVQP7A01P (3.5 × 2.9 mm body, 1.35 mm height, side actuator 
 
 - Passive 5020 buzzer on GPIO12 (driven at 4 kHz / 50 % duty).
 - Native USB on GPIO13 / GPIO14 (D- / D+), with USBLC6-2SC6 ESD protection.
-- ESP32-C5 module: ESPC5-32E-H4, 4 MB flash.
+- 16 × 24 mm module with built-in PCB antenna and 4 MB flash.
 
 ## Antenna
 
-An external dual-band U.FL antenna is **required** for Wi-Fi.
+The built-in antenna sits at the bottom-left corner, above an open board cutout. The cutout reaches the left and bottom edges and extends 5 mm to the antenna’s right. Overall PCB dimensions stay 48 × 28 mm. IO3 and IO7 use new internal pin assignments; use the firmware mapping committed with this board.
 
 ## Design files and status
 
 KiCad 10 project, procurement BOM, schematic and PCB review PDFs: [`hardware/`](../hardware/README.md).
 
-**Prototype status**: fully routed with zero ERC / DRC findings, but not yet fabricated or bench tested. Thermal behavior, supply loading, and USB operation still need verification — see `hardware/agent/docs/prototype-test.md`.
+**Prototype status**: the replacement layout passes CAD checks; it has not been fabricated or bench tested. Thermal behavior, supply loading, and USB operation still need verification — see `hardware/agent/docs/prototype-test.md`.

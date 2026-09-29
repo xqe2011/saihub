@@ -14,6 +14,7 @@ ROOT=Path(__file__).resolve().parents[2]
 for directory in ('agent/validation', 'agent/previews', 'agent/routing', 'docs'):
     (ROOT/directory).mkdir(parents=True, exist_ok=True)
 design=json.loads((ROOT/'agent/design.json').read_text())
+assert next(a for a in design['parts'] if a['ref']=='U3')['value']=='ESPC5-12-H4', 'Routing recipe requires the PCB-antenna module placement'
 assert design['revision']==identity()['revision'] and design['board_mm']==[48.0,28.0], 'Routes require SAIHub-Mini 48 x 28 mm placement'
 def mm(x): return p.FromMM(x)
 def xy(x,y): return p.VECTOR2I(mm(x),mm(y))
@@ -41,7 +42,7 @@ if mode=='prepare':
     wire('V5',[point('C2',1),(41.225,19.4),point('C3',1)],.6)
     wire('V3V3',[point('L1',2),(41.85,22.9),(39.075,22.9),point('C4',1)],.8)
     for pt in [(37.7,13.2),(37.7,14.0),(37.7,14.8)]:via('GND',pt,.6,.3)
-    for pt in [(14.3,13.25),(16.3,13.25),(14.3,15.25),(16.3,15.25)]:via('GND',pt,.6,.3)
+    for pt in [(6.5,8.97),(8.5,8.97),(6.5,10.97),(8.5,10.97)]:via('GND',pt,.6,.3)
     wire('GND',[point('U2',4),(39.8,12.095),(38.3,13.595),point('U2',9)],.6)
     for ref,num in [('C2',2),('C3',2),('C4',2),('D1',2)]:via('GND',point(ref,num),.8,.4)
     # Keep the feedback/compensation on the quiet side of the converter.
@@ -58,66 +59,61 @@ if mode=='prepare':
     for ref,cap,net,y in [('U4','C11','V3_SW',3.7),('U5','C12','V5_SW',10.2)]:
         wire(net,[point(ref,6),(26,y)],.6);via(net,(26,y),.8,.4)
         via(net,point(cap,1),.8,.4)
-    for ref in ['U6','U7']:
-        for num,dy in [(3,-.8),(8,.8)]:
-            x,y=point(ref,num); target=(x,y+dy)
-            wire('GND',[(x,y),target],.2);via('GND',target)
-    wire('V5',[point('U10',5),(2.5,3.3),(5.225,3.3),point('C21',1)],.3)
-    for ref,num in [('U10',2),('C21',2)]:
-        x,y=point(ref,num);target=(x,y+.95) if ref=='U10' else (x+.65,y)
-        wire('GND',[(x,y),target],.3);via('GND',target)
-    # Reserve supply links before signal routing crowds their escape paths.
-    wire('V5',[point('C21',1),(8,6.5)],.3);via('V5',(8,6.5))
-    wire('V5',[(8,6.5),(12,6.5),(19.5,14),(26,14)],.3,p.B_Cu)
-    wire('V5',[point('U2',2),(42,14.9)],.6);via('V5',(42,14.9),.8,.4)
-    via('V5',point('F1',2),.8,.4)
-    wire('V5',[(42,14.9),(41.1,14),(41.1,9.6)],.8,p.B_Cu)
-    via('VBUS',point('U1',5));via('VBUS',(31.5,9.4))
-    wire('VBUS',[point('C1',1),(31.5,9.4)],.3)
-    wire('VBUS',[point('U1',5),(32.5,5.5625),(30.5,5.5625),(30.5,9.4),(31.5,9.4)],.3,p.B_Cu)
-    via('V3V3',point('C6',1),.8,.4);via('V3V3',(6.8,8.41),.8,.4)
-    wire('V3V3',[point('U3',2),(6.8,8.41)],.6)
-    wire('V3V3',[point('C6',1),(6.41,8.8),(6.8,8.41)],.6,p.B_Cu)
-    # Reserve the long USB pair on B.Cu before routing GPIOs.
-    wire('MCU_DM',[point('U3',13),(4.8,22.38),(4.8,18.5),point('R3',2)],.2)
-    wire('MCU_DP',[point('U3',14),(4.3,23.65),(4.3,20.3),point('R4',2)],.2)
-    for net,ref,pt in [('USB_DM','R3',(1.15,18.5)),('USB_DP','R4',(1.15,20.3))]:
-        wire(net,[point(ref,1),pt],.2);via(net,pt)
-    via('USB_DM',(31.65,7.05));via('USB_DP',(35.3,6.84))
-    wire('USB_DM',[(1.15,18.5),(1.15,19.3),(4.95,23.1),(31.6,23.1),(33.35,21.35),(33.35,9.4),(31.65,7.7),(31.65,7.05)],.2,p.B_Cu)
-    wire('USB_DP',[(1.15,20.3),(4.35,23.5),(31.8,23.5),(33.75,21.55),(33.75,9.2),(35.3,7.65),(35.3,6.84)],.2,p.B_Cu)
-    wire('USB_DM',[(31.65,7.05),(32.3375,7.05),point('U1',1)],.2)
-    wire('USB_DP',[(35.3,6.84),point('U1',3)],.2)
+    # Supply bypass next to the module uses a short, wide route on the back.
+    via('V3V3',point('U3',8),.8,.4)
+    via('V3V3',point('C6',1),.8,.4)
+    # Existing fixed coordinates outside the unchanged power stage are obsolete.
     out=ROOT/'agent/routing/saihub-prerouted.kicad_pcb'
     p.SaveBoard(str(out),b)
     (ROOT/'agent/routing/saihub-prerouted.kicad_pro').write_text(project)
     p.ExportSpecctraDSN(b,str(ROOT/'agent/validation/saihub.dsn'))
-    print('Prepared SAIHub-Mini locked buck, current-limit and USB routes.')
+    print('Prepared SAIHub-Mini locked power routes and revised module ground vias.')
 elif mode=='import':
     if not p.ImportSpecctraSES(b,str(ROOT/'agent/validation/saihub.ses')): raise SystemExit('SES import failed')
-    # Ground planes replace redundant autorouter ground tracks.
+    # Replay the reviewed cleanup and final routes for this exact placement.
     cleanup=json.loads((ROOT/'agent/validation/routing-cleanup.json').read_text())
+    def position(pt): return [round(p.ToMM(pt.x),4),round(p.ToMM(pt.y),4)]
     for track in list(b.GetTracks()):
-        is_via=isinstance(track,p.PCB_VIA)
-        pt=track.GetStart()
-        unused_via=is_via and any(track.GetNetname()==a['net'] and abs(p.ToMM(pt.x)-a['x'])<.0001 and abs(p.ToMM(pt.y)-a['y'])<.0001 for a in cleanup['remove_vias'])
-        if track.GetNetname() in cleanup['reroute_nets'] or unused_via or (not is_via and track.GetNetname()=='GND' and not track.IsLocked()):
-            # Native removal avoids the wrapper ownership bug during bulk edits.
-            b.RemoveNative(track)
-    finish=ROOT/'agent/validation/finish-routes.json'
-    for route in json.loads(finish.read_text()) if finish.exists() else []:
-        for a,c in zip(route['points'],route['points'][1:]):
-            if a[2]!=c[2]:via(route['net'],a[:2],route.get('via_size',.6),route.get('via_drill',.3))
-            else:wire(route['net'],[a[:2],c[:2]],route['width'],p.F_Cu if a[2]==0 else p.B_Cu)
-    # Enforce the board minimum after the router's automatic neck-downs.
+        if isinstance(track,p.PCB_VIA):
+            remove=any(v['net']==track.GetNetname() and position(track.GetPosition())==[round(v['x'],4),round(v['y'],4)] for v in cleanup['remove_vias'])
+        else:
+            ends=[position(track.GetStart()),position(track.GetEnd())]
+            remove=any(v['net']==track.GetNetname() and v['layer']==(0 if track.GetLayer()==p.F_Cu else 1) and (ends==[v['start'],v['end']] or ends==[v['end'],v['start']]) for v in cleanup['remove_tracks'])
+        if remove:b.RemoveNative(track)
+    # Apply recorded local corrections after the imported session coordinates.
+    for change in json.loads((ROOT/'agent/validation/track-adjustments.json').read_text()):
+        for track in b.GetTracks():
+            if isinstance(track,p.PCB_VIA) or track.GetNetname()!=change['net']:continue
+            if (0 if track.GetLayer()==p.F_Cu else 1)!=change['layer']:continue
+            ends=[position(track.GetStart()),position(track.GetEnd())]
+            if ends==change['old']:
+                track.SetStart(xy(*change['new'][0]));track.SetEnd(xy(*change['new'][1]))
+    for change in json.loads((ROOT/'agent/validation/via-adjustments.json').read_text()):
+        for track in b.GetTracks():
+            if isinstance(track,p.PCB_VIA) and track.GetNetname()==change['net'] and position(track.GetPosition())==change['old']:
+                track.SetPosition(xy(*change['new']));track.SetWidth(mm(change['size']));track.SetDrill(mm(change['drill']))
+    for part in design['parts']:
+        fp=fps[part['ref']]
+        fp.SetPosition(xy(*part['pos']))
+        if fp.IsFlipped()!=(part['side']=='bottom'):fp.Flip(fp.GetPosition(),False)
+        fp.SetOrientationDegrees(part['rot'])
+    for route in json.loads((ROOT/'agent/validation/finish-routes.json').read_text()):
+        for start,end in zip(route['points'],route['points'][1:]):
+            if start==end:continue
+            if start[2]!=end[2]:
+                if not any(isinstance(t,p.PCB_VIA) and t.GetNetname()==route['net'] and position(t.GetPosition())==start[:2] for t in b.GetTracks()):via(route['net'],start[:2],route.get('via_size',.6),route.get('via_drill',.3))
+            else:wire(route['net'],[start[:2],end[:2]],route['width'],p.F_Cu if start[2]==0 else p.B_Cu)
+    for pt in json.loads((ROOT/'agent/validation/ground-vias.json').read_text()):via('GND',pt,.5,.25)
     for track in b.GetTracks():
         if not isinstance(track,p.PCB_VIA) and track.GetWidth()<mm(.15):
             track.SetWidth(mm(.15))
-        # Move the router's tiny U1 ground neck away from the USB pad edge.
-        if not isinstance(track,p.PCB_VIA) and track.GetLayer()==p.F_Cu and track.GetNetname()=='GND':
-            for get,setter in [(track.GetStart,track.SetStart),(track.GetEnd,track.SetEnd)]:
-                pt=get();x,y=p.ToMM(pt.x),p.ToMM(pt.y)
-                if 32.1<x<32.53 and 7.7<y<7.8:setter(xy(x,y+.02))
+    # Session files can repeat a via where independently completed paths meet.
+    seen_vias=set()
+    for track in list(b.GetTracks()):
+        if not isinstance(track,p.PCB_VIA):continue
+        key=(track.GetNetname(),*position(track.GetPosition()))
+        if key in seen_vias:b.RemoveNative(track)
+        else:seen_vias.add(key)
     apply_board_identity(b)
     # Ground on both layers; no per-net clearances are weakened by the pours.
     for layer in [p.F_Cu,p.B_Cu]:
@@ -127,8 +123,8 @@ elif mode=='import':
         b.Add(z)
     # Solid ground connections avoid isolated thermal islands at edge connectors
     # and maximize regulator EP heat spreading. Other pads retain thermals.
-    for ref in ['J1','J2','U2','U5','C12']:
-        for pad in fps[ref].Pads():
+    for footprint in fps.values():
+        for pad in footprint.Pads():
             if pad.GetNetname()=='GND':pad.SetLocalZoneConnection(p.ZONE_CONNECTION_FULL)
     b.BuildConnectivity();p.ZONE_FILLER(b).Fill(b.Zones())
     p.SaveBoard(str(ROOT/'saihub.kicad_pcb'),b)
