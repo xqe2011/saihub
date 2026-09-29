@@ -1,6 +1,7 @@
 #include "main.h"
 
 #include "button.h"
+#include "buzzer.h"
 #include "cloud.h"
 #include "gpio_ctrl.h"
 #include "http_server.h"
@@ -23,6 +24,7 @@ void app_main(void)
   MAIN_LOAD_MODULE(Nvs_Init(), "Nvs");
   MAIN_LOAD_MODULE(Cloud_Init(), "Cloud");
   MAIN_LOAD_MODULE(GpioCtrl_Init(), "Gpio");
+  MAIN_LOAD_MODULE(Buzzer_Init(), "Buzzer");
   MAIN_LOAD_MODULE(Lock_Init(), "Lock");
   MAIN_LOAD_MODULE(UartCtrl_Init(), "Uart");
   MAIN_LOAD_MODULE(Script_Init(), "Script");

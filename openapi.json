@@ -3,7 +3,7 @@
   "info": {
     "title": "SAIHub REST API",
     "version": "1.0.0",
-    "description": "JSON REST API for logical pins 0-7, PWM, UART, power rails (3v3/5v), edge tracing, resource locks, on-device Lua 5.4 scripts, and cloud management. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}."
+    "description": "JSON REST API for logical pins 0-7, PWM, UART, power rails (3v3/5v), the onboard buzzer, edge tracing, resource locks, on-device Lua 5.4 scripts, and cloud management. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}."
   },
   "servers": [
     {
@@ -29,6 +29,9 @@
       "name": "lock"
     },
     {
+      "name": "buzzer"
+    },
+    {
       "name": "script",
       "description": "Sandboxed Lua 5.4. Allowed libraries: base, table, string, math, utf8. require/dofile/loadfile/load/collectgarbage are nil. No io, os, package, debug, or coroutine. Tools are globals with MCP argument keys. sleep(us) delays in microseconds. print() is captured. First return value is result. Errors raise {reason=\"...\"}; catch with pcall. Timeout, maxCalls, and out-of-memory abort the run."
     },
@@ -47,7 +50,7 @@
           "meta"
         ],
         "summary": "Human control UI (HTML)",
-        "description": "Browser page for humans to control pins, power rails, and UART. Agents should use GET /openapi.json and call the JSON APIs instead of scraping this page.",
+        "description": "Browser page for humans to control pins, power rails, UART, and the buzzer. Agents should use GET /openapi.json and call the JSON APIs instead of scraping this page.",
         "responses": {
           "200": {
             "description": "HTML control page",
@@ -1082,6 +1085,54 @@
           },
           "423": {
             "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/buzzer": {
+      "post": {
+        "tags": [
+          "buzzer"
+        ],
+        "summary": "Play a Morse-style buzzer sequence",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sequence"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "sequence": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[.\\- ]+$",
+                    "description": "Morse-style pattern. `.` short, `-` long, space extra gap."
+                  }
+                }
+              },
+              "example": {
+                "sequence": "...---"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Sequence finished"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/BuzzerBusy"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
           }
         }
       }
@@ -2226,6 +2277,16 @@
       },
       "Conflict": {
         "description": "A request overlaps an existing lock, peripheral hold, or active trace; or resource configuration conflicts with a held pin",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "BuzzerBusy": {
+        "description": "Another buzzer sequence is already playing",
         "content": {
           "application/json": {
             "schema": {

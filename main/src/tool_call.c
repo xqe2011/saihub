@@ -5,6 +5,7 @@
  */
 #include "tool_call.h"
 
+#include "buzzer.h"
 #include "config.h"
 #include "gpio_ctrl.h"
 #include "http_server.h"
@@ -105,6 +106,20 @@ static bool ToolCall_ParseRail(cJSON* args, GpioCtrl_PowerRail* railOut, char* r
     return false;
   }
   return true;
+}
+
+static ToolCall_Result ToolCall_PlayBuzzer(cJSON* args)
+{
+  cJSON* sequenceItem = cJSON_GetObjectItem(args, "sequence");
+  if (!cJSON_IsString(sequenceItem) || sequenceItem->valuestring == NULL) {
+    return ToolCall_Err("sequence must be a non-empty string of . and -.");
+  }
+  char reason[128];
+  esp_err_t ret = Buzzer_Play(sequenceItem->valuestring, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_ARG) return ToolCall_Err(reason);
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(409, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  return ToolCall_OkEmpty();
 }
 
 static ToolCall_Result ToolCall_ListPins(void)
@@ -844,6 +859,8 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
   } else if (strcmp(name, "uart_flush") == 0) {
     TOOL_CALL_LOG("%s uart_flush(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
                   ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "play_buzzer") == 0) {
+    TOOL_CALL_LOG("%s play_buzzer(sequence=%s)", via, ToolCall_ArgStr(args, "sequence"));
   } else {
     TOOL_CALL_LOG("%s %s(...)", via, name);
   }
@@ -896,6 +913,8 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
     r = ToolCall_UartReceive(args);
   else if (strcmp(name, "uart_flush") == 0)
     r = ToolCall_UartFlush(args);
+  else if (strcmp(name, "play_buzzer") == 0)
+    r = ToolCall_PlayBuzzer(args);
   else {
     char reason[96];
     snprintf(reason, sizeof(reason), "Unknown tool: %s", name);

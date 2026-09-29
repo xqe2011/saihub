@@ -15,6 +15,7 @@ esp_err_t Route_LockRegister(void);
 esp_err_t Route_PowerRegister(void);
 esp_err_t Route_McpRegister(void);
 esp_err_t Route_ScriptRegister(void);
+esp_err_t Route_BuzzerRegister(void);
 esp_err_t Route_PortalRegister(void);
 esp_err_t Route_ControlRegister(void);
 esp_err_t Route_CloudRegister(void);
