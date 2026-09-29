@@ -14,6 +14,8 @@
 
 #include <cJSON.h>
 #include <esp_app_desc.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -301,6 +303,68 @@ static cJSON* Route_McpHandleToolsCall(HttpServer_Context* ctx, cJSON* params)
   return out;
 }
 
+typedef struct {
+  HttpServer_Context* ctx;
+  cJSON* id;
+  cJSON* args;
+} McpBuzzerJob;
+
+static void Route_McpBuzzerTask(void* arg)
+{
+  McpBuzzerJob* j = arg;
+  char from[48];
+  snprintf(from, sizeof(from), "mcp/%s", HttpServer_GetFrom(j->ctx));
+  ToolCall_Result tr = ToolCall_Invoke(from, "play_buzzer", j->args);
+  cJSON* out = !tr.ok ? Route_McpToolResultErr(tr.reason) : Route_McpToolResultOk(tr.payload);
+  Route_McpSendJsonRpc(j->ctx, 200, Route_McpJsonRpcResult(j->id, out));
+  cJSON_Delete(j->id);
+  cJSON_Delete(j->args);
+  HttpServer_AsyncComplete(j->ctx);
+  free(j);
+  vTaskDelete(NULL);
+}
+
+static esp_err_t Route_McpDispatchBuzzer(HttpServer_Context* ctx, cJSON* id, cJSON* params)
+{
+  if (!cJSON_IsObject(params)) {
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("params are required.")));
+  }
+  cJSON* args = cJSON_GetObjectItem(params, "arguments");
+  if (args != NULL && !cJSON_IsObject(args)) {
+    return Route_McpSendJsonRpc(ctx, 200,
+                                Route_McpJsonRpcResult(id, Route_McpToolResultErr("arguments must be an object.")));
+  }
+
+  McpBuzzerJob* j = calloc(1, sizeof(*j));
+  if (!j) {
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("internal")));
+  }
+  j->args = args != NULL ? cJSON_Duplicate(args, 1) : cJSON_CreateObject();
+  j->id = id != NULL ? cJSON_Duplicate(id, 1) : NULL;
+  if (!j->args || (id != NULL && j->id == NULL)) {
+    cJSON_Delete(j->id);
+    cJSON_Delete(j->args);
+    free(j);
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("internal")));
+  }
+
+  if (HttpServer_AsyncBegin(ctx, &j->ctx) != ESP_OK) {
+    cJSON_Delete(j->id);
+    cJSON_Delete(j->args);
+    free(j);
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("internal")));
+  }
+  if (xTaskCreate(Route_McpBuzzerTask, "mcp_buzzer", 4096, j, 5, NULL) != pdPASS) {
+    Route_McpSendJsonRpc(j->ctx, 200, Route_McpJsonRpcResult(j->id, Route_McpToolResultErr("internal")));
+    cJSON_Delete(j->id);
+    cJSON_Delete(j->args);
+    HttpServer_AsyncComplete(j->ctx);
+    free(j);
+    return ESP_OK;
+  }
+  return ESP_OK;
+}
+
 static esp_err_t Route_McpDispatchTrace(HttpServer_Context* ctx, cJSON* id, cJSON* params)
 {
   if (!cJSON_IsObject(params)) {
@@ -422,6 +486,7 @@ static esp_err_t Route_McpDispatch(HttpServer_Context* ctx, cJSON* msg)
       if (cJSON_IsString(nameItem) && nameItem->valuestring != NULL) {
         if (strcmp(nameItem->valuestring, "run_script") == 0) return Route_McpDispatchRunScript(ctx, id, params);
         if (strcmp(nameItem->valuestring, "trace_pins") == 0) return Route_McpDispatchTrace(ctx, id, params);
+        if (strcmp(nameItem->valuestring, "play_buzzer") == 0) return Route_McpDispatchBuzzer(ctx, id, params);
       }
     }
     return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpHandleToolsCall(ctx, params)));
