@@ -96,7 +96,7 @@ def txt(s,x,y,size=1.27):items.append(f'(text {q(s)} (at {x} {y} 0) {effects(siz
 def box(x1,y1,x2,y2,title):
     items.append(f'(polyline (pts (xy {x1} {y1}) (xy {x2} {y1}) (xy {x2} {y2}) (xy {x1} {y2}) (xy {x1} {y1})) (stroke (width .254) (type default)) (fill (type none)) (uuid "{serial(title)}"))')
     txt(title,x1+3,y1+4,1.5)
-box(12,12,208,130,'01  ESP32-C5 / BOOT / RESET')
+box(12,12,208,130,'01  CONTROLLER / BOOT / RESET')
 box(212,12,408,130,'02  USB-C / INPUT PROTECTION')
 box(12,134,232,210,'03  SGM6232 / ALWAYS-ON 3.3 V')
 box(236,134,408,249,'04  SWITCHED OUTPUTS / 1 A NOMINAL LIMIT')
@@ -119,8 +119,8 @@ for num,net,yy in [(1,'V3V3',grid(25)),(2,'GND',grid(46))]:
 stub('R5',1);a=mark('R5',2);b=mark('C8',1);wire([a,(b[0],a[1]),b]);label('EN',(b[0],a[1]),180);stub('C8',2)
 a=mark('R6',2);b=mark('SW1',1);wire([a,(a[0],b[1]),b]);label('BOOT',(a[0],b[1]));stub('R6',1);stub('SW1',2)
 txt('Hold BOOT, then power on or short EN to GND.',126,77,1.05)
-txt('SW1: EVQP7A01P / small side-push / front edge',126,82,1.05)
-txt('External dual-band U.FL antenna; 3.3 V GPIO only.',17,124,1.15)
+txt('SW1: TS-2435VS / side-push / front edge',126,82,1.05)
+txt('Built-in PCB antenna over cutout; 3.3 V pins only.',17,124,1.15)
 
 # USB duplicate contacts are tied by visible buses.
 for nums,net,busx in [(['A4','A9','B4','B9'],'VBUS',grid(223)),(['A1','A12','B1','B12','SH'],'GND',grid(223))]:
@@ -176,7 +176,7 @@ txt('4 kHz / 50% duty. GPIO12 reserved.',17,272,1.02)
 for ref,a in parts.items():
     x,y=a['sch'];angle=a['angle'];isflag=ref.startswith('#');sym=syms[a['sym']]
     inst=f'(symbol (lib_id "Saihub:{a["sym"]}") (at {x} {y} {angle}) (unit 1) (in_bom {"no" if isflag or ref.startswith("TP") else "yes"}) (on_board {"no" if isflag else "yes"}) (dnp no) (uuid "{a["uuid"]}")'
-    h=6 if a['sym']=='AO3400A' else 20.32 if a['sym']=='ESPC5_32E_H4' else 12.7 if a['sym']=='USB_C' else 11.43 if a['sym']=='HEADER_12' else 8.89 if a['sym'] in ['SGM6232','TPD4E05U06'] else 5.08 if a['sym'] in ['TPS2553','USBLC6_2SC6'] else 2.54
+    h=6 if a['sym']=='AO3400A' else 17.78 if a['sym']=='ESPC5_12_H4' else 12.7 if a['sym']=='USB_C' else 11.43 if a['sym']=='HEADER_12' else 8.89 if a['sym'] in ['SGM6232','TPD4E05U06'] else 5.08 if a['sym'] in ['TPS2553','USBLC6_2SC6'] else 2.54
     vertical=angle in [90,270]
     val=a['value']
     for name,v,xx,yy,hide in [('Reference',ref,x+3.81 if vertical else x,y-1.27 if vertical else y-h-2.54,isflag),('Value',val,x+3.81 if vertical else x,y+1.27 if vertical else y+h+2.54,isflag),('Footprint',a['foot'],x,y,True),('Datasheet',a['url'],x,y,True),('MPN',a['mpn'],x,y,True)]:
@@ -199,7 +199,7 @@ txt('Use specified 5 V / 3 A adapter.',238,265,.95)
 txt('Verify current limit and both loaded rails.',238,270,.95)
 info = identity()
 text = '(kicad_sch (version 20250114) (generator "eeschema") (uuid '+q(uid('root'))+') (paper "A2")'
-text += '(title_block (title '+q(info['name']+' - ESP32-C5 GPIO CONTROLLER')+') (date '+q(info['version'])+') (rev '+q(info['revision'])+') (company '+q(info['author']+' / '+info['co_author'])+') (comment 1 "48 x 28 mm / 2 layers / SGM6232 / prototype"))'
+text += '(title_block (title '+q(info['name']+' - IO CONTROLLER')+') (date '+q(info['version'])+') (rev '+q(info['revision'])+') (company '+q(info['author']+' / '+info['co_author'])+') (comment 1 "48 x 28 mm / 2 layers / SGM6232 / prototype"))'
 text+='(lib_symbols '+''.join(dump(s).replace('(symbol '+q(name),'(symbol '+q('Saihub:'+name),1) for name,s in syms.items())+')'
 text+='\n'.join(items)+')\n'
 (ROOT/'saihub.kicad_sch').write_text(text)

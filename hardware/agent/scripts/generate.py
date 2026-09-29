@@ -75,8 +75,8 @@ symbol('BUZZER',[(1,'+','passive','L'),(2,'-','passive','R')],'small')
 symbol('AO3400A',[(1,'G','input','L'),(2,'S','passive','R'),(3,'D','passive','R')])
 symbol('SGM6232',[(2,'IN','power_in','L'),(7,'EN','input','L'),(8,'SS','passive','L'),(4,'GND','power_in','L'),(9,'EP_GND','passive','L'),(1,'BS','passive','R'),(3,'SW','power_out','R'),(5,'FB','input','R'),(6,'COMP','passive','R')])
 symbol('TPS2553',[(1,'IN','power_in','L'),(3,'EN','input','L'),(2,'GND','power_in','L'),(6,'OUT','power_out','R'),(5,'ILIM','passive','R'),(4,'FAULT_N','open_collector','R')])
-module_names=['GND','3V3','EN','GPIO2','GPIO3','GPIO0','GPIO1','GPIO6','GPIO7','GPIO8','GPIO9','GPIO10','GPIO13','GPIO14','GPIO28','GPIO5','GPIO4','GPIO27','GPIO15','NC','GPIO23','NC','GPIO24','GPIO12','GPIO11','GPIO25','GPIO26','GND','EPAD']
-symbol('ESPC5_32E_H4',[(i+1,n,'power_in' if n in ['GND','3V3','EPAD'] else 'input' if n=='EN' else 'no_connect' if n=='NC' else 'bidirectional','L' if i<14 else 'R') for i,n in enumerate(module_names)])
+module_names=['GPIO0','GPIO1','EN','GPIO2','GPIO3','GPIO4','GPIO5','3V3','GPIO7','GPIO8','GPIO9','GPIO10','GPIO13','GPIO14','GND','GPIO6','GPIO15','GPIO28','GPIO27','GPIO26','GPIO12','GPIO11','EPAD']
+symbol('ESPC5_12_H4',[(i+1,n,'power_in' if n in ['GND','3V3','EPAD'] else 'input' if n=='EN' else 'bidirectional','L' if i<12 else 'R') for i,n in enumerate(module_names)])
 usb_pins=[('A4','VBUS'),('A9','VBUS'),('B4','VBUS'),('B9','VBUS'),('A1','GND'),('A12','GND'),('B1','GND'),('B12','GND'),('SH','SHIELD'),('A5','CC1'),('B5','CC2'),('A6','D+'),('B6','D+'),('A7','D-'),('B7','D-'),('A8','SBU1'),('B8','SBU2')]
 symbol('USB_C',[(n,v,'passive','L' if i<9 else 'R') for i,(n,v) in enumerate(usb_pins)])
 symbol('USBLC6_2SC6',[(1,'IO1','passive','L'),(2,'GND','power_in','L'),(3,'IO2','passive','L'),(6,'IO1','passive','R'),(5,'VBUS','power_in','R'),(4,'IO2','passive','R')])
@@ -119,14 +119,15 @@ c('C14','10n','BOOT_R','BS',(36,8),'power',(245,140))
 c('C15','100n','SS','GND',(27,9),'power',(245,170))
 c('C16','5.6n','COMP','COMP_RC',(23,14),'power',(245,200))
 
-module_nets={1:'GND',2:'V3V3',3:'EN',4:None,5:'FAULT5',6:'IO2',7:'IO1',8:'IO6',9:None,10:'PWR3_EN',11:'PWR5_EN',12:'IO0',13:'MCU_DM',14:'MCU_DP',15:'BOOT',16:'IO5',17:'IO4',18:None,19:'FAULT4',20:None,21:'IO3',22:None,23:'IO7',24:'BUZZ_PWM',25:'UART_TX',26:None,27:None,28:'GND',29:'GND'}
-add('U3','ESPC5-32E-H4','ESPC5_32E_H4','Saihub:ESPC5-32E-H4',module_nets,(15.25,17.5),'mcu',(80,70),url='https://atta.szlcsc.com/upload/public/pdf/source/20251016/AE26C73F5F73E1BD024C1C95B3A92329.pdf')
+# IO3/IO7 move to available GPIO2/GPIO7; firmware mapping must match this board.
+module_nets={1:'IO2',2:'IO1',3:'EN',4:'IO3',5:'FAULT5',6:'IO4',7:'IO5',8:'V3V3',9:'IO7',10:'PWR3_EN',11:'PWR5_EN',12:'IO0',13:'MCU_DM',14:'MCU_DP',15:'GND',16:'IO6',17:'FAULT4',18:'BOOT',19:None,20:None,21:'BUZZ_PWM',22:'UART_TX',23:'GND'}
+add('U3','ESPC5-12-H4','ESPC5_12_H4','Saihub:ESPC5-12-H4',module_nets,(8.85,16),'mcu',(80,70),desc='16 x 24 mm module; built-in PCB antenna over bottom-left board cutout',url='https://atta.szlcsc.com/upload/public/pdf/source/20251016/3D572157C42EA1AA3992B58D4700E12F.pdf')
 c('C6','10u','V3V3','GND',(4.2,9.4),'mcu',(175,40),'Capacitor_SMD:C_0805_2012Metric',90)
 c('C7','100n','V3V3','GND',(4.2,12.5),'mcu',(260,40),rot=90)
 r('R5','10k','V3V3','EN',(3.5,15.5),'mcu',(175,75),90)
 c('C8','1u','EN','GND',(3.5,18.5),'mcu',(260,75),rot=90)
 r('R6','10k','V3V3','BOOT',(27,27.8),'mcu',(175,110),90)
-add('SW1','BOOT','BOOT','Button_Switch_SMD:SW_SPST_EVQP7A',{1:'BOOT',2:'GND'},(25.5,31.1),'mcu',(260,110),mpn='EVQP7A01P',desc='3.5 x 2.9 mm body, 1.35 mm high, side-actuated toward connector edge',url='https://industry.panasonic.com/ap/en/products/control/switch/light-touch/number/evqp7a01p')
+add('SW1','BOOT','BOOT','Saihub:SW_SPST_TS2435VS',{1:'BOOT',2:'GND'},(34.35,1.1),'mcu',(260,110),mpn='TS-2435VS',desc='C47734518; side-push, no locating posts; manufacturer PCB land pattern',url='https://atta.szlcsc.com/upload/public/pdf/source/20250414/8774CEBD0F324351C3CF1F5D7421BC0B.pdf')
 for ref,net,pos,sch in [('TP1','EN',(2,21.8),(175,145)),('TP2','GND',(4.8,21.8),(260,145)),('TP3','UART_TX',(27.4,12.7),(175,180)),('TP4','V3V3',(27.4,16),(260,180))]:
     add(ref,net,'TP','TestPoint:TestPoint_Pad_D1.5mm',{1:net},pos,'mcu',sch,mpn='PCB test pad',desc='Do not populate')
 
@@ -149,16 +150,17 @@ c('C13','100n','V3V3','GND',(2.1,44.2),'buzzer',(175,105),rot=90)
 
 # Compact top-only placement: header, small side-push BOOT, USB-C left to right.
 # Coordinates are board-local; the switch actuator points toward y=0.
+# Antenna reaches y=28; notch extends 5 mm beyond its right edge.
 placement = {'J2': (1.8, 1.5, 90),
- 'SW1': (34.35, 1.75, 180),
- 'J1': (42.6, 3.5, 180),
- 'U3': (14.5, 15.55, 0),
- 'C6': (2.5, 8.8, 0),
- 'C7': (2.5, 10.7, 0),
- 'R5': (2.5, 12.4, 0),
- 'C8': (2.5, 14.1, 0),
- 'R3': (2.5, 18.5, 0),
- 'R4': (2.5, 20.3, 0),
+ 'SW1': (34.5, 1.55, 0),
+ 'J1': [42.8, 3.5, 180.0],
+ 'U3': (8.85, 16, 180),
+ 'C6': [18.68, 11.12, 90.0],
+ 'C7': [21.15, 11.32, 90.0],
+ 'R5': [18.67, 14.41, 90.0],
+ 'C8': [21.74, 15.09, 90.0],
+ 'R3': [19.04, 16.89, 180.0],
+ 'R4': [20.2, 14.53, 90.0],
  'U4': (27.65, 5.7, 90),
  'C9': (24.95, 5.6, 90),
  'R7': (30.3, 5.2, 90),
@@ -169,17 +171,17 @@ placement = {'J2': (1.8, 1.5, 90),
  'R8': (30.3, 11.6, 90),
  'R10': (30.3, 14.8, 90),
  'C12': (27.3, 15.2, 0),
- 'TP1': (1.2, 22.3, 0),
- 'TP2': (3.4, 22.3, 0),
- 'TP3': (5.6, 27, 0),
- 'TP4': (7.8, 27, 0),
- 'TP5': (10, 27, 0),
- 'TP6': (12.2, 27, 0),
- 'R6': (2.5, 15.8, 0),
- 'U1': (33.5, 5.7, 90),
- 'R1': (36.4, 5.05, 90),
- 'R2': (36.4, 8.25, 90),
- 'C1': (33.3, 8.6, 0),
+ 'TP1': [18.54, 19.32, 0.0],
+ 'TP2': [20.79, 19.39, 0.0],
+ 'TP3': [2.6, 19.5, 0.0],
+ 'TP4': [23.05, 12.55, 0.0],
+ 'TP5': [22.87, 19.37, 0.0],
+ 'TP6': [34.48, 20.28, 0.0],
+ 'R6': [24.14, 15.24, 180.0],
+ 'U1': [33.63, 6.13, 180.0],
+ 'R1': [36.49, 6.46, 90.0],
+ 'R2': [35.66, 9.07, 180.0],
+ 'C1': [32.59, 8.9, 0.0],
  'F1': (39.7, 9.6, 0),
  'D2': (44.8, 9.6, 0),
  'U2': (38.3, 14, 180),
@@ -196,16 +198,16 @@ placement = {'J2': (1.8, 1.5, 90),
  'C15': (32.4, 24, 90),
  'R18': (45.7, 19.2, 0),
  'C14': (39.1, 25.7, 90),
- 'BZ1': (28.1, 23.8, 90),
+ 'BZ1': [28.49, 24.32, 90.0],
  'D3': (27.8, 18.2, 0),
- 'Q1': (2.5, 25.5, 0),
- 'R11': (15.3, 27, 0),
- 'C13': (18.5, 27, 0),
- 'R12': (22, 27, 0),
- 'U6': (14.5, 4.3, -90),
- 'U7': (22.2, 4.3, -90),
- 'U10': (2.5, 5.5, 90),
- 'C21': (6, 4.3, 0)}
+ 'Q1': [23.61, 25.93, 90.0],
+ 'R11': [22.73, 17.5, 180.0],
+ 'C13': [33.12, 27.08, 0.0],
+ 'R12': [23.71, 22.55, 180.0],
+ 'U6': [19.39, 4.32, -90.0],
+ 'U7': [22.92, 5.15, 0.0],
+ 'U10': [19.74, 7.71, 180.0],
+ 'C21': [22.67, 8.23, 90.0]}
 apply_header_protection(parts)
 unplaced = [a['ref'] for a in parts if a['ref'] not in placement]
 if unplaced:
@@ -213,7 +215,7 @@ if unplaced:
 for a in parts:
     a['pos']=placement[a['ref']][:2]
     a['rot']=placement[a['ref']][2]
-    a['side']='top'
+    a['side']='bottom' if a['ref']=='TP3' else 'top'
     if a['ref'].startswith('TP'):
         a['foot']='TestPoint:TestPoint_Pad_D1.0mm'
 
@@ -231,19 +233,37 @@ def custom_fp(name,body,pads,desc):
     s+=')'
     (FP/(name+'.kicad_mod')).write_text(s)
 
-# DOIT Fig 3.3: lands extend 0.8 mm inwards and 0.4 mm outwards;
-# bottom pad centre 1.5 mm from bottom, 1.27 mm pitch; EP centre
-# 8.2 mm from right edge and 10.9 mm from bottom.
+# Manufacturer Fig 3.3, top view. Antenna occupies the unpadded top 7.5 mm.
 pads=[]
-for i in range(14):
-    y=9.6-1.5-(13-i)*1.27
-    pads.append((str(i+1),-8.8,y,1.2,.85,'"F.Cu" "F.Paste" "F.Mask"'))
-    pads.append((str(28-i),8.8,y,1.2,.85,'"F.Cu" "F.Paste" "F.Mask"'))
-pads.append(('29',.8,-1.3,4.5,4.5,'"F.Cu" "F.Mask"'))
-# Nine reduced paste apertures over the exposed ground pad (44% coverage).
+for i in range(8):
+    y=-3.5+2*i
+    pads.append((str(i+1),-7.75,y,1.5,1.0,'"F.Cu" "F.Paste" "F.Mask"'))
+    pads.append((str(22-i),7.75,y,1.5,1.0,'"F.Cu" "F.Paste" "F.Mask"'))
+for i in range(6):
+    pads.append((str(9+i),-5+2*i,11.75,1.0,1.5,'"F.Cu" "F.Paste" "F.Mask"'))
+pads.append(('23',1.35,6.03,4.5,4.5,'"F.Cu" "F.Mask"'))
 for dx in [-1.5,0,1.5]:
-    for dy in [-1.5,0,1.5]: pads.append(('',.8+dx,-1.3+dy,1,1,'"F.Paste"'))
-custom_fp('ESPC5-32E-H4',(-9,-9.6,9,9.6),pads,'DOIT ESPC5-32E-H4, datasheet v1.0 Fig 3.3; external U.FL antenna')
+    for dy in [-1.5,0,1.5]: pads.append(('',1.35+dx,6.03+dy,1,1,'"F.Paste"'))
+custom_fp('ESPC5-12-H4',(-8,-12,8,12),pads,'Manufacturer v1.0 Fig 3.3; PCB antenna; 16 x 24 mm')
+f=FP/'ESPC5-12-H4.kicad_mod'
+f.write_text(f.read_text().rstrip()[:-1]+'(fp_line (start -8 -4.5) (end 8 -4.5) (stroke (width .1) (type default)) (layer "F.Fab")))')
+# Two rear electrical contacts and two front mechanical mounting lands.
+# Rear contacts: 3.4 mm centre pitch, 0.6 x 1.2 mm. Front anchors:
+# 5.3 mm outer span, 3.2 mm inner gap, 1.3 mm depth; 0.7 mm gap to contacts.
+switch_pads=[('1',-1.7,1.35,.6,1.2,'"F.Cu" "F.Paste" "F.Mask"'),
+             ('2',1.7,1.35,.6,1.2,'"F.Cu" "F.Paste" "F.Mask"')]
+custom_fp('SW_SPST_TS2435VS',(-2.3,-1.1,2.3,1.1),switch_pads,'TS-2435VS C47734518; manufacturer drawing A/0; no locating posts')
+# Show the actuator projecting toward the connector edge (negative Y).
+f=FP/'SW_SPST_TS2435VS.kicad_mod'
+switch=f.read_text().rstrip()[:-1]
+for sign in [-1,1]:
+    points=[(sign*x,y) for x,y in [(1.6,-1.25),(2.65,-1.25),(2.65,.05),(2,.05),(2,-.55),(1.6,-.55)]]
+    coords=' '.join(f'(xy {x-sign*2.325} {y+.6})' for x,y in points)
+    switch+=f'(pad "" smd custom (at {sign*2.325} -.6) (size .3 .3) (layers "F.Cu" "F.Paste" "F.Mask") (options (clearance outline) (anchor rect)) (primitives (gr_poly (pts {coords}) (width 0) (fill yes))))'
+# Courtyard includes solder lands; 0.25 mm assembly allowance.
+switch=switch.replace('(start -2.9 -1.7000000000000002) (end 2.9 1.7000000000000002)', '(start -2.9 -1.5) (end 2.9 2.45)')
+switch+='(fp_rect (start -1 -2) (end 1 -1.1) (stroke (width .1) (type default)) (fill none) (layer "F.Fab")))'
+f.write_text(switch)
 custom_fp('KLJ-5020',(-3.15,-2.5,3.15,2.5),[(num,x,y,1.95,1.4,'"F.Cu" "F.Paste" "F.Mask"') for num,x,y in [('1',-2.175,-1.56),('2',2.175,-1.56),('',-2.175,1.56)]],'KELIKING KLJ-5020 v3.1 page 6 top-view lands: 6.3 x 4.52 span, 2.4 x 1.72 gaps; third pad mechanical only')
 
 # SGMICRO recommended lands: 5.56 row centres, 1.91 x 0.61 leads;
@@ -278,8 +298,8 @@ settings=board.GetDesignSettings()
 settings.SetBoardThickness(mm(1.6))
 settings.m_MinClearance=mm(.15)
 settings.m_TrackMinWidth=mm(.15)
-settings.m_ViasMinSize=mm(.6)
-settings.m_MinThroughDrill=mm(.3)
+settings.m_ViasMinSize=mm(.5)
+settings.m_MinThroughDrill=mm(.25)
 settings.m_HoleToHoleMin=mm(.25)
 settings.m_CopperEdgeClearance=mm(.25)
 nets={}
@@ -307,7 +327,8 @@ for a in parts:
         net=a['nets'].get(pad.GetNumber())
         if net: pad.SetNet(nets[net])
     footprints[a['ref']]=fp
-for start,end in [((0,0),(W,0)),((W,0),(W,H)),((W,H),(0,H)),((0,H),(0,0))]:
+outline=[(0,0),(W,0),(W,H),(21.85,H),(21.85,20.5),(0,20.5)]
+for start,end in zip(outline,outline[1:]+outline[:1]):
     e=p.PCB_SHAPE();e.SetShape(p.SHAPE_T_SEGMENT);e.SetStart(xy(*start));e.SetEnd(xy(*end));e.SetLayer(p.Edge_Cuts);e.SetWidth(mm(.05));board.Add(e)
 
 def label(txt,x,y,size=.8,layer=p.F_SilkS,angle=0):
@@ -321,7 +342,7 @@ label('BOOT',34.35,4.5,.65,p.B_SilkS)
 apply_reference_labels(board)
 
 # Project settings explicitly define signals vs. power copper widths.
-project={'meta':{'filename':'saihub.kicad_pro','version':1},'board':{'design_settings':{'rules':{'min_clearance':.15,'min_track_width':.15,'min_via_diameter':.6,'min_through_hole_diameter':.3,'min_hole_to_hole':.25,'min_copper_edge_clearance':.25,'min_hole_clearance':.15,'min_text_height':.6},'rule_severities':{'silk_over_copper':'warning','silk_overlap':'warning'},'defaults':{'board_outline_line_width':.05,'copper_line_width':.2}}},'net_settings':{'classes':[{'name':'Default','clearance':.15,'track_width':.2,'via_diameter':.6,'via_drill':.3,'microvia_diameter':.3,'microvia_drill':.1,'diff_pair_width':.25,'diff_pair_gap':.15,'diff_pair_via_gap':.25},{'name':'Power','clearance':.2,'track_width':.6,'via_diameter':.8,'via_drill':.4,'microvia_diameter':.3,'microvia_drill':.1,'diff_pair_width':.25,'diff_pair_gap':.15,'diff_pair_via_gap':.25}],'netclass_assignments':{},'netclass_patterns':[{'netclass':'Power','pattern':n} for n in ['VBUS','V5','V3V3','V3_SW','V5_SW','SW']],'meta':{'version':4}},'schematic':{'annotate_start_num':0,'drawing':{'default_line_thickness':6.0},'meta':{'version':1}}}
+project={'meta':{'filename':'saihub.kicad_pro','version':1},'board':{'design_settings':{'rules':{'min_clearance':.15,'min_track_width':.15,'min_via_diameter':.5,'min_through_hole_diameter':.25,'min_hole_to_hole':.25,'min_copper_edge_clearance':.25,'min_hole_clearance':.15,'min_text_height':.6},'rule_severities':{'silk_over_copper':'warning','silk_overlap':'warning'},'defaults':{'board_outline_line_width':.05,'copper_line_width':.2}}},'net_settings':{'classes':[{'name':'Default','clearance':.15,'track_width':.15,'via_diameter':.6,'via_drill':.3,'microvia_diameter':.3,'microvia_drill':.1,'diff_pair_width':.25,'diff_pair_gap':.15,'diff_pair_via_gap':.25},{'name':'Power','clearance':.2,'track_width':.6,'via_diameter':.8,'via_drill':.4,'microvia_diameter':.3,'microvia_drill':.1,'diff_pair_width':.25,'diff_pair_gap':.15,'diff_pair_via_gap':.25}],'netclass_assignments':{},'netclass_patterns':[{'netclass':'Power','pattern':n} for n in ['VBUS','V5','V3V3','V3_SW','V5_SW','SW']],'meta':{'version':4}},'schematic':{'annotate_start_num':0,'drawing':{'default_line_thickness':6.0},'meta':{'version':1}}}
 # Preserve existing user project settings during regeneration.
 if (ROOT/'saihub.kicad_pro').exists():
     project=json.loads((ROOT/'saihub.kicad_pro').read_text())
@@ -330,7 +351,7 @@ else:
 (ROOT/'agent/routing/saihub-unrouted.kicad_pro').write_text(json.dumps(project,indent=2)+'\n')
 p.SaveBoard(str(ROOT/'agent/routing/saihub-unrouted.kicad_pcb'),board)
 (ROOT/'agent/routing/saihub-unrouted.kicad_pro').write_text(json.dumps(project,indent=2)+'\n')
-(ROOT/'agent/design.json').write_text(json.dumps({**identity(),'status':'placement-only-unrouted','board_mm':[W,H],'input':{'voltage_v':5,'source_current_a':3},'channel_limit_nominal_a':1,'assembly':'top-only','parts':parts},indent=2)+'\n')
+(ROOT/'agent/design.json').write_text(json.dumps({**identity(),'status':'placement-only-unrouted','board_mm':[W,H],'input':{'voltage_v':5,'source_current_a':3},'channel_limit_nominal_a':1,'assembly':'top-only; TP3 test pad on bottom','parts':parts},indent=2)+'\n')
 print(f'Generated {len(parts)} components, {len(nets)} nets, one schematic sheet, {W} x {H} mm placement.')
 
 import runpy

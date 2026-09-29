@@ -57,6 +57,8 @@ with (ROOT/'agent/validation/parts-placement.csv').open('w',newline='') as f:
     for a in data['parts']:
         w.writerow([a['ref'],a['value'],a['mpn'],a['foot'],*a['pos'],a['rot'],a['side'],a['desc'],a['url']])
 summary={**identity(),'board_mm':data['board_mm'],'status':'routed-cad-validated' if options.routed else 'placement-only-unrouted','drc_violations':len(report['violations']),'schematic_parity_issues':len(report['schematic_parity']),'unconnected_items':len(report['unconnected_items'])}
+data['status']=summary['status']
+(ROOT/'agent/design.json').write_text(json.dumps(data,indent=2)+'\n')
 (ROOT/f'agent/validation/{stage}-summary.json').write_text(json.dumps(summary,indent=2)+'\n')
 print(f'{stage.title()} checks passed; unconnected items:',summary['unconnected_items'])
 
