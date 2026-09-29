@@ -5,6 +5,7 @@
  */
 #include "script.h"
 
+#include "buzzer.h"
 #include "config.h"
 #include "http_server.h"
 #include "tool_call.h"
@@ -545,6 +546,14 @@ static int Script_LuaTool(lua_State* L)
       Script_PushErr(L, "trace duration exceeds remaining script timeout.", 422);
       return lua_error(L);
     }
+  } else if (strcmp(name, "play_buzzer") == 0) {
+    cJSON* sequence = cJSON_GetObjectItem(args, "sequence");
+    uint64_t dur = cJSON_IsString(sequence) ? Buzzer_SequenceDurationUs(sequence->valuestring) : 0;
+    if (dur > (uint64_t)remainUs) {
+      cJSON_Delete(args);
+      Script_PushErr(L, "buzzer sequence exceeds remaining script timeout.", 422);
+      return lua_error(L);
+    }
   }
 
   ToolCall_Result tr = ToolCall_Invoke("lua", name, args);
@@ -617,6 +626,7 @@ static void Script_OpenSandbox(lua_State* L)
       "uart_transmit",
       "uart_receive",
       "uart_flush",
+      "play_buzzer",
       "create_lock",
       "renew_lock",
       "delete_lock",

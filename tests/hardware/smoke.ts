@@ -23,6 +23,7 @@ const EXPECTED_MCP_TOOLS = [
   "uart_transmit",
   "uart_receive",
   "uart_flush",
+  "play_buzzer",
   "create_lock",
   "renew_lock",
   "delete_lock",
@@ -749,6 +750,24 @@ function assertScriptResult(result: unknown, marker: string, label: string): voi
   assert(typeof result.elapsed === "number" && result.elapsed >= 0, `${label} reported an invalid elapsed time`);
 }
 
+async function testBuzzer(): Promise<void> {
+  log("REST and MCP buzzer sequence, validation, and exclusive play");
+  await requestJson<void>("POST", "/buzzer", { sequence: "." }, 204);
+  await mcpTool("play_buzzer", { sequence: "." });
+  const invalid = await rawRequest("POST", "/buzzer", { sequence: "abc" });
+  assert(invalid.status === 400, `REST invalid buzzer sequence returned ${invalid.status}, expected 400`);
+  const empty = await rawRequest("POST", "/buzzer", { sequence: "" });
+  assert(empty.status === 400, `REST empty buzzer sequence returned ${empty.status}, expected 400`);
+  const race = await Promise.all([
+    rawRequest("POST", "/buzzer", { sequence: "----" }),
+    rawRequest("POST", "/buzzer", { sequence: "." }),
+  ]);
+  const winners = race.filter((result) => result.status === 204);
+  const losers = race.filter((result) => result.status === 409);
+  assert(winners.length === 1 && losers.length === 1,
+    `Concurrent buzzer play returned ${race.map((r) => r.status).join(",")}; expected one 204 and one 409`);
+}
+
 async function testScripts(): Promise<void> {
   log("REST and MCP scripts under success, sleep, and caught-error conditions");
   const rest = await requestJson<unknown>("POST", "/script", {
@@ -789,6 +808,11 @@ async function testScripts(): Promise<void> {
   });
   assert(pulseBudget.status === 422 && pulseBudget.text.includes("remaining script timeout"),
     "REST script pulse budget was not enforced");
+  const buzzerBudget = await rawRequest("POST", "/script", {
+    script: 'play_buzzer{sequence="----"}', maxCalls: 2, timeout: 50000,
+  });
+  assert(buzzerBudget.status === 422 && buzzerBudget.text.includes("remaining script timeout"),
+    "REST script buzzer budget was not enforced");
   const uncaught = await rawRequest("POST", "/script", { script: "error('condition failure')", maxCalls: 1, timeout: 100000 });
   assert(uncaught.status === 422 && uncaught.text.includes("condition failure"), "REST uncaught script error was not reported");
 }
@@ -1052,6 +1076,7 @@ async function main(): Promise<void> {
   await runSection("reset after MCP UART", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
   await runSection("UART payloads and races", testUartPayloadsAndRaces);
   await runSection("reset after UART stress", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
+  await runSection("buzzer", testBuzzer);
   await runSection("scripts", testScripts);
   await runSection("concurrency", testConcurrency, releaseTestLocks);
   await runSection("lock methods and peripheral races", testLockMethodsAndPeripheralRaces, releaseTestLocks);
@@ -1081,5 +1106,5 @@ if (failure !== undefined) {
   console.error(failure instanceof Error ? failure.stack ?? failure.message : String(failure));
   process.exitCode = 1;
 } else if (!process.argv.includes("--help")) {
-  log("PASS: REST, MCP, pins 6/7, UART loopback, scripts, locks, trace, PWM, and active power toggles");
+  log("PASS: REST, MCP, pins 6/7, UART loopback, buzzer, scripts, locks, trace, PWM, and active power toggles");
 }

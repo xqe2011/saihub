@@ -270,6 +270,7 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
       "SAIHub: logical pins 0-7, UART ids from list_uarts, times in microseconds, optional lockId for contested "
       "resources. Use plural pin tools (configure_pins, get_pin_levels, …) and always pass pins even for one pin "
       "(pins:[1]). Power tools use rail=3v3|5v. UART tools use configure_uart, uart_transmit, uart_receive, uart_flush. "
+      "play_buzzer plays a Morse-style sequence of . and - and blocks until it finishes (one at a time). "
       "create_lock resources use type pin with pins, type power with rails, or type uart with ids. "
       "For multi-step on-device work, use run_script with a Lua script that calls the same tools.");
   return result;

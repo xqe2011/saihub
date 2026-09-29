@@ -361,7 +361,8 @@ body{
   width:100%;
   min-width:0;
 }
-.field input[type=number]{
+.field input[type=number],
+.field input[type=text]{
   width:100%;
   appearance:none;
   border:1px solid var(--md-sys-color-outline);
@@ -375,7 +376,8 @@ body{
   outline:none;
   transition:border-color .15s, background .15s;
 }
-.field input[type=number]:focus{
+.field input[type=number]:focus,
+.field input[type=text]:focus{
   border-color:var(--md-sys-color-primary);
   background:var(--md-sys-color-surface-container-high);
 }
@@ -511,6 +513,19 @@ body{
   gap:.55rem;
 }
 .row-actions .btn{width:auto;flex:1;min-width:7rem}
+.hint{
+  margin:0;
+  font-size:.78rem;
+  line-height:1.4;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.hint code{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:.9em;
+}
+@media (max-width:560px){
+  .tab{font-size:.78rem;padding:.65rem .25rem}
+}
 .grant-list{
   list-style:none;
   margin:0;
@@ -605,7 +620,7 @@ body{
   <header class="top">
     <div class="brand-block">
       <h1 class="brand">SAIHUB</h1>
-      <p class="subtitle">Control pins, power, UART, and cloud grants.</p>
+      <p class="subtitle">Control pins, power, UART, buzzer, and cloud grants.</p>
     </div>
     <button class="icon-btn" type="button" id="refresh" aria-label="Refresh" title="Refresh">
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
@@ -616,6 +631,7 @@ body{
     <button class="tab" type="button" role="tab" data-tab="power" aria-selected="false">Power</button>
     <button class="tab active" type="button" role="tab" data-tab="pins" aria-selected="true">Pins</button>
     <button class="tab" type="button" role="tab" data-tab="uart" aria-selected="false">UART</button>
+    <button class="tab" type="button" role="tab" data-tab="buzzer" aria-selected="false">Buzzer</button>
     <button class="tab" type="button" role="tab" data-tab="cloud" aria-selected="false">Cloud</button>
   </nav>
 
@@ -632,6 +648,23 @@ body{
   <section class="sheet panel" id="panel-uart" aria-label="UART" role="tabpanel">
     <h2 class="section-label">UART</h2>
     <div id="uarts"></div>
+  </section>
+
+  <section class="sheet panel" id="panel-buzzer" aria-label="Buzzer" role="tabpanel">
+    <h2 class="section-label">Buzzer</h2>
+    <article class="uart-card">
+      <div class="field">
+        <input type="text" id="buzzer-sequence" maxlength="64" placeholder=" " value="" autocomplete="off" spellcheck="false"/>
+        <label>Sequence</label>
+      </div>
+      <p class="hint">Morse-style pattern. <code>.</code> is a short beep, <code>-</code> is a long beep, space is an extra gap. Play waits until the sequence finishes.</p>
+      <div class="modes" id="buzzer-presets">
+        <button type="button" class="chip" data-seq=".">Short</button>
+        <button type="button" class="chip" data-seq="-">Long</button>
+        <button type="button" class="chip" data-seq="...---...">SOS</button>
+      </div>
+      <button type="button" class="btn btn-filled" id="buzzer-play">Play</button>
+    </article>
   </section>
 
   <section class="sheet panel" id="panel-cloud" aria-label="Cloud" role="tabpanel">
@@ -662,6 +695,7 @@ let pollTimer=null;
 let busy=false;
 let snackTimer=null;
 let uartLog='';
+let buzzerPlaying=false;
 
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -1148,6 +1182,36 @@ function setTab(name){
 document.querySelectorAll('.tab').forEach(btn=>{
   btn.onclick=()=>setTab(btn.dataset.tab);
 });
+
+const buzzerSeqEl=document.getElementById('buzzer-sequence');
+const buzzerPlayEl=document.getElementById('buzzer-play');
+buzzerSeqEl.addEventListener('input',()=>{
+  const cleaned=buzzerSeqEl.value.replace(/[^. \-]/g,'');
+  if(cleaned!==buzzerSeqEl.value) buzzerSeqEl.value=cleaned;
+});
+document.querySelectorAll('#buzzer-presets [data-seq]').forEach(btn=>{
+  btn.onclick=()=>{buzzerSeqEl.value=btn.dataset.seq;buzzerSeqEl.focus()};
+});
+buzzerPlayEl.onclick=async()=>{
+  const sequence=buzzerSeqEl.value;
+  if(!sequence||!/[.\-]/.test(sequence)){
+    showError('Enter a sequence of . and -.');
+    return;
+  }
+  if(buzzerPlaying) return;
+  buzzerPlaying=true;
+  buzzerPlayEl.disabled=true;
+  buzzerPlayEl.textContent='Playing…';
+  try{
+    await api('POST','/buzzer',{sequence});
+  }catch(e){
+    showError(e.message);
+  }finally{
+    buzzerPlaying=false;
+    buzzerPlayEl.disabled=false;
+    buzzerPlayEl.textContent='Play';
+  }
+};
 
 function schedulePoll(){
   clearTimeout(pollTimer);

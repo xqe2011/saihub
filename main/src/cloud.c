@@ -4,6 +4,7 @@
  * @author xqe2011
  */
 #include "cloud.h"
+#include "buzzer.h"
 #include "config.h"
 #include "http_server.h"
 #include "ntp.h"
@@ -604,6 +605,10 @@ void Cloud_PairingApprove(void)
   if (minted) cJSON_AddStringToObject(root, "grantSecret", secret);
   else cJSON_AddStringToObject(root, "reason", "grant secret limit reached (16)");
   Cloud_SendJson(atomic_load(&generation), root);
+  if (minted) {
+    ESP_LOGI(tag, "pairing approved");
+    Buzzer_Play(CONFIG_CLOUD_PAIRING_BUZZER_SEQUENCE, NULL, 0);
+  }
 }
 
 static void Cloud_HandlePairingSession(cJSON* message, unsigned expected)

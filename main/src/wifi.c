@@ -5,6 +5,7 @@
  */
 #include "wifi.h"
 
+#include "buzzer.h"
 #include "config.h"
 #include "dns.h"
 #include "nvs.h"
@@ -306,6 +307,7 @@ esp_err_t Wifi_StartPairing(void)
 
   ESP_LOGI(tag, "Pairing AP started: %s", pairingApSsid);
   TOOL_EXECUTE_CALLBACKS(pairingStartedCallbacks);
+  Buzzer_Play(CONFIG_WIFI_PAIRING_BUZZER_SEQUENCE, NULL, 0);
   return ESP_OK;
 }
 

@@ -1081,6 +1081,7 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(), "lock routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PowerRegister(), "power routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ScriptRegister(), "script routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_BuzzerRegister(), "buzzer routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_McpRegister(), "mcp routes failed");
   }
 
