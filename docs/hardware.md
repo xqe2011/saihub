@@ -2,7 +2,7 @@
 
 > **Tip:** Experimental board designed by GPT-6 Astra; still under evaluation. Use at your own risk.
 
-A 48 × 28 mm, two-layer IO board: USB-C, one BOOT button, a 12-pin right-angle header, and a built-in PCB antenna. Top-side assembly only.
+A 48 × 28 mm, two-layer IO board: USB-C, one BOOT button, a 12-pin right-angle header, and a built-in PCB antenna. The main components and four indicators are on top; eight resistors are assembled on the back.
 
 [中文](hardware.zh.md) · [README](../README.md) · [Cookbook](cookbook.md) · [Bring your own board](bring-your-own-board.md) · [KiCad project](../hardware/README.md)
 
@@ -67,6 +67,7 @@ SW1 is TS-2435VS (C47734518), a side-push switch without locating posts. The act
 
 ## Other onboard parts
 
+- Four indicators in one column: green **3V3 OUT** and **5V OUT** monitor switched outputs, red **5V IN** monitors input power after the fuse, and blue **STATUS** connects to control pin 26. STATUS requires firmware control; this hardware change assigns no behavior.
 - Passive 5020 buzzer on GPIO12 (driven at 4 kHz / 50 % duty).
 - Native USB on GPIO13 / GPIO14 (D- / D+), with USBLC6-2SC6 ESD protection.
 - 16 × 24 mm module with built-in PCB antenna and 4 MB flash.
@@ -77,6 +78,6 @@ The built-in antenna sits at the bottom-left corner, above an open board cutout.
 
 ## Design files and status
 
-KiCad 10 project, procurement BOM, schematic and PCB review PDFs: [`hardware/`](../hardware/README.md).
+KiCad 10 project, procurement BOM, schematic, PCB and enclosure review PDFs: [`hardware/`](../hardware/README.md). Editable enclosure models and STEP/STL exports are in [`hardware/mechanical/`](../hardware/mechanical/README.md).
 
 **Prototype status**: the replacement layout passes CAD checks; it has not been fabricated or bench tested. Thermal behavior, supply loading, and USB operation still need verification — see `hardware/agent/docs/prototype-test.md`.

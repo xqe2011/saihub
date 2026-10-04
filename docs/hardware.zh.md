@@ -2,7 +2,7 @@
 
 > **提示：** 本板由 GPT-6 Astra 设计，目前仍在测试中，请自行承担使用风险。
 
-一块 48 × 28 mm 的双层 IO 板：USB-C 接口、一个 BOOT 按键、一排 12 针直角排针，内置 PCB 天线。元件全部贴在顶层。
+一块 48 × 28 mm 的双层 IO 板：USB-C 接口、一个 BOOT 按键、一排 12 针直角排针，内置 PCB 天线。主要元件和四个指示灯位于顶层，八个电阻贴装在背面。
 
 [English](hardware.md) · [README](../README.zh.md) · [使用手册](cookbook.zh.md) · [自备开发板](bring-your-own-board.zh.md) · [KiCad 工程](../hardware/README.md)
 
@@ -67,6 +67,7 @@ SW1 采用 TS-2435VS（C47734518），无定位柱，侧按，朝向接口边缘
 
 ## 其他板载器件
 
+- 四个指示灯排成一列：绿色 **3V3 OUT** 和 **5V OUT** 监测可控输出，红色 **5V IN** 监测保险丝后的输入电源，蓝色 **STATUS** 连接控制引脚 26。STATUS 需要固件控制，本次硬件变更未定义其行为。
 - GPIO12 驱动 5020 无源蜂鸣器（4 kHz / 50% 占空比）。
 - 原生 USB 走 GPIO13 / GPIO14（D- / D+），带 USBLC6-2SC6 ESD 保护。
 - 16 × 24 mm 模组，内置 PCB 天线，4 MB Flash。
@@ -77,6 +78,6 @@ SW1 采用 TS-2435VS（C47734518），无定位柱，侧按，朝向接口边缘
 
 ## 设计文件与状态
 
-KiCad 10 工程、采购 BOM、原理图和 PCB 审阅 PDF 见 [`hardware/`](../hardware/README.md)。
+KiCad 10 工程、采购 BOM、原理图、PCB 和外壳审阅 PDF 见 [`hardware/`](../hardware/README.md)。可编辑外壳模型及 STEP/STL 导出文件见 [`hardware/mechanical/`](../hardware/mechanical/README.md)。
 
 **打样状态**：更换器件后的布局已通过 CAD 检查，尚未打样和上电实测。热性能、供电负载和 USB 工作情况还需验证，详见 `hardware/agent/docs/prototype-test.md`。
