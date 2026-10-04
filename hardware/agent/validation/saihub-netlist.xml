@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <export version="E">
   <design>
-    <source>/private/tmp/saihub-hardware-2026-09-24/hardware/saihub.kicad_sch</source>
-    <date>2026-09-29T21:12:39</date>
+    <source>/Users/xqe2011/Documents/Code/saihub/hardware/saihub.kicad_sch</source>
+    <date>2026-10-04T13:46:55</date>
     <tool>Eeschema 10.0.6</tool>
     <sheet number="1" name="/" tstamps="/">
       <title_block>
@@ -523,6 +523,106 @@
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
       <tstamps>a5819bf4-98ee-5b3c-b5b4-433ab0dc4977</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="D4">
+      <value>GREEN</value>
+      <footprint>Saihub:LED_AA1608</footprint>
+      <datasheet>https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LCGSK.pdf</datasheet>
+      <fields>
+        <field name="MPN">AA1608LCGSK</field>
+        <field name="Footprint">Saihub:LED_AA1608</field>
+        <field name="Datasheet">https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LCGSK.pdf</field>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Saihub" part="LED" description=""/>
+      <property name="MPN" value="AA1608LCGSK"/>
+      <property name="Sheetname" value="saihub"/>
+      <property name="Sheetfile" value="saihub.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>0e8adc30-eef3-5349-a786-9aa7b311c721</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="D5">
+      <value>GREEN</value>
+      <footprint>Saihub:LED_AA1608</footprint>
+      <datasheet>https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LCGSK.pdf</datasheet>
+      <fields>
+        <field name="MPN">AA1608LCGSK</field>
+        <field name="Footprint">Saihub:LED_AA1608</field>
+        <field name="Datasheet">https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LCGSK.pdf</field>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Saihub" part="LED" description=""/>
+      <property name="MPN" value="AA1608LCGSK"/>
+      <property name="Sheetname" value="saihub"/>
+      <property name="Sheetfile" value="saihub.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>e86adca8-c991-5ac9-ba62-8fdfb41cf5bc</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="D6">
+      <value>RED</value>
+      <footprint>Saihub:LED_AA1608</footprint>
+      <datasheet>https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LSURSK.pdf</datasheet>
+      <fields>
+        <field name="MPN">AA1608LSURSK</field>
+        <field name="Footprint">Saihub:LED_AA1608</field>
+        <field name="Datasheet">https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LSURSK.pdf</field>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Saihub" part="LED" description=""/>
+      <property name="MPN" value="AA1608LSURSK"/>
+      <property name="Sheetname" value="saihub"/>
+      <property name="Sheetfile" value="saihub.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>d24147ae-54c9-565a-8b4e-f714fe631d9e</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="D7">
+      <value>BLUE</value>
+      <footprint>Saihub:LED_AA1608</footprint>
+      <datasheet>https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LQBS-D-295V.pdf</datasheet>
+      <fields>
+        <field name="MPN">AA1608LQBS/D-295V</field>
+        <field name="Footprint">Saihub:LED_AA1608</field>
+        <field name="Datasheet">https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LQBS-D-295V.pdf</field>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Saihub" part="LED" description=""/>
+      <property name="MPN" value="AA1608LQBS/D-295V"/>
+      <property name="Sheetname" value="saihub"/>
+      <property name="Sheetfile" value="saihub.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>cb74c236-9b45-5242-89e6-ca582eaaab65</tstamps>
       <units>
         <unit name="A">
           <pins>
@@ -1058,6 +1158,102 @@
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
       <tstamps>bf07f7aa-ad4d-55b3-be7d-ac88592a7999</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="R19">
+      <value>680</value>
+      <footprint>Saihub:R_0603_1608Metric</footprint>
+      <fields>
+        <field name="MPN">680</field>
+        <field name="Footprint">Saihub:R_0603_1608Metric</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Saihub" part="R" description=""/>
+      <property name="MPN" value="680"/>
+      <property name="Sheetname" value="saihub"/>
+      <property name="Sheetfile" value="saihub.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>f3b88b4e-e600-500c-8117-73fcd7928896</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="R20">
+      <value>1.5k</value>
+      <footprint>Saihub:R_0603_1608Metric</footprint>
+      <fields>
+        <field name="MPN">1.5k</field>
+        <field name="Footprint">Saihub:R_0603_1608Metric</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Saihub" part="R" description=""/>
+      <property name="MPN" value="1.5k"/>
+      <property name="Sheetname" value="saihub"/>
+      <property name="Sheetfile" value="saihub.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>dbc72423-de12-54a3-be6f-c26b752e6c8a</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="R21">
+      <value>1.5k</value>
+      <footprint>Saihub:R_0603_1608Metric</footprint>
+      <fields>
+        <field name="MPN">1.5k</field>
+        <field name="Footprint">Saihub:R_0603_1608Metric</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Saihub" part="R" description=""/>
+      <property name="MPN" value="1.5k"/>
+      <property name="Sheetname" value="saihub"/>
+      <property name="Sheetfile" value="saihub.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>1b07e918-382b-5052-8674-f650670319ad</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="R22">
+      <value>330</value>
+      <footprint>Saihub:R_0603_1608Metric</footprint>
+      <fields>
+        <field name="MPN">330</field>
+        <field name="Footprint">Saihub:R_0603_1608Metric</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Saihub" part="R" description=""/>
+      <property name="MPN" value="330"/>
+      <property name="Sheetname" value="saihub"/>
+      <property name="Sheetfile" value="saihub.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>7707d09b-f9e2-56ee-b331-2d7dcc2797e3</tstamps>
       <units>
         <unit name="A">
           <pins>
@@ -1647,6 +1843,19 @@
         <pin num="2" name="2" type="passive"/>
       </pins>
     </libpart>
+    <libpart lib="Saihub" part="LED">
+      <fields>
+        <field name="Reference">U</field>
+        <field name="Value">LED</field>
+        <field name="Footprint"/>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <pins>
+        <pin num="1" name="K" type="passive"/>
+        <pin num="2" name="A" type="passive"/>
+      </pins>
+    </libpart>
     <libpart lib="Saihub" part="R">
       <fields>
         <field name="Reference">U</field>
@@ -1825,28 +2034,44 @@
       <node ref="C16" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="R17" pin="1" pinfunction="1_1" pintype="passive"/>
     </net>
-    <net code="11" name="EN" class="Default">
+    <net code="11" name="D4_A" class="Default">
+      <node ref="D4" pin="2" pinfunction="A_2" pintype="passive"/>
+      <node ref="R19" pin="2" pinfunction="2_2" pintype="passive"/>
+    </net>
+    <net code="12" name="D5_A" class="Default">
+      <node ref="D5" pin="2" pinfunction="A_2" pintype="passive"/>
+      <node ref="R20" pin="2" pinfunction="2_2" pintype="passive"/>
+    </net>
+    <net code="13" name="D6_A" class="Default">
+      <node ref="D6" pin="2" pinfunction="A_2" pintype="passive"/>
+      <node ref="R21" pin="2" pinfunction="2_2" pintype="passive"/>
+    </net>
+    <net code="14" name="D7_A" class="Default">
+      <node ref="D7" pin="2" pinfunction="A_2" pintype="passive"/>
+      <node ref="R22" pin="2" pinfunction="2_2" pintype="passive"/>
+    </net>
+    <net code="15" name="EN" class="Default">
       <node ref="C8" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="R5" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="TP1" pin="1" pinfunction="TEST_1" pintype="passive"/>
       <node ref="U3" pin="3" pinfunction="EN_3" pintype="input"/>
     </net>
-    <net code="12" name="FAULT4" class="Default">
+    <net code="16" name="FAULT4" class="Default">
       <node ref="TP5" pin="1" pinfunction="TEST_1" pintype="passive"/>
       <node ref="U3" pin="17" pinfunction="GPIO15_17" pintype="bidirectional"/>
       <node ref="U4" pin="4" pinfunction="FAULT_N_4" pintype="open_collector"/>
     </net>
-    <net code="13" name="FAULT5" class="Default">
+    <net code="17" name="FAULT5" class="Default">
       <node ref="TP6" pin="1" pinfunction="TEST_1" pintype="passive"/>
       <node ref="U3" pin="5" pinfunction="GPIO3_5" pintype="bidirectional"/>
       <node ref="U5" pin="4" pinfunction="FAULT_N_4" pintype="open_collector"/>
     </net>
-    <net code="14" name="FB" class="Default">
+    <net code="18" name="FB" class="Default">
       <node ref="R15" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="R16" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U2" pin="5" pinfunction="FB_5" pintype="input"/>
     </net>
-    <net code="15" name="GND" class="Default">
+    <net code="19" name="GND" class="Default">
       <node ref="C1" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="C10" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="C11" pin="2" pinfunction="2_2" pintype="passive"/>
@@ -1864,6 +2089,10 @@
       <node ref="C9" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="D1" pin="2" pinfunction="A_2" pintype="passive"/>
       <node ref="D2" pin="2" pinfunction="A_2" pintype="passive"/>
+      <node ref="D4" pin="1" pinfunction="K_1" pintype="passive"/>
+      <node ref="D5" pin="1" pinfunction="K_1" pintype="passive"/>
+      <node ref="D6" pin="1" pinfunction="K_1" pintype="passive"/>
+      <node ref="D7" pin="1" pinfunction="K_1" pintype="passive"/>
       <node ref="J1" pin="A1" pinfunction="GND_A1" pintype="passive"/>
       <node ref="J1" pin="A12" pinfunction="GND_A12" pintype="passive"/>
       <node ref="J1" pin="B1" pinfunction="GND_B1" pintype="passive"/>
@@ -1896,101 +2125,105 @@
       <node ref="U7" pin="3" pinfunction="GND_3" pintype="power_in"/>
       <node ref="U7" pin="8" pinfunction="GND_8" pintype="power_in"/>
     </net>
-    <net code="16" name="ILIM4" class="Default">
+    <net code="20" name="ILIM4" class="Default">
       <node ref="R7" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U4" pin="5" pinfunction="ILIM_5" pintype="passive"/>
     </net>
-    <net code="17" name="ILIM5" class="Default">
+    <net code="21" name="ILIM5" class="Default">
       <node ref="R8" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U5" pin="5" pinfunction="ILIM_5" pintype="passive"/>
     </net>
-    <net code="18" name="IO0" class="Default">
+    <net code="22" name="IO0" class="Default">
       <node ref="J2" pin="5" pinfunction="5_5" pintype="passive"/>
       <node ref="U3" pin="12" pinfunction="GPIO10_12" pintype="bidirectional"/>
       <node ref="U6" pin="1" pinfunction="IO1_1" pintype="passive"/>
     </net>
-    <net code="19" name="IO1" class="Default">
+    <net code="23" name="IO1" class="Default">
       <node ref="J2" pin="6" pinfunction="6_6" pintype="passive"/>
       <node ref="U3" pin="2" pinfunction="GPIO1_2" pintype="bidirectional"/>
       <node ref="U6" pin="2" pinfunction="IO2_2" pintype="passive"/>
     </net>
-    <net code="20" name="IO2" class="Default">
+    <net code="24" name="IO2" class="Default">
       <node ref="J2" pin="7" pinfunction="7_7" pintype="passive"/>
       <node ref="U3" pin="1" pinfunction="GPIO0_1" pintype="bidirectional"/>
       <node ref="U6" pin="4" pinfunction="IO3_4" pintype="passive"/>
     </net>
-    <net code="21" name="IO3" class="Default">
+    <net code="25" name="IO3" class="Default">
       <node ref="J2" pin="8" pinfunction="8_8" pintype="passive"/>
       <node ref="U3" pin="4" pinfunction="GPIO2_4" pintype="bidirectional"/>
       <node ref="U6" pin="5" pinfunction="IO4_5" pintype="passive"/>
     </net>
-    <net code="22" name="IO4" class="Default">
+    <net code="26" name="IO4" class="Default">
       <node ref="J2" pin="9" pinfunction="9_9" pintype="passive"/>
       <node ref="U3" pin="6" pinfunction="GPIO4_6" pintype="bidirectional"/>
       <node ref="U7" pin="1" pinfunction="IO1_1" pintype="passive"/>
     </net>
-    <net code="23" name="IO5" class="Default">
+    <net code="27" name="IO5" class="Default">
       <node ref="J2" pin="10" pinfunction="10_10" pintype="passive"/>
       <node ref="U3" pin="7" pinfunction="GPIO5_7" pintype="bidirectional"/>
       <node ref="U7" pin="2" pinfunction="IO2_2" pintype="passive"/>
     </net>
-    <net code="24" name="IO6" class="Default">
+    <net code="28" name="IO6" class="Default">
       <node ref="J2" pin="11" pinfunction="11_11" pintype="passive"/>
       <node ref="U3" pin="16" pinfunction="GPIO6_16" pintype="bidirectional"/>
       <node ref="U7" pin="4" pinfunction="IO3_4" pintype="passive"/>
     </net>
-    <net code="25" name="IO7" class="Default">
+    <net code="29" name="IO7" class="Default">
       <node ref="J2" pin="12" pinfunction="12_12" pintype="passive"/>
       <node ref="U3" pin="9" pinfunction="GPIO7_9" pintype="bidirectional"/>
       <node ref="U7" pin="5" pinfunction="IO4_5" pintype="passive"/>
     </net>
-    <net code="26" name="MCU_DM" class="Default">
+    <net code="30" name="MCU_DM" class="Default">
       <node ref="R3" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="U3" pin="13" pinfunction="GPIO13_13" pintype="bidirectional"/>
     </net>
-    <net code="27" name="MCU_DP" class="Default">
+    <net code="31" name="MCU_DP" class="Default">
       <node ref="R4" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="U3" pin="14" pinfunction="GPIO14_14" pintype="bidirectional"/>
     </net>
-    <net code="28" name="PWR3_EN" class="Default">
+    <net code="32" name="PWR3_EN" class="Default">
       <node ref="R9" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U3" pin="10" pinfunction="GPIO8_10" pintype="bidirectional"/>
       <node ref="U4" pin="3" pinfunction="EN_3" pintype="input"/>
     </net>
-    <net code="29" name="PWR5_EN" class="Default">
+    <net code="33" name="PWR5_EN" class="Default">
       <node ref="R10" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U3" pin="11" pinfunction="GPIO9_11" pintype="bidirectional"/>
       <node ref="U5" pin="3" pinfunction="EN_3" pintype="input"/>
     </net>
-    <net code="30" name="SS" class="Default">
+    <net code="34" name="SS" class="Default">
       <node ref="C15" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U2" pin="8" pinfunction="SS_8" pintype="passive"/>
     </net>
-    <net code="31" name="SW" class="Power,Default">
+    <net code="35" name="STATUS_LED" class="Default">
+      <node ref="R22" pin="1" pinfunction="1_1" pintype="passive"/>
+      <node ref="U3" pin="20" pinfunction="GPIO26_20" pintype="bidirectional"/>
+    </net>
+    <net code="36" name="SW" class="Power,Default">
       <node ref="D1" pin="1" pinfunction="K_1" pintype="passive"/>
       <node ref="L1" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="R18" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U2" pin="3" pinfunction="SW_3" pintype="power_out"/>
     </net>
-    <net code="32" name="UART_TX" class="Default">
+    <net code="37" name="UART_TX" class="Default">
       <node ref="TP3" pin="1" pinfunction="TEST_1" pintype="passive"/>
       <node ref="U3" pin="22" pinfunction="GPIO11_22" pintype="bidirectional"/>
     </net>
-    <net code="33" name="USB_DM" class="Default">
+    <net code="38" name="USB_DM" class="Default">
       <node ref="J1" pin="A7" pinfunction="D-_A7" pintype="passive"/>
       <node ref="J1" pin="B7" pinfunction="D-_B7" pintype="passive"/>
       <node ref="R3" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U1" pin="1" pinfunction="IO1_1" pintype="passive"/>
       <node ref="U1" pin="6" pinfunction="IO1_6" pintype="passive"/>
     </net>
-    <net code="34" name="USB_DP" class="Default">
+    <net code="39" name="USB_DP" class="Default">
       <node ref="J1" pin="A6" pinfunction="D+_A6" pintype="passive"/>
       <node ref="J1" pin="B6" pinfunction="D+_B6" pintype="passive"/>
       <node ref="R4" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U1" pin="3" pinfunction="IO2_3" pintype="passive"/>
       <node ref="U1" pin="4" pinfunction="IO2_4" pintype="passive"/>
     </net>
-    <net code="35" name="V3V3" class="Power,Default">
+    <net code="40" name="V3V3" class="Power,Default">
       <node ref="BZ1" pin="1" pinfunction="+_1" pintype="passive"/>
       <node ref="C13" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="C4" pin="1" pinfunction="1_1" pintype="passive"/>
@@ -2007,32 +2240,35 @@
       <node ref="U3" pin="8" pinfunction="3V3_8" pintype="power_in"/>
       <node ref="U4" pin="1" pinfunction="IN_1" pintype="power_in"/>
     </net>
-    <net code="36" name="V3_SW" class="Power,Default">
+    <net code="41" name="V3_SW" class="Power,Default">
       <node ref="C11" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="J2" pin="1" pinfunction="1_1" pintype="passive"/>
+      <node ref="R19" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U10" pin="1" pinfunction="IO1_1" pintype="passive"/>
       <node ref="U10" pin="6" pinfunction="IO1_6" pintype="passive"/>
       <node ref="U4" pin="6" pinfunction="OUT_6" pintype="power_out"/>
     </net>
-    <net code="37" name="V5" class="Power,Default">
+    <net code="42" name="V5" class="Power,Default">
       <node ref="C10" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="C2" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="C21" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="C3" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="D2" pin="1" pinfunction="K_1" pintype="passive"/>
       <node ref="F1" pin="2" pinfunction="2_2" pintype="passive"/>
+      <node ref="R21" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U10" pin="5" pinfunction="VBUS_5" pintype="power_in"/>
       <node ref="U2" pin="2" pinfunction="IN_2" pintype="power_in"/>
       <node ref="U5" pin="1" pinfunction="IN_1" pintype="power_in"/>
     </net>
-    <net code="38" name="V5_SW" class="Power,Default">
+    <net code="43" name="V5_SW" class="Power,Default">
       <node ref="C12" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="J2" pin="3" pinfunction="3_3" pintype="passive"/>
+      <node ref="R20" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U10" pin="3" pinfunction="IO2_3" pintype="passive"/>
       <node ref="U10" pin="4" pinfunction="IO2_4" pintype="passive"/>
       <node ref="U5" pin="6" pinfunction="OUT_6" pintype="power_out"/>
     </net>
-    <net code="39" name="VBUS" class="Power,Default">
+    <net code="44" name="VBUS" class="Power,Default">
       <node ref="C1" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="F1" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="J1" pin="A4" pinfunction="VBUS_A4" pintype="passive"/>
@@ -2041,43 +2277,40 @@
       <node ref="J1" pin="B9" pinfunction="VBUS_B9" pintype="passive"/>
       <node ref="U1" pin="5" pinfunction="VBUS_5" pintype="power_in"/>
     </net>
-    <net code="40" name="unconnected-(J1-SBU1-PadA8)" class="Default">
+    <net code="45" name="unconnected-(J1-SBU1-PadA8)" class="Default">
       <node ref="J1" pin="A8" pinfunction="SBU1_A8" pintype="passive+no_connect"/>
     </net>
-    <net code="41" name="unconnected-(J1-SBU2-PadB8)" class="Default">
+    <net code="46" name="unconnected-(J1-SBU2-PadB8)" class="Default">
       <node ref="J1" pin="B8" pinfunction="SBU2_B8" pintype="passive+no_connect"/>
     </net>
-    <net code="42" name="unconnected-(U2-EN-Pad7)" class="Default">
+    <net code="47" name="unconnected-(U2-EN-Pad7)" class="Default">
       <node ref="U2" pin="7" pinfunction="EN_7" pintype="input+no_connect"/>
     </net>
-    <net code="43" name="unconnected-(U3-GPIO26-Pad20)" class="Default">
-      <node ref="U3" pin="20" pinfunction="GPIO26_20" pintype="bidirectional+no_connect"/>
-    </net>
-    <net code="44" name="unconnected-(U3-GPIO27-Pad19)" class="Default">
+    <net code="48" name="unconnected-(U3-GPIO27-Pad19)" class="Default">
       <node ref="U3" pin="19" pinfunction="GPIO27_19" pintype="bidirectional+no_connect"/>
     </net>
-    <net code="45" name="unconnected-(U6-NC-Pad6)" class="Default">
+    <net code="49" name="unconnected-(U6-NC-Pad6)" class="Default">
       <node ref="U6" pin="6" pinfunction="NC_6" pintype="no_connect"/>
     </net>
-    <net code="46" name="unconnected-(U6-NC-Pad7)" class="Default">
+    <net code="50" name="unconnected-(U6-NC-Pad7)" class="Default">
       <node ref="U6" pin="7" pinfunction="NC_7" pintype="no_connect"/>
     </net>
-    <net code="47" name="unconnected-(U6-NC-Pad9)" class="Default">
+    <net code="51" name="unconnected-(U6-NC-Pad9)" class="Default">
       <node ref="U6" pin="9" pinfunction="NC_9" pintype="no_connect"/>
     </net>
-    <net code="48" name="unconnected-(U6-NC-Pad10)" class="Default">
+    <net code="52" name="unconnected-(U6-NC-Pad10)" class="Default">
       <node ref="U6" pin="10" pinfunction="NC_10" pintype="no_connect"/>
     </net>
-    <net code="49" name="unconnected-(U7-NC-Pad6)" class="Default">
+    <net code="53" name="unconnected-(U7-NC-Pad6)" class="Default">
       <node ref="U7" pin="6" pinfunction="NC_6" pintype="no_connect"/>
     </net>
-    <net code="50" name="unconnected-(U7-NC-Pad7)" class="Default">
+    <net code="54" name="unconnected-(U7-NC-Pad7)" class="Default">
       <node ref="U7" pin="7" pinfunction="NC_7" pintype="no_connect"/>
     </net>
-    <net code="51" name="unconnected-(U7-NC-Pad9)" class="Default">
+    <net code="55" name="unconnected-(U7-NC-Pad9)" class="Default">
       <node ref="U7" pin="9" pinfunction="NC_9" pintype="no_connect"/>
     </net>
-    <net code="52" name="unconnected-(U7-NC-Pad10)" class="Default">
+    <net code="56" name="unconnected-(U7-NC-Pad10)" class="Default">
       <node ref="U7" pin="10" pinfunction="NC_10" pintype="no_connect"/>
     </net>
   </nets>

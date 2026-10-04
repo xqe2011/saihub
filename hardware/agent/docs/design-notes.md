@@ -3,7 +3,7 @@
 Version: 2026-09-24. Author: GPT6-Astra. Co-author: xqe2011.
 Version updates require explicit user permission; record each approved change in `../../docs/version-log.md`.
 
-**Current layout:** module and button replacement on the unchanged 48 × 28 mm envelope. There are 56 top footprints and one back-side test pad (TP3); all mounted parts remain on top. The final reports describe this placement.
+**Current layout:** module and button replacement on the unchanged 48 × 28 mm envelope. There are 56 top footprints, eight back-side resistors and one back-side test pad (TP3). All four LEDs remain on top. The final reports describe this placement.
 
 ## Requirements and mechanical envelope
 
@@ -11,7 +11,7 @@ The front edge retains J2, SW1 and J1 from left to right. SW1 is TS-2435VS, proc
 
 The new module has a built-in antenna and a 16 × 24 mm body. The [manufacturer drawing, pages 9–10](https://atta.szlcsc.com/upload/public/pdf/source/20251016/3D572157C42EA1AA3992B58D4700E12F.pdf) defines its 22 perimeter pads and central ground pad. It is rotated 180 degrees, with the antenna at the bottom-left. The module body runs from (0.85,4) to (16.85,28) mm. The notch runs from (0,20.5) to (21.85,28) mm, opening at both outer edges. Its right edge is exactly 5 mm beyond the antenna. The connected section retains a 0.85 mm left inset to keep the specified solder lands on the PCB with copper-edge clearance. Outer bounds remain 48 × 28 mm.
 
-Two copper layers, 1.6 mm board thickness; all mounted parts are on top. TP3 is a bare test pad on the back at (2.6,19.5) mm. The module supply, support parts and test points move to fit the notch. The power-stage component positions are retained. No mounting holes or external antenna accessory. RF operation and enclosure clearance must be qualified on a prototype.
+Two copper layers, 1.6 mm board thickness; the indicator bank and main components are on top, with eight resistors on the back. TP3 is a bare test pad on the back at (2.6,19.5) mm. The module supply, support parts and test points move to fit the notch. The power-stage component positions are retained. No mounting holes or external antenna accessory. RF operation and enclosure clearance must be qualified on a prototype.
 
 IO0–IO7 now map to internal pins 10, 1, 0, 2, 4, 5, 6, 7. The previous assignments for IO3 and IO7 are not exposed by the replacement module. The firmware configuration changes alongside the schematic. Pin 7 can select a debug source with non-default permanent configuration; the default configuration retains USB debugging regardless of its level. Pin 2 also has a debug function. Verify startup and recovery with attached loads, and do not assume old-board firmware pin mappings are interchangeable.
 
@@ -79,4 +79,27 @@ R9/R10/R12 use the approved 10 kΩ value. R7/R8 remain 26.1 kΩ; no lower curren
 
 Final acceptance requires zero electrical-rule violations, physical-rule violations, schematic-parity findings and unconnected items. The saved reconstruction and export steps regenerate those reports. Main power routes retain 0.6 mm widths; input connector escapes are 0.5 mm, and the pull-up / protection-bias branches are 0.2 mm. clearance rules remain 0.15 mm minimum signal, 0.2 mm power and 0.25 mm copper-to-edge. Local routing uses 0.5/0.25 mm vias where required, within the published [fabricator capabilities](https://jlcpcb.com/capabilities/Capab); larger power and exposed-pad vias are retained. No individual DRC exclusions are used. No fabrication exports or component orders have been placed.
 
-CAD checks do not establish thermal, electrical, RF or USB compliance. No Rev A board has been fabricated or bench tested. Complete `prototype-test.md` before accepting production current ratings. Top-side assembly, EP paste/vias, connector pin protrusion and pick-and-place rotation conventions require assembler review. No fabrication or component order has been placed.
+CAD checks do not establish thermal, electrical, RF or USB compliance. No Rev A board has been fabricated or bench tested. Complete `prototype-test.md` before accepting production current ratings. Two-sided assembly, EP paste/vias, connector pin protrusion and pick-and-place rotation conventions require assembler review. No fabrication or component order has been placed.
+
+
+## Grouped indicators
+
+D4-D7 form one top-side column at x=30.3 mm, on 3.2 mm pitch, with corresponding
+shell openings and recessed legends. D4 and D5 are green and monitor V3_SW and
+V5_SW after the output switches. D6 is red and monitors V5 after F1. D7 is blue,
+driven active-high by control pin 26 (U3 pad 20); it does not consume a header IO.
+Firmware control of STATUS_LED is not added by this hardware change.
+
+The selected low-current AA1608 family uses asymmetric manufacturer lands with
+pad 1 as cathode. Green AA1608LCGSK and red AA1608LSURSK are specified at 2 mA;
+the blue AA1608LQBS/D-295V has a 2.65 V typical / 2.95 V maximum forward voltage
+at 2 mA, providing better headroom for the 3.3 V control output. R19 = 680 ohms,
+R20/R21 = 1.5 kohms and R22 = 330 ohms target roughly 2 mA using typical forward
+voltages. Actual brightness/current varies with supply, temperature and LED bin;
+verify on the prototype. All four cathodes connect to ground.
+
+R7/R8/R9/R10 move to the bottom without changing their values or functions.
+R19-R22 are also on the bottom. The eight bottom resistors fit within the existing
+solder-tail allowance; assembly is now two-sided. Board outline and approved
+revision/date remain unchanged. The indicator wells and labels are generated
+from the LED placements; the blank QR area remains clear.
