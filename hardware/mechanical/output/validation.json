@@ -1,0 +1,61 @@
+{
+  "base": {
+    "volume_mm3": 2369.435,
+    "solid_count": 1,
+    "stl_triangles": 856,
+    "stl_closed": true
+  },
+  "cover": {
+    "volume_mm3": 1789.703,
+    "solid_count": 1,
+    "stl_triangles": 38092,
+    "stl_closed": true
+  },
+  "base_cover_interference_mm3": 0.0,
+  "base_board_interference_mm3": 0.0,
+  "cover_board_interference_mm3": 0.0,
+  "assembled_size_mm": [
+    50.4,
+    30.4,
+    9.0
+  ],
+  "wall_mm": 1.0,
+  "each_mating_rim_mm": 1.0,
+  "nesting_clearance_per_side_mm": 0.2,
+  "qr_clear_area_mm": [
+    22.0,
+    22.0
+  ],
+  "qr_frame_outer_mm": [
+    22.36,
+    22.36
+  ],
+  "qr_frame_width_mm": 0.18,
+  "qr_frame_depth_mm": 0.3,
+  "qr_center_mm": [
+    35.5,
+    16.8
+  ],
+  "outer_corner_radius_mm": 1.5,
+  "text_engraving_depth_mm": 0.3,
+  "snap_count": 2,
+  "snap_engagement_mm": 0.25,
+  "snap_beam_mm": [
+    7.5,
+    0.6,
+    1.2
+  ],
+  "component_fit": "Prototype verification required",
+  "indicator_bank": {
+    "labels": [
+      "3V3 OUT",
+      "5V OUT",
+      "5V IN",
+      "STATUS"
+    ],
+    "opening_diameter_mm": 1.5,
+    "well_outer_diameter_mm": 2.2,
+    "led_top_clearance_mm": 0.4,
+    "pitch_mm": 3.2
+  }
+}

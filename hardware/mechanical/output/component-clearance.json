@@ -1,0 +1,9 @@
+{
+  "collisions": {
+    "base": [],
+    "cover": [],
+    "left_snap_insertion": [],
+    "right_snap_insertion": []
+  },
+  "scope": "Available board models and illustrative envelopes; missing models, solder and snap forces unverified."
+}

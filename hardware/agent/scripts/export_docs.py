@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Refresh human review documents from the current CAD and design metadata.
 
-Requires KiCad CLI, ImageMagick and the Python reportlab package.
+Requires KiCad CLI, ImageMagick, reportlab and the mechanical environment requirements.
 Run export_placement.py --routed first when validating a release.
 """
 import json
@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 
 from identity import identity
 from export_bom import write_bom
@@ -61,7 +62,11 @@ def main():
     pdf.save()
     write_bom(docs/'bom.csv', data['parts'])
     export_ibom()
-    print('Updated docs/bom.csv, docs/bom.html, docs/schematic.pdf and docs/pcb.pdf')
+    mechanical = ROOT/'mechanical'
+    venv_python = mechanical/'.venv/bin/python'
+    mechanical_python = os.environ.get('MECHANICAL_PYTHON', str(venv_python) if venv_python.exists() else sys.executable)
+    subprocess.run([mechanical_python, str(mechanical/'refresh_shell.py'), '--pdf-python', sys.executable], check=True)
+    print('Updated docs/bom.csv, docs/bom.html, docs/schematic.pdf, docs/pcb.pdf and docs/shell.pdf')
 
 if __name__ == '__main__':
     main()

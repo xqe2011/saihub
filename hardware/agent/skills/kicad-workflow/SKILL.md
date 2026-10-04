@@ -17,7 +17,7 @@ Use KiCad's bundled Python for `pcbnew` scripts. On macOS it is normally `/Appli
 
 ## Routing and checks
 
-Run `agent/scripts/route.py prepare` with KiCad Python, route `agent/validation/saihub.dsn` in Freerouting to `agent/validation/saihub.ses`, then run `route.py import`. The script preserves critical power/USB and protection routes, replaces redundant autorouter ground tracks with filled planes, and applies `agent/validation/finish-routes.json` before ground filling. Fixed coordinates and saved SES apply only to their original placement; revise them when placement changes. The script currently guards Rev A, 48 x 28 mm; that guard alone does not prove placement compatibility.
+For the four-indicator layout, run `agent/scripts/replay_routing.py replay` with KiCad Python after regeneration. It restores `agent/routing/copper.json` only when every footprint, pad position and net matches the captured placement. For a new placement, route the edited main board, then capture its copper with `replay_routing.py capture` and run the full routed checks before accepting the snapshot. The legacy `route.py`/Specctra inputs predate the indicator placement and are guarded against reuse with it.
 
 From the repository root, run `python3 hardware/agent/scripts/export_placement.py --routed`. Set `KICAD_CLI` and `KICAD_PYTHON` if needed. The host Python needs `reportlab`, and ImageMagick must be on PATH. Set `INTERACTIVE_HTML_BOM` to the upstream `InteractiveHtmlBom/generate_interactive_bom.py` script; document exports also compile the offline `docs/bom.html`. The export first writes a netlist, synchronizes symbol UUIDs and explicit NC nets, fills zones, then runs ERC and DRC with schematic parity. Routed acceptance requires zero violations, parity findings and unconnected items. Without `--routed`, unconnected items are allowed for placement review only.
 
@@ -25,8 +25,18 @@ Inspect the top and mirrored bottom pages of `docs/pcb.pdf` and the schematic PD
 
 ## Retained evidence
 
-Keep current `agent/validation/` and routing reconstruction inputs in Git. Do not retain obsolete revision archives or documents. Saved reports are evidence of a particular CAD state, not a substitute for rerunning checks. `agent/previews/` is regenerable and ignored; the four human review files live in `docs/`.
+Keep current `agent/validation/` and routing reconstruction inputs in Git. Do not retain obsolete revision archives or documents. Saved reports are evidence of a particular CAD state, not a substitute for rerunning checks. `agent/previews/` is regenerable and ignored; the five human review files live in `docs/`, including `docs/shell.pdf`.
+
+## Keep the enclosure synchronized
+
+After any change to the routed PCB, refresh the enclosure reference and re-render **`hardware/docs/shell.pdf`** (repository-relative); never write the shell PDF to the repository-level `docs/` or `hardware/shell.pdf`. `export_docs.py`, and therefore the placement and fabrication export workflows, calls `mechanical/refresh_shell.py` automatically. Install `mechanical/requirements.txt` in `mechanical/.venv`, or set `MECHANICAL_PYTHON` to a Python environment with those dependencies. Shell refresh failures must fail the export; do not silently retain an old PDF as current.
+
+Before exporting a changed board, compare its outline, thickness, connector locations/heights and component keep-outs with `mechanical/enclosure.py`. Update the shell's parameters, openings, supports, text alignment and illustrative component envelopes when those inputs change. The model contains explicit dimensions; re-exporting the PCB alone does not adapt them. Read [the mechanical guide](../../../mechanical/README.md) for design constraints and refresh commands.
+
+The refresh command exports `mechanical/reference/pcb.step` from the routed board, regenerates STEP/STL and previews, checks available component and snap insertion geometry, then recomputes drawing views, dimensions and the ABS mass estimate. Preserve the current design choices: closed top, recessed lettering, blank QR bed, side snap retention, and no thin bridge above the GPIO opening. These are current project requirements, not rules for unrelated hardware.
+
+Render the resulting PDF to page images and inspect every page for clipping, label alignment, connector access and drawing consistency. Missing/illustrative component models and untested snap forces remain explicit limitations; do not describe a geometry-only check as a physical fit test. Preserve the approved board revision/date throughout this refresh.
 
 Only run `agent/scripts/export.py` when fabrication exports are needed. CAD checks do not establish measured power, thermal or USB performance; use the prototype test procedure for those claims.
 
-`silkscreen.py` places mounted-part references on front silkscreen and the back test-pad reference on back silkscreen, avoiding exposed pads and other labels. Generation and board synchronization both apply it. Keep the approved date in PCB title metadata for the interactive BOM.
+`silkscreen.py` places references on the same side as each footprint, including the eight back-side resistors and test pad, avoiding exposed pads and other labels. Generation and board synchronization both apply it. Keep the approved date in PCB title metadata for the interactive BOM.
