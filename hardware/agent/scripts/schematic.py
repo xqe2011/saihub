@@ -35,6 +35,7 @@ graphics={
  'TP':circle(-2.0,0,.55)+line([(-2.54,0),(-2,0)]),
  'AO3400A':line([(-2.54,0),(-1.5,0)])+line([(-1.5,-2),(-1.5,2)])+line([(0,-2.54),(0,2.54)])+line([(0,2.54),(2.54,2.54)])+line([(0,-2.54),(2.54,-2.54)])+line([(0,0),(2.54,0),(2.54,-2.54)])+line([(.4,0),(1.4,.6),(1.4,-.6),(.4,0)]),
 }
+graphics['LED'] = graphics['D'] + line([(-.2,1.8),(-1.5,3.1),(-.8,3.1)]) + line([(-1.5,3.1),(-1.5,2.4)]) + line([(1.1,1.8),(-.2,3.1),(.5,3.1)]) + line([(-.2,3.1),(-.2,2.4)])
 for name,g in graphics.items():
     s=syms[name];body=next(x for x in children(s,'symbol') if json.loads(x[1]).endswith('_0_1'))
     body[:]=['symbol',body[1]]+parse('(dummy '+g+')')[1:]
@@ -64,6 +65,9 @@ positions={
  'BZ1':(45,232,0),'Q1':(83,250,0),'D3':(60,221,0),'R11':(47,250,0),'R12':(66,260,270),'C13':(122,237,270),
 }
 positions.update({'U6': (470, 50, 0), 'U7': (470, 110, 0), 'U10': (458, 180, 0), 'C21': (544, 180, 270)})
+for i in range(4):
+    positions[f'R{19+i}'] = (445, 294+17*i, 0)
+    positions[f'D{4+i}'] = (535, 294+17*i, 0)
 for a in parts.values():a['sch']=[grid(v) for v in positions[a['ref']][:2]];a['angle']=positions[a['ref']][2]
 for i,net in enumerate(['VBUS','V5','V3V3','GND']):
     ref='#FLG0'+str(i+1)
@@ -108,7 +112,9 @@ txt('IO0-IO7: 3.3 V only; final-board ESD test required.',418,242,1.05)
 txt('U10: switched rails. Power current bypasses the array.',418,249,1.05)
 txt('Place arrays and bypass capacitors directly beside J2.',418,256,1.05)
 txt('Short, wide ground returns; qualify ESD on final PCB.',418,263,1.05)
-txt('48 x 28 mm PCB - top-side component assembly.',17,290,1.5)
+box(412,279,580,369,'08  GROUPED STATUS INDICATORS')
+txt('Blue: control pin 26, HIGH = on. 3V3/5V: switched rails.',418,363,1.0)
+txt('48 x 28 mm PCB - LEDs top; eight resistors bottom.',17,290,1.5)
 
 # MCU bypass capacitors share actual supply / return buses.
 for num,net,yy in [(1,'V3V3',grid(25)),(2,'GND',grid(46))]:
@@ -206,4 +212,4 @@ text+='\n'.join(items)+')\n'
 for name in ['usb','power','mcu','outputs','buzzer']:
     old=ROOT/(name+'.kicad_sch')
     if old.exists():old.unlink()
-print('Created one-page A2 schematic with seven wired functional sections.')
+print('Created one-page A2 schematic with eight wired functional sections.')

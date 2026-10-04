@@ -11,23 +11,18 @@ def apply_reference_labels(board):
     def overlaps(a, b):
         return a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]
 
-    obstacles = [bounds(pad, .05) for fp in board.GetFootprints() for pad in fp.Pads()]
-    obstacles += [bounds(item, .12) for item in board.GetDrawings() if item.GetLayer() == p.F_SilkS]
+    obstacles_by_side = {}
+    for copper, silk in [(p.F_Cu, p.F_SilkS), (p.B_Cu, p.B_SilkS)]:
+        obstacles_by_side[silk] = [bounds(pad, .05) for fp in board.GetFootprints() for pad in fp.Pads() if pad.IsOnLayer(copper)]
+        obstacles_by_side[silk] += [bounds(item, .12) for item in board.GetDrawings() if item.GetLayer() == silk]
     footprints = sorted(board.GetFootprints(), key=lambda fp: fp.GetReference())
     for fp in footprints:
         text = fp.Reference()
         text.SetVisible(True)
-        if fp.IsFlipped():
-            # Back-side debug test pad; keep its label clear of board identity.
-            text.SetLayer(p.B_SilkS)
-            text.SetMirrored(True)
-            text.SetTextSize(p.VECTOR2I(p.FromMM(.6), p.FromMM(.6)))
-            text.SetTextThickness(p.FromMM(.1))
-            text.SetTextAngle(p.EDA_ANGLE(0,p.DEGREES_T))
-            text.SetPosition(p.VECTOR2I(p.FromMM(2.6),p.FromMM(14.5)))
-            continue
-        text.SetLayer(p.F_SilkS)
-        text.SetMirrored(False)
+        silk = p.B_SilkS if fp.IsFlipped() else p.F_SilkS
+        obstacles = obstacles_by_side[silk]
+        text.SetLayer(silk)
+        text.SetMirrored(fp.IsFlipped())
         text.SetTextSize(p.VECTOR2I(p.FromMM(.6), p.FromMM(.6)))
         text.SetTextThickness(p.FromMM(.1))
         text.SetTextAngle(p.EDA_ANGLE(0, p.DEGREES_T))

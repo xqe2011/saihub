@@ -14,6 +14,8 @@ ROOT=Path(__file__).resolve().parents[2]
 for directory in ('agent/validation', 'agent/previews', 'agent/routing', 'docs'):
     (ROOT/directory).mkdir(parents=True, exist_ok=True)
 design=json.loads((ROOT/'agent/design.json').read_text())
+if any(part['ref'] == 'D4' for part in design['parts']):
+    raise SystemExit('The indicator layout uses replay_routing.py replay. The legacy routing recipe has different placement.')
 assert next(a for a in design['parts'] if a['ref']=='U3')['value']=='ESPC5-12-H4', 'Routing recipe requires the PCB-antenna module placement'
 assert design['revision']==identity()['revision'] and design['board_mm']==[48.0,28.0], 'Routes require SAIHub-Mini 48 x 28 mm placement'
 def mm(x): return p.FromMM(x)

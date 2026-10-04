@@ -1,0 +1,99 @@
+(footprint "LED_AA1608"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "Kingbright AA1608 low-current family; manufacturer recommended lands; cathode pad 1")
+	(property "Reference" "REF**"
+		(at 0 -11 0)
+		(layer "F.SilkS")
+		(uuid "0f256b92-680e-4fe0-9f65-53cb3474bee5")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(property "Value" "LED_AA1608"
+		(at 0 11 0)
+		(layer "F.Fab")
+		(uuid "288a425b-9a10-4a48-a55a-6e030d94ccc4")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "48650eab-5d08-4c20-bd0c-90fff2071a4a")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "3b4f39c1-13da-45ec-970a-6784b2f8f728")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
+	(fp_rect
+		(start -1.25 -0.65)
+		(end 1.25 0.65)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "b8ebaf5b-b38c-43c2-9d42-2fb4c42517af")
+	)
+	(fp_rect
+		(start -0.8 -0.4)
+		(end 0.8 0.4)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "658153a3-08c3-4abe-b4fe-8e06439345fb")
+	)
+	(fp_circle
+		(center 0.7 1.1)
+		(end 1.1 1.1)
+		(stroke
+			(width 0.15)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "cb547d3a-0733-4bb0-b92c-1db1f13a5e8b")
+	)
+	(pad "1" smd rect
+		(at -0.465 0)
+		(size 1.05 0.5)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "df64e34a-90ac-4900-a27c-9e1518ce472b")
+	)
+	(pad "2" smd rect
+		(at 0.65 0)
+		(size 0.7 0.5)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "f784a03e-9de6-4fd5-9563-24a4569f9095")
+	)
+	(embedded_fonts no)
+)

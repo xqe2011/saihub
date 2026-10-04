@@ -68,6 +68,7 @@ symbol('C',[(1,'1','passive','L'),(2,'2','passive','R')],'C')
 symbol('CP',[(1,'+','passive','L'),(2,'-','passive','R')],'small')
 symbol('L',[(1,'1','passive','L'),(2,'2','passive','R')],'small')
 symbol('D',[(1,'K','passive','L'),(2,'A','passive','R')],'small')
+symbol('LED',[(1,'K','passive','L'),(2,'A','passive','R')],'small')
 symbol('F',[(1,'1','passive','L'),(2,'2','passive','R')],'small')
 symbol('TP',[(1,'TEST','passive','L')],'small')
 symbol('BOOT',[(1,'BOOT','passive','L'),(2,'GND','passive','R')],'small')
@@ -120,7 +121,7 @@ c('C15','100n','SS','GND',(27,9),'power',(245,170))
 c('C16','5.6n','COMP','COMP_RC',(23,14),'power',(245,200))
 
 # IO3/IO7 move to available GPIO2/GPIO7; firmware mapping must match this board.
-module_nets={1:'IO2',2:'IO1',3:'EN',4:'IO3',5:'FAULT5',6:'IO4',7:'IO5',8:'V3V3',9:'IO7',10:'PWR3_EN',11:'PWR5_EN',12:'IO0',13:'MCU_DM',14:'MCU_DP',15:'GND',16:'IO6',17:'FAULT4',18:'BOOT',19:None,20:None,21:'BUZZ_PWM',22:'UART_TX',23:'GND'}
+module_nets={1:'IO2',2:'IO1',3:'EN',4:'IO3',5:'FAULT5',6:'IO4',7:'IO5',8:'V3V3',9:'IO7',10:'PWR3_EN',11:'PWR5_EN',12:'IO0',13:'MCU_DM',14:'MCU_DP',15:'GND',16:'IO6',17:'FAULT4',18:'BOOT',19:None,20:'STATUS_LED',21:'BUZZ_PWM',22:'UART_TX',23:'GND'}
 add('U3','ESPC5-12-H4','ESPC5_12_H4','Saihub:ESPC5-12-H4',module_nets,(8.85,16),'mcu',(80,70),desc='16 x 24 mm module; built-in PCB antenna over bottom-left board cutout',url='https://atta.szlcsc.com/upload/public/pdf/source/20251016/3D572157C42EA1AA3992B58D4700E12F.pdf')
 c('C6','10u','V3V3','GND',(4.2,9.4),'mcu',(175,40),'Capacitor_SMD:C_0805_2012Metric',90)
 c('C7','100n','V3V3','GND',(4.2,12.5),'mcu',(260,40),rot=90)
@@ -148,7 +149,20 @@ r('R11','100','BUZZ_PWM','BUZZ_GATE',(20,43),'buzzer',(265,40))
 r('R12','10k','BUZZ_GATE','GND',(20,46),'buzzer',(265,75))
 c('C13','100n','V3V3','GND',(2.1,44.2),'buzzer',(175,105),rot=90)
 
-# Compact top-only placement: header, small side-push BOOT, USB-C left to right.
+# Low-current indicators, in one column with matching enclosure legends.
+for ref, resistor, color, source, resistance, mpn, yy in [
+    ('D4', 'R19', 'GREEN', 'V3_SW', '680', 'AA1608LCGSK', 5.2),
+    ('D5', 'R20', 'GREEN', 'V5_SW', '1.5k', 'AA1608LCGSK', 8.4),
+    ('D6', 'R21', 'RED', 'V5', '1.5k', 'AA1608LSURSK', 11.6),
+    ('D7', 'R22', 'BLUE', 'STATUS_LED', '330', 'AA1608LQBS/D-295V', 14.8),
+]:
+    net = ref + '_A'
+    url = 'https://www.kingbrightusa.com/images/catalog/SPEC/' + mpn.replace('/', '-') + '.pdf'
+    add(ref, color, 'LED', 'Saihub:LED_AA1608', {1:'GND', 2:net}, (30.3, yy), 'indicators',
+        (450, 300), mpn=mpn, desc='Low-current indicator; 1.6 x 0.8 x 0.55 mm; cathode pad 1', url=url, rot=90)
+    r(resistor, resistance, source, net, (34.0, yy), 'indicators', (480, 300), 90)
+
+# Compact placement: header, small side-push BOOT, USB-C left to right.
 # Coordinates are board-local; the switch actuator points toward y=0.
 # Antenna reaches y=28; notch extends 5 mm beyond its right edge.
 placement = {'J2': (1.8, 1.5, 90),
@@ -163,13 +177,13 @@ placement = {'J2': (1.8, 1.5, 90),
  'R4': [20.2, 14.53, 90.0],
  'U4': (27.65, 5.7, 90),
  'C9': (24.95, 5.6, 90),
- 'R7': (30.3, 5.2, 90),
- 'R9': (30.3, 8.4, 90),
+ 'R7': (28.0, 4.3, 90),
+ 'R9': (34.1, 9.5, 90),
  'C11': (27.3, 8.6, 0),
  'U5': (27.65, 12.2, 90),
  'C10': (24.95, 12.1, 90),
- 'R8': (30.3, 11.6, 90),
- 'R10': (30.3, 14.8, 90),
+ 'R8': (26.0, 11.25, 0),
+ 'R10': (34.25, 14.2, 90),
  'C12': (27.3, 15.2, 0),
  'TP1': [18.54, 19.32, 0.0],
  'TP2': [20.79, 19.39, 0.0],
@@ -208,6 +222,10 @@ placement = {'J2': (1.8, 1.5, 90),
  'U7': [22.92, 5.15, 0.0],
  'U10': [19.74, 7.71, 180.0],
  'C21': [22.67, 8.23, 90.0]}
+placement.update({f'D{4+i}': (30.3, 5.2+3.2*i, 90) for i in range(4)})
+placement.update({'D7': (30.3, 14.8, 270),
+                  'R19': (32.1, 5.2, 90), 'R20': (29.2, 8.05, 0),
+                  'R21': (32.0, 10.75, 90), 'R22': (30.45, 16.55, 90)})
 apply_header_protection(parts)
 unplaced = [a['ref'] for a in parts if a['ref'] not in placement]
 if unplaced:
@@ -215,7 +233,7 @@ if unplaced:
 for a in parts:
     a['pos']=placement[a['ref']][:2]
     a['rot']=placement[a['ref']][2]
-    a['side']='bottom' if a['ref']=='TP3' else 'top'
+    a['side']='bottom' if a['ref'] in {'TP3', 'R7', 'R8', 'R9', 'R10', 'R19', 'R20', 'R21', 'R22'} else 'top'
     if a['ref'].startswith('TP'):
         a['foot']='TestPoint:TestPoint_Pad_D1.0mm'
 
@@ -277,6 +295,16 @@ for x in [-.6,.6]:
     for y in [-.8,.8]:sgm_pads.append(('',x,y,.85,1.15,'"F.Paste"'))
 custom_fp('SGM6232_SOIC8_EP',(-3.735,-2.55,3.735,2.55),sgm_pads,'SGMICRO TX00013.000 SOIC-8 EP; datasheet recommended lands')
 custom_fp('SRP5030TA',(-3.25,-2.7,3.25,2.7),[('1',-2.25,0,2,1.8,'"F.Cu" "F.Paste" "F.Mask"'),('2',2.25,0,2,1.8,'"F.Cu" "F.Paste" "F.Mask"')],'Bourns SRP5030TA recommended land: 6.5 span, 2.5 gap, 1.8 width')
+
+# Manufacturer AA1608 recommended asymmetric lands: cathode 1.05 x 0.5,
+# anode 0.7 x 0.5, 0.24 mm inner gap. Pad 1 is cathode.
+custom_fp('LED_AA1608', (-.8,-.4,.8,.4),
+          [('1',-.465,0,1.05,.5,'"F.Cu" "F.Paste" "F.Mask"'),
+           ('2',.65,0,.7,.5,'"F.Cu" "F.Paste" "F.Mask"')],
+          'Kingbright AA1608 low-current family; manufacturer recommended lands; cathode pad 1')
+f=FP/'LED_AA1608.kicad_mod'
+s=f.read_text().replace('(start -1.4 -1.0) (end 1.4 1.0)', '(start -1.25 -.65) (end 1.25 .65)')
+f.write_text(s)
 
 # Copy every used footprint into a project-local library.
 for a in parts:
@@ -351,7 +379,7 @@ else:
 (ROOT/'agent/routing/saihub-unrouted.kicad_pro').write_text(json.dumps(project,indent=2)+'\n')
 p.SaveBoard(str(ROOT/'agent/routing/saihub-unrouted.kicad_pcb'),board)
 (ROOT/'agent/routing/saihub-unrouted.kicad_pro').write_text(json.dumps(project,indent=2)+'\n')
-(ROOT/'agent/design.json').write_text(json.dumps({**identity(),'status':'placement-only-unrouted','board_mm':[W,H],'input':{'voltage_v':5,'source_current_a':3},'channel_limit_nominal_a':1,'assembly':'top-only; TP3 test pad on bottom','parts':parts},indent=2)+'\n')
+(ROOT/'agent/design.json').write_text(json.dumps({**identity(),'status':'placement-only-unrouted','board_mm':[W,H],'input':{'voltage_v':5,'source_current_a':3},'channel_limit_nominal_a':1,'assembly':'LEDs and main components top; eight resistors and TP3 on bottom','parts':parts},indent=2)+'\n')
 print(f'Generated {len(parts)} components, {len(nets)} nets, one schematic sheet, {W} x {H} mm placement.')
 
 import runpy

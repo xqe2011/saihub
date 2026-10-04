@@ -14,7 +14,7 @@
     "source_current_a": 3
   },
   "channel_limit_nominal_a": 1,
-  "assembly": "top-only; TP3 test pad on bottom",
+  "assembly": "LEDs and main components top; eight resistors and TP3 on bottom",
   "parts": [
     {
       "ref": "J1",
@@ -642,7 +642,7 @@
         "17": "FAULT4",
         "18": "BOOT",
         "19": null,
-        "20": null,
+        "20": "STATUS_LED",
         "21": "BUZZ_PWM",
         "22": "UART_TX",
         "23": "GND"
@@ -983,8 +983,8 @@
         "2": "GND"
       },
       "pos": [
-        30.3,
-        5.2
+        28.0,
+        4.3
       ],
       "page": "outputs",
       "sch": [
@@ -996,7 +996,7 @@
       "url": "",
       "rot": 90,
       "uuid": "4e3d0157-8ece-5655-888f-8b57bf579485",
-      "side": "top"
+      "side": "bottom"
     },
     {
       "ref": "R9",
@@ -1008,8 +1008,8 @@
         "2": "GND"
       },
       "pos": [
-        30.3,
-        8.4
+        34.1,
+        9.5
       ],
       "page": "outputs",
       "sch": [
@@ -1021,7 +1021,7 @@
       "url": "",
       "rot": 90,
       "uuid": "91f0d7a9-1460-5c98-add9-31b4ef7dd2a8",
-      "side": "top"
+      "side": "bottom"
     },
     {
       "ref": "C9",
@@ -1136,8 +1136,8 @@
         "2": "GND"
       },
       "pos": [
-        30.3,
-        11.6
+        26.0,
+        11.25
       ],
       "page": "outputs",
       "sch": [
@@ -1147,9 +1147,9 @@
       "mpn": "26.1k",
       "desc": "1%, 0603",
       "url": "",
-      "rot": 90,
+      "rot": 0,
       "uuid": "5ba8486f-8e78-59cd-af44-f9d7961fe137",
-      "side": "top"
+      "side": "bottom"
     },
     {
       "ref": "R10",
@@ -1161,8 +1161,8 @@
         "2": "GND"
       },
       "pos": [
-        30.3,
-        14.8
+        34.25,
+        14.2
       ],
       "page": "outputs",
       "sch": [
@@ -1174,7 +1174,7 @@
       "url": "",
       "rot": 90,
       "uuid": "51a68702-44d2-510b-a1ab-1a391f78ee00",
-      "side": "top"
+      "side": "bottom"
     },
     {
       "ref": "C10",
@@ -1400,6 +1400,206 @@
       "rot": 0.0,
       "uuid": "a85cfe68-3882-552b-919f-457dee7eceb9",
       "side": "top"
+    },
+    {
+      "ref": "D4",
+      "value": "GREEN",
+      "sym": "LED",
+      "foot": "Saihub:LED_AA1608",
+      "nets": {
+        "1": "GND",
+        "2": "D4_A"
+      },
+      "pos": [
+        30.3,
+        5.2
+      ],
+      "page": "indicators",
+      "sch": [
+        450,
+        300
+      ],
+      "mpn": "AA1608LCGSK",
+      "desc": "Low-current indicator; 1.6 x 0.8 x 0.55 mm; cathode pad 1",
+      "url": "https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LCGSK.pdf",
+      "rot": 90,
+      "uuid": "0e8adc30-eef3-5349-a786-9aa7b311c721",
+      "side": "top"
+    },
+    {
+      "ref": "R19",
+      "value": "680",
+      "sym": "R",
+      "foot": "Saihub:R_0603_1608Metric",
+      "nets": {
+        "1": "V3_SW",
+        "2": "D4_A"
+      },
+      "pos": [
+        32.1,
+        5.2
+      ],
+      "page": "indicators",
+      "sch": [
+        480,
+        300
+      ],
+      "mpn": "680",
+      "desc": "1%, 0603",
+      "url": "",
+      "rot": 90,
+      "uuid": "f3b88b4e-e600-500c-8117-73fcd7928896",
+      "side": "bottom"
+    },
+    {
+      "ref": "D5",
+      "value": "GREEN",
+      "sym": "LED",
+      "foot": "Saihub:LED_AA1608",
+      "nets": {
+        "1": "GND",
+        "2": "D5_A"
+      },
+      "pos": [
+        30.3,
+        8.4
+      ],
+      "page": "indicators",
+      "sch": [
+        450,
+        300
+      ],
+      "mpn": "AA1608LCGSK",
+      "desc": "Low-current indicator; 1.6 x 0.8 x 0.55 mm; cathode pad 1",
+      "url": "https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LCGSK.pdf",
+      "rot": 90,
+      "uuid": "e86adca8-c991-5ac9-ba62-8fdfb41cf5bc",
+      "side": "top"
+    },
+    {
+      "ref": "R20",
+      "value": "1.5k",
+      "sym": "R",
+      "foot": "Saihub:R_0603_1608Metric",
+      "nets": {
+        "1": "V5_SW",
+        "2": "D5_A"
+      },
+      "pos": [
+        29.2,
+        8.05
+      ],
+      "page": "indicators",
+      "sch": [
+        480,
+        300
+      ],
+      "mpn": "1.5k",
+      "desc": "1%, 0603",
+      "url": "",
+      "rot": 0,
+      "uuid": "dbc72423-de12-54a3-be6f-c26b752e6c8a",
+      "side": "bottom"
+    },
+    {
+      "ref": "D6",
+      "value": "RED",
+      "sym": "LED",
+      "foot": "Saihub:LED_AA1608",
+      "nets": {
+        "1": "GND",
+        "2": "D6_A"
+      },
+      "pos": [
+        30.3,
+        11.600000000000001
+      ],
+      "page": "indicators",
+      "sch": [
+        450,
+        300
+      ],
+      "mpn": "AA1608LSURSK",
+      "desc": "Low-current indicator; 1.6 x 0.8 x 0.55 mm; cathode pad 1",
+      "url": "https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LSURSK.pdf",
+      "rot": 90,
+      "uuid": "d24147ae-54c9-565a-8b4e-f714fe631d9e",
+      "side": "top"
+    },
+    {
+      "ref": "R21",
+      "value": "1.5k",
+      "sym": "R",
+      "foot": "Saihub:R_0603_1608Metric",
+      "nets": {
+        "1": "V5",
+        "2": "D6_A"
+      },
+      "pos": [
+        32.0,
+        10.75
+      ],
+      "page": "indicators",
+      "sch": [
+        480,
+        300
+      ],
+      "mpn": "1.5k",
+      "desc": "1%, 0603",
+      "url": "",
+      "rot": 90,
+      "uuid": "1b07e918-382b-5052-8674-f650670319ad",
+      "side": "bottom"
+    },
+    {
+      "ref": "D7",
+      "value": "BLUE",
+      "sym": "LED",
+      "foot": "Saihub:LED_AA1608",
+      "nets": {
+        "1": "GND",
+        "2": "D7_A"
+      },
+      "pos": [
+        30.3,
+        14.8
+      ],
+      "page": "indicators",
+      "sch": [
+        450,
+        300
+      ],
+      "mpn": "AA1608LQBS/D-295V",
+      "desc": "Low-current indicator; 1.6 x 0.8 x 0.55 mm; cathode pad 1",
+      "url": "https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LQBS-D-295V.pdf",
+      "rot": 270,
+      "uuid": "cb74c236-9b45-5242-89e6-ca582eaaab65",
+      "side": "top"
+    },
+    {
+      "ref": "R22",
+      "value": "330",
+      "sym": "R",
+      "foot": "Saihub:R_0603_1608Metric",
+      "nets": {
+        "1": "STATUS_LED",
+        "2": "D7_A"
+      },
+      "pos": [
+        30.45,
+        16.55
+      ],
+      "page": "indicators",
+      "sch": [
+        480,
+        300
+      ],
+      "mpn": "330",
+      "desc": "1%, 0603",
+      "url": "",
+      "rot": 90,
+      "uuid": "7707d09b-f9e2-56ee-b331-2d7dcc2797e3",
+      "side": "bottom"
     },
     {
       "ref": "U6",
