@@ -144,8 +144,8 @@ def make_enclosure():
         cover -= text_cut(label, 48 - (1.8 + 2.54 * i), 0.2, 1.8, rotation=90, anchor="bottom")
 
     # Individual wells prevent direct lateral light paths between adjacent lamps.
-    # Well bottoms clear the 0.55 mm LEDs by 0.4 mm; prototype visibility still needs checking.
-    well_bottom = PCB_Z + BOARD_T + 0.95
+    # Well bottoms clear the 0.6 mm LEDs by 0.4 mm; prototype visibility still needs checking.
+    well_bottom = PCB_Z + BOARD_T + 1.0
     for ref, label, x, y in indicators():
         cover += Pos(x, y, well_bottom) * Cylinder(1.1, ROOF_Z-well_bottom+0.02, align=(Align.CENTER, Align.CENTER, Align.MIN))
         cover -= Pos(x, y, well_bottom-0.02) * Cylinder(0.75, ROOF_Z+WALL-well_bottom+0.04, align=(Align.CENTER, Align.CENTER, Align.MIN))
@@ -182,6 +182,7 @@ def populated_board():
     # These two custom footprints have no supplied component models. Their XY
     # dimensions/positions follow the board; the simplified heights are illustrative.
     for name, shape, rgb in [
+        ("Buzzer body envelope", block(5.2, 5.2, 2.0, x=48-28.49, y=24.82, z=PCB_Z + BOARD_T), (0.2, 0.2, 0.2)),
         ("Button body envelope", block(4.6, 2.2, 1.8, x=13.5, y=1.55, z=PCB_Z + BOARD_T), (0.65, 0.66, 0.67)),
         ("Button actuator envelope", block(2, 0.9, 1.0, x=13.5, y=0, z=PCB_Z + BOARD_T + 0.4), (0.20, 0.21, 0.22)),
         ("Module substrate envelope", block(16, 24, 0.8, x=39.15, y=16, z=PCB_Z + BOARD_T), (0.12, 0.29, 0.22)),
@@ -191,7 +192,7 @@ def populated_board():
         parts.append(shape)
     colors = {'D4':(0.1,0.8,0.2), 'D5':(0.1,0.8,0.2), 'D6':(0.9,0.1,0.1), 'D7':(0.1,0.3,1.0)}
     for ref, label, x, y in indicators():
-        led = block(.8, 1.6, .55, x=x, y=y, z=PCB_Z+BOARD_T)
+        led = block(.8, 1.6, .6, x=x, y=y, z=PCB_Z+BOARD_T)
         led.label, led.color = ref+' '+label+' LED envelope', Color(*colors[ref])
         parts.append(led)
     return Compound(label="PCB assembly reference", children=parts)

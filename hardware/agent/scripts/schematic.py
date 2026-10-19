@@ -26,7 +26,6 @@ def circle(x,y,r):return f'(circle (center {x} {y}) (radius {r}) (stroke (width 
 lib=parse((ROOT/'libraries/Saihub.kicad_sym').read_text())
 syms={json.loads(s[1]):s for s in children(lib,'symbol')}
 graphics={
- 'CP':line([(-2.54,0),(-.635,0)])+line([(.635,0),(2.54,0)])+line([(-.635,-1.8),(-.635,1.8)])+line([(.635,-1.8),(.635,1.8)])+line([(-2.2,1.5),(-2.2,2.5)])+line([(-2.7,2),(-1.7,2)]),
  'D':line([(-2.54,0),(-1.27,0)])+line([(-1.27,-1.5),(-1.27,1.5)])+line([(-1.27,0),(1.27,1.5),(1.27,-1.5),(-1.27,0)])+line([(1.27,0),(2.54,0)]),
  'L':''.join(f'(arc (start {x} 0) (mid {x+.635} .635) (end {x+1.27} 0) (stroke (width .254) (type default)) (fill (type none)))' for x in [-2.54,-1.27,0,1.27]),
  'BOOT':circle(-2.54,0,.35)+circle(2.54,0,.35)+line([(-2.54,0),(2.2,1.6)]),
@@ -125,7 +124,7 @@ for num,net,yy in [(1,'V3V3',grid(25)),(2,'GND',grid(46))]:
 stub('R5',1);a=mark('R5',2);b=mark('C8',1);wire([a,(b[0],a[1]),b]);label('EN',(b[0],a[1]),180);stub('C8',2)
 a=mark('R6',2);b=mark('SW1',1);wire([a,(a[0],b[1]),b]);label('BOOT',(a[0],b[1]));stub('R6',1);stub('SW1',2)
 txt('Hold BOOT, then power on or short EN to GND.',126,77,1.05)
-txt('SW1: TS-2435VS / side-push / front edge',126,82,1.05)
+txt('SW1: 2X4 / locating posts / front edge',126,82,1.05)
 txt('Built-in PCB antenna over cutout; 3.3 V pins only.',17,124,1.15)
 
 # USB duplicate contacts are tied by visible buses.

@@ -7,11 +7,11 @@ Version updates require explicit user permission; record each approved change in
 
 ## Requirements and mechanical envelope
 
-The front edge retains J2, SW1 and J1 from left to right. SW1 is TS-2435VS, procurement code C47734518. Its [manufacturer drawing](https://atta.szlcsc.com/upload/public/pdf/source/20250414/8774CEBD0F324351C3CF1F5D7421BC0B.pdf) specifies two 0.6 × 1.2 mm contact lands on 3.4 mm centres, plus two stepped mechanical anchors: 5.3 mm outer span, 3.2 mm inner gap and 1.3 mm depth. There is a 0.7 mm gap between anchor and contact rows. Mounting anchors remain electrically unconnected. The selected variant has no locating posts.
+The front edge retains J2, SW1 and J1 from left to right. SW1 follows the [supplied 2X4 drawing](button-2x4.pdf), final PDF page. It retains the stepped anchors and electrical contacts, and adds two non-plated 0.75 mm holes on 1.7 mm centres. Their footprint coordinates are (-0.85, 0.05) and (0.85, 0.05) mm: the hole row is 1.3 mm ahead of the contact centres. The drawing specifies 0.5 mm locating posts; the recommended board holes are 0.75 mm. Confirm the purchased switch matches this drawing; the former no-post procurement variant is no longer specified.
 
 The new module has a built-in antenna and a 16 × 24 mm body. The [manufacturer drawing, pages 9–10](https://atta.szlcsc.com/upload/public/pdf/source/20251016/3D572157C42EA1AA3992B58D4700E12F.pdf) defines its 22 perimeter pads and central ground pad. It is rotated 180 degrees, with the antenna at the bottom-left. The module body runs from (0.85,4) to (16.85,28) mm. The notch runs from (0,20.5) to (21.85,28) mm, opening at both outer edges. Its right edge is exactly 5 mm beyond the antenna. The connected section retains a 0.85 mm left inset to keep the specified solder lands on the PCB with copper-edge clearance. Outer bounds remain 48 × 28 mm.
 
-Two copper layers, 1.6 mm board thickness; the indicator bank and main components are on top, with eight resistors on the back. TP3 is a bare test pad on the back at (2.6,19.5) mm. The module supply, support parts and test points move to fit the notch. The power-stage component positions are retained. No mounting holes or external antenna accessory. RF operation and enclosure clearance must be qualified on a prototype.
+Two copper layers, 1.6 mm board thickness; the indicator bank and main components are on top, with eight resistors on the back. TP3 is a bare test pad on the back at (2.6,19.5) mm. The module supply, support parts and test points move to fit the notch. The power-stage component positions are retained. No board-fastening holes or external antenna accessory; SW1 has two locating holes. RF operation and enclosure clearance must be qualified on a prototype.
 
 IO0–IO7 now map to internal pins 10, 1, 0, 2, 4, 5, 6, 7. The previous assignments for IO3 and IO7 are not exposed by the replacement module. The firmware configuration changes alongside the schematic. Pin 7 can select a debug source with non-default permanent configuration; the default configuration retains USB debugging regardless of its level. Pin 2 also has a debug function. Verify startup and recovery with attached loads, and do not assume old-board firmware pin mappings are interchangeable.
 
@@ -45,7 +45,7 @@ SGM6232 specifies 4.5 V minimum input and 80% maximum duty cycle. Cable/fuse los
 
 The connector, header, reset pads and buzzer circuit are retained. The module now uses a built-in PCB antenna. User pins are 3.3 V only. Neither switched output may be back-powered.
 
-BZ1 is **KELIKING KLJ-5020**. The [manufacturer specification v3.1](https://datasheet.lcsc.com/datasheet/pdf/5a334e56ebfeea427b46ed3bd7f9e2de.pdf?productCode=C556937) specifies a 5 × 5 × 2 mm body, 3.3 V rated drive, 2-4 V operating range, and ≤110 mA mean current at **4 kHz / 50% duty**. Its page-6 recommended top-view lands have 6.3 × 4.52 mm total span and 2.4 × 1.72 mm gaps: three 1.95 × 1.4 mm pads. Positive is upper-left, negative upper-right; the third, lower-left land is mechanical and unconnected. Do not substitute an arbitrary 5020 without checking its footprint and polarity. D3 now uses the shared MDD SS34 flyback part and Q1 is AO3400A; do not drive the coil directly from GPIO.
+BZ1 follows the user's supplied 5020 specification and terminal arrangement, documented below. D3 uses the shared MDD SS34 flyback part and Q1 is AO3400A; do not drive the coil directly from a control pin.
 
 Native USB retains the 22 ohm series resistors and connector-side protection. These connections must be rerouted for the new module and support-component placement; the old USB routing coordinates are not reusable. The design is not impedance-qualified. Validate enumeration, flashing and traffic in both plug orientations.
 
@@ -90,13 +90,36 @@ V5_SW after the output switches. D6 is red and monitors V5 after F1. D7 is blue,
 driven active-high by control pin 26 (U3 pad 20); it does not consume a header IO.
 Firmware control of STATUS_LED is not added by this hardware change.
 
-The selected low-current AA1608 family uses asymmetric manufacturer lands with
-pad 1 as cathode. Green AA1608LCGSK and red AA1608LSURSK are specified at 2 mA;
-the blue AA1608LQBS/D-295V has a 2.65 V typical / 2.95 V maximum forward voltage
-at 2 mA, providing better headroom for the 3.3 V control output. R19 = 680 ohms,
-R20/R21 = 1.5 kohms and R22 = 330 ohms target roughly 2 mA using typical forward
-voltages. Actual brightness/current varies with supply, temperature and LED bin;
-verify on the prototype. All four cathodes connect to ground.
+D4/D5 remain green (KT-0603G), D6 red (KT-0603R), and D7 blue (KT-0603B).
+The supplied red PDF and matching green/blue manufacturer sheets are retained
+in this directory as led-kt-0603r/g/b.pdf. They specify a 1.6 x 0.8 x 0.6 mm body,
+two 0.7 mm square lands with a 0.7 mm gap, pin 1 anode and pin 2 cathode.
+This full-datasheet pattern supersedes the earlier example image's 0.75 x 0.8 mm lands.
+The symbols and pad mappings use these polarities; the original colors remain unchanged.
+R19/R22 are 330 ohms, R20 is 1.2 kohms and R21 is 1.5 kohms. Green/blue
+forward voltage is specified as 2.6-3.1 V at 5 mA; actual current at these resistor
+values is lower and must be measured, especially the 3.3 V status/output indicators.
+The red specification is 1.8-2.4 V at 20 mA. Brightness is not guaranteed at the
+lower indicator currents; verify on the prototype.
+
+BZ1 uses the supplied buzzer-5020-supplied.png specification: 5.2 x 5.2 x 2 mm,
+3 V nominal, 2-4 V operating, 4 kHz at 50% duty, 100 mA maximum, and
+12 +/- 3 ohm coil resistance. Its supplier/part number was not supplied; the BOM
+identifies the specification instead of retaining the incompatible KLJ-5020 identity.
+Top-view terminals are positive lower-right, negative upper-right and dummy
+lower-left. The package outline includes the 1 mm upper-left chamfer and edge
+steps. Terminal widths are 0.7 mm with 2.8 mm horizontal inner gap; the 1 mm
+terminal length and 3.2 mm vertical inner gap give 4.2 mm vertical center pitch.
+PCB lands are derived as 1.1 x 1.4 mm, adding 0.2 mm side, heel and toe allowance,
+with centers at x +/-1.75 and y +/-2.1 mm.
+These are engineering-derived lands, not a manufacturer-recommended land pattern;
+confirm with the assembler and actual supplied part before ordering. The third
+land is mechanical only and has no net. The existing passive drive circuit remains.
+
+Package-body artwork remains on the fabrication layers and is also projected to
+the corresponding silkscreen layer, preserving native chamfers and contours.
+Strokes are clipped around exposed pads and board edges; no outer bounding boxes
+are added. Reference labels are placed clear of the resulting artwork.
 
 R7/R8/R9/R10 move to the bottom without changing their values or functions.
 R19-R22 are also on the bottom. The eight bottom resistors fit within the existing
