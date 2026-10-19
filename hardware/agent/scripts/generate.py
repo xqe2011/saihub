@@ -65,10 +65,9 @@ def symbol(name,pins,kind='block'):
 
 symbol('R',[(1,'1','passive','L'),(2,'2','passive','R')],'R')
 symbol('C',[(1,'1','passive','L'),(2,'2','passive','R')],'C')
-symbol('CP',[(1,'+','passive','L'),(2,'-','passive','R')],'small')
 symbol('L',[(1,'1','passive','L'),(2,'2','passive','R')],'small')
 symbol('D',[(1,'K','passive','L'),(2,'A','passive','R')],'small')
-symbol('LED',[(1,'K','passive','L'),(2,'A','passive','R')],'small')
+symbol('LED',[(2,'K','passive','L'),(1,'A','passive','R')],'small')
 symbol('F',[(1,'1','passive','L'),(2,'2','passive','R')],'small')
 symbol('TP',[(1,'TEST','passive','L')],'small')
 symbol('BOOT',[(1,'BOOT','passive','L'),(2,'GND','passive','R')],'small')
@@ -128,7 +127,7 @@ c('C7','100n','V3V3','GND',(4.2,12.5),'mcu',(260,40),rot=90)
 r('R5','10k','V3V3','EN',(3.5,15.5),'mcu',(175,75),90)
 c('C8','1u','EN','GND',(3.5,18.5),'mcu',(260,75),rot=90)
 r('R6','10k','V3V3','BOOT',(27,27.8),'mcu',(175,110),90)
-add('SW1','BOOT','BOOT','Saihub:SW_SPST_TS2435VS',{1:'BOOT',2:'GND'},(34.35,1.1),'mcu',(260,110),mpn='TS-2435VS',desc='C47734518; side-push, no locating posts; manufacturer PCB land pattern',url='https://atta.szlcsc.com/upload/public/pdf/source/20250414/8774CEBD0F324351C3CF1F5D7421BC0B.pdf')
+add('SW1','BOOT','BOOT','Saihub:SW_SPST_2X4_LocatingPins',{1:'BOOT',2:'GND'},(34.35,1.1),'mcu',(260,110),mpn='2X4',desc='Side-push; two 0.75 mm locating holes on 1.7 mm centres; supplied 2X4 drawing',url='${KIPRJMOD}/agent/docs/button-2x4.pdf')
 for ref,net,pos,sch in [('TP1','EN',(2,21.8),(175,145)),('TP2','GND',(4.8,21.8),(260,145)),('TP3','UART_TX',(27.4,12.7),(175,180)),('TP4','V3V3',(27.4,16),(260,180))]:
     add(ref,net,'TP','TestPoint:TestPoint_Pad_D1.5mm',{1:net},pos,'mcu',sch,mpn='PCB test pad',desc='Do not populate')
 
@@ -142,7 +141,7 @@ for idx,vin,vout,en,x,scx in [(4,'V3V3','V3_SW','PWR3_EN',9,165),(5,'V5','V5_SW'
     # Separate active-low fault inputs also remain available on probe pads.
     add('TP'+str(idx+1),'FAULT'+str(idx),'TP','TestPoint:TestPoint_Pad_D1.0mm',{1:'FAULT'+str(idx)},(28.1,6.0+(idx-4)*3),'outputs',(scx,230),mpn='PCB test pad',desc='Do not populate')
 
-add('BZ1','KLJ-5020 3.3V','BUZZER','Saihub:KLJ-5020',{1:'V3V3',2:'BUZZ_LOW'},(6.5,50),'buzzer',(75,55),mpn='KLJ-5020',url='https://datasheet.lcsc.com/datasheet/pdf/5a334e56ebfeea427b46ed3bd7f9e2de.pdf?productCode=C556937')
+add('BZ1','5020 3V 4kHz','BUZZER','Saihub:Buzzer_5020_Supplied',{1:'V3V3',2:'BUZZ_LOW'},(6.5,50),'buzzer',(75,55),mpn='5020 supplied specification (MPN unspecified)',desc='5.2 x 5.2 x 2 mm; 3 V nominal, 2-4 V operating, 4 kHz, 100 mA max; derived lands require assembler review',url='${KIPRJMOD}/agent/docs/buzzer-5020-supplied.png')
 add('Q1','AO3400A','AO3400A','Package_TO_SOT_SMD:SOT-23',{1:'BUZZ_GATE',2:'GND',3:'BUZZ_LOW'},(17,45.5),'buzzer',(175,55),url='https://www.aosmd.com/sites/default/files/res/datasheets/AO3400A.pdf')
 add('D3','SS14','D','Diode_SMD:D_SMA',{1:'V3V3',2:'BUZZ_LOW'},(14.8,48),'buzzer',(75,100),url='https://www.diodes.com/assets/Datasheets/ds23001.pdf')
 r('R11','100','BUZZ_PWM','BUZZ_GATE',(20,43),'buzzer',(265,40))
@@ -151,15 +150,15 @@ c('C13','100n','V3V3','GND',(2.1,44.2),'buzzer',(175,105),rot=90)
 
 # Low-current indicators, in one column with matching enclosure legends.
 for ref, resistor, color, source, resistance, mpn, yy in [
-    ('D4', 'R19', 'GREEN', 'V3_SW', '680', 'AA1608LCGSK', 5.2),
-    ('D5', 'R20', 'GREEN', 'V5_SW', '1.5k', 'AA1608LCGSK', 8.4),
-    ('D6', 'R21', 'RED', 'V5', '1.5k', 'AA1608LSURSK', 11.6),
-    ('D7', 'R22', 'BLUE', 'STATUS_LED', '330', 'AA1608LQBS/D-295V', 14.8),
+    ('D4', 'R19', 'GREEN', 'V3_SW', '330', 'KT-0603G', 5.2),
+    ('D5', 'R20', 'GREEN', 'V5_SW', '1.2k', 'KT-0603G', 8.4),
+    ('D6', 'R21', 'RED', 'V5', '1.5k', 'KT-0603R', 11.6),
+    ('D7', 'R22', 'BLUE', 'STATUS_LED', '330', 'KT-0603B', 14.8),
 ]:
     net = ref + '_A'
-    url = 'https://www.kingbrightusa.com/images/catalog/SPEC/' + mpn.replace('/', '-') + '.pdf'
-    add(ref, color, 'LED', 'Saihub:LED_AA1608', {1:'GND', 2:net}, (30.3, yy), 'indicators',
-        (450, 300), mpn=mpn, desc='Low-current indicator; 1.6 x 0.8 x 0.55 mm; cathode pad 1', url=url, rot=90)
+    url = '${KIPRJMOD}/agent/docs/led-' + mpn.lower() + '.pdf'
+    add(ref, color, 'LED', 'Saihub:LED_0603_1608Metric', {1:net, 2:'GND'}, (30.3, yy), 'indicators',
+        (450, 300), mpn=mpn, desc='0603 indicator; 1.6 x 0.8 x 0.6 mm; anode pad 1, cathode pad 2', url=url, rot=90)
     r(resistor, resistance, source, net, (34.0, yy), 'indicators', (480, 300), 90)
 
 # Compact placement: header, small side-push BOOT, USB-C left to right.
@@ -212,7 +211,7 @@ placement = {'J2': (1.8, 1.5, 90),
  'C15': (32.4, 24, 90),
  'R18': (45.7, 19.2, 0),
  'C14': (39.1, 25.7, 90),
- 'BZ1': [28.49, 24.32, 90.0],
+ 'BZ1': [28.49, 24.82, 0.0],
  'D3': (27.8, 18.2, 0),
  'Q1': [23.61, 25.93, 90.0],
  'R11': [22.73, 17.5, 180.0],
@@ -222,8 +221,8 @@ placement = {'J2': (1.8, 1.5, 90),
  'U7': [22.92, 5.15, 0.0],
  'U10': [19.74, 7.71, 180.0],
  'C21': [22.67, 8.23, 90.0]}
-placement.update({f'D{4+i}': (30.3, 5.2+3.2*i, 90) for i in range(4)})
-placement.update({'D7': (30.3, 14.8, 270),
+placement.update({f'D{4+i}': (30.3, 5.2+3.2*i, 270) for i in range(4)})
+placement.update({'D7': (30.3, 14.8, 90),
                   'R19': (32.1, 5.2, 90), 'R20': (29.2, 8.05, 0),
                   'R21': (32.0, 10.75, 90), 'R22': (30.45, 16.55, 90)})
 apply_header_protection(parts)
@@ -242,10 +241,13 @@ def custom_fp(name,body,pads,desc):
     s+='(property "Reference" "REF**" (at 0 -11) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))'
     s+=f'(property "Value" {q(name)} (at 0 11) (layer "F.Fab") (effects (font (size 0.8 0.8) (thickness 0.12))))'
     x1,y1,x2,y2=body
+    body_shapes = {'SGM6232_SOIC8_EP': (-1.95,-2.45,1.95,2.45),
+                   'SRP5030TA': (-2.85,-2.6,2.85,2.6),
+                   'SW_SPST_2X4_LocatingPins': (-2.325,-1.1,2.325,1.1)}
     for layer,offset,width in [('F.Fab',0,0.1),('F.CrtYd',0.6,0.05)]:
+        x1,y1,x2,y2 = body_shapes.get(name, body) if layer == 'F.Fab' else body
         s+=f'(fp_rect (start {x1-offset} {y1-offset}) (end {x2+offset} {y2+offset}) (stroke (width {width}) (type default)) (fill none) (layer {q(layer)}))'
-    # Corner mark does not intrude on solder lands.
-    s+=f'(fp_circle (center {x1+1.5} {y1+1.5}) (end {x1+1.9} {y1+1.5}) (stroke (width 0.15) (type default)) (fill none) (layer "F.SilkS"))'
+
     for num,x,y,w,h,layers in pads:
         s+=f'(pad {q(num)} smd rect (at {x} {y}) (size {w} {h}) (layers {layers}))'
     s+=')'
@@ -270,9 +272,9 @@ f.write_text(f.read_text().rstrip()[:-1]+'(fp_line (start -8 -4.5) (end 8 -4.5) 
 # 5.3 mm outer span, 3.2 mm inner gap, 1.3 mm depth; 0.7 mm gap to contacts.
 switch_pads=[('1',-1.7,1.35,.6,1.2,'"F.Cu" "F.Paste" "F.Mask"'),
              ('2',1.7,1.35,.6,1.2,'"F.Cu" "F.Paste" "F.Mask"')]
-custom_fp('SW_SPST_TS2435VS',(-2.3,-1.1,2.3,1.1),switch_pads,'TS-2435VS C47734518; manufacturer drawing A/0; no locating posts')
+custom_fp('SW_SPST_2X4_LocatingPins',(-2.3,-1.1,2.3,1.1),switch_pads,'2X4 supplied drawing; two 0.75 mm locating holes on 1.7 mm centres')
 # Show the actuator projecting toward the connector edge (negative Y).
-f=FP/'SW_SPST_TS2435VS.kicad_mod'
+f=FP/'SW_SPST_2X4_LocatingPins.kicad_mod'
 switch=f.read_text().rstrip()[:-1]
 for sign in [-1,1]:
     points=[(sign*x,y) for x,y in [(1.6,-1.25),(2.65,-1.25),(2.65,.05),(2,.05),(2,-.55),(1.6,-.55)]]
@@ -281,8 +283,27 @@ for sign in [-1,1]:
 # Courtyard includes solder lands; 0.25 mm assembly allowance.
 switch=switch.replace('(start -2.9 -1.7000000000000002) (end 2.9 1.7000000000000002)', '(start -2.9 -1.5) (end 2.9 2.45)')
 switch+='(fp_rect (start -1 -2) (end 1 -1.1) (stroke (width .1) (type default)) (fill none) (layer "F.Fab")))'
+for x in [-.85, .85]:
+    switch = switch[:-1] + f'(pad "" np_thru_hole circle (at {x} .05) (size .75 .75) (drill .75) (layers "*.Cu" "*.Mask")))'
 f.write_text(switch)
-custom_fp('KLJ-5020',(-3.15,-2.5,3.15,2.5),[(num,x,y,1.95,1.4,'"F.Cu" "F.Paste" "F.Mask"') for num,x,y in [('1',-2.175,-1.56),('2',2.175,-1.56),('',-2.175,1.56)]],'KELIKING KLJ-5020 v3.1 page 6 top-view lands: 6.3 x 4.52 span, 2.4 x 1.72 gaps; third pad mechanical only')
+# Supplied top view: negative upper-right, positive lower-right, dummy lower-left.
+# 0.7 x 1.0 terminals; 2.8 mm horizontal inner gap and 3.2 mm vertical inner gap.
+# Derived PCB lands add 0.2 mm sides, heel and toe (not a supplier land recommendation).
+custom_fp('Buzzer_5020_Supplied',(-2.6,-2.6,2.6,2.6),
+          [(num,x,y,1.1,1.4,'"F.Cu" "F.Paste" "F.Mask"')
+           for num,x,y in [('1',1.75,2.1),('2',1.75,-2.1),('',-1.75,2.1)]],
+          'Supplied 5020: 5.2 x 5.2 x 2 mm; 1 positive, 2 negative, dummy unnumbered; derived lands')
+f=FP/'Buzzer_5020_Supplied.kicad_mod'
+s=f.read_text().replace('(start -3.2 -3.2) (end 3.2 3.2)', '(start -2.85 -3.05) (end 2.85 3.05)')
+s=s.replace('(fp_rect (start -2.6 -2.6) (end 2.6 2.6) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab"))','')
+# Chamfer and molded edge steps follow the supplied top-view package, not its courtyard.
+points=[(-2.6,-1.6),(-1.6,-2.6),(1,-2.6),(1,-2.4),(2.6,-2.4),
+        (2.6,2.4),(1,2.4),(1,2.6),(-1,2.6),(-1,2.4),(-2.6,2.4),(-2.6,-1.6)]
+for start,end in zip(points,points[1:]):
+    s=s.rstrip()[:-1]+f'(fp_line (start {start[0]} {start[1]}) (end {end[0]} {end[1]}) (stroke (width .1) (type default)) (layer "F.Fab")))'
+s=s.rstrip()[:-1]+'(fp_circle (center 0 0) (end .2 0) (stroke (width .1) (type default)) (fill none) (layer "F.Fab")))'
+f.write_text(s)
+
 
 # SGMICRO recommended lands: 5.56 row centres, 1.91 x 0.61 leads;
 # EP 2.413 x 3.302 after rotating the manufacturer's drawing 90 degrees.
@@ -296,14 +317,20 @@ for x in [-.6,.6]:
 custom_fp('SGM6232_SOIC8_EP',(-3.735,-2.55,3.735,2.55),sgm_pads,'SGMICRO TX00013.000 SOIC-8 EP; datasheet recommended lands')
 custom_fp('SRP5030TA',(-3.25,-2.7,3.25,2.7),[('1',-2.25,0,2,1.8,'"F.Cu" "F.Paste" "F.Mask"'),('2',2.25,0,2,1.8,'"F.Cu" "F.Paste" "F.Mask"')],'Bourns SRP5030TA recommended land: 6.5 span, 2.5 gap, 1.8 width')
 
-# Manufacturer AA1608 recommended asymmetric lands: cathode 1.05 x 0.5,
-# anode 0.7 x 0.5, 0.24 mm inner gap. Pad 1 is cathode.
-custom_fp('LED_AA1608', (-.8,-.4,.8,.4),
-          [('1',-.465,0,1.05,.5,'"F.Cu" "F.Paste" "F.Mask"'),
-           ('2',.65,0,.7,.5,'"F.Cu" "F.Paste" "F.Mask"')],
-          'Kingbright AA1608 low-current family; manufacturer recommended lands; cathode pad 1')
-f=FP/'LED_AA1608.kicad_mod'
-s=f.read_text().replace('(start -1.4 -1.0) (end 1.4 1.0)', '(start -1.25 -.65) (end 1.25 .65)')
+# Latest supplied KT-0603R PDF and matching G/B drawings: two 0.7 mm square
+# lands with 0.7 mm gap; pin 1 positive and pin 2 negative. Body 1.6 x 0.8 x 0.6.
+custom_fp('LED_0603_1608Metric', (-.8,-.4,.8,.4),
+          [('1',-.7,0,.7,.7,'"F.Cu" "F.Paste" "F.Mask"'),
+           ('2',.7,0,.7,.7,'"F.Cu" "F.Paste" "F.Mask"')],
+          'KT-0603R/G/B; 0.7 mm square lands with 0.7 mm gap; anode 1, cathode 2')
+f=FP/'LED_0603_1608Metric.kicad_mod'
+s=f.read_text().replace('(start -1.4 -1.0) (end 1.4 1.0)', '(start -1.3 -.65) (end 1.3 .65)')
+# Electrode boundaries and cathode mark belong to the package body.
+for x in [-.5,.5]:
+    s=s.rstrip()[:-1]+f'(fp_line (start {x} -.4) (end {x} .4) (stroke (width .1) (type default)) (layer "F.Fab")))'
+for layer in ['F.Fab','F.SilkS']:
+    for start,end in [((.18,0),(-.18,-.22)), ((-.18,-.22),(-.18,.22)), ((-.18,.22),(.18,0))]:
+        s=s.rstrip()[:-1]+f'(fp_line (start {start[0]} {start[1]}) (end {end[0]} {end[1]}) (stroke (width .1) (type default)) (layer "{layer}")))'
 f.write_text(s)
 
 # Copy every used footprint into a project-local library.
@@ -311,8 +338,9 @@ for a in parts:
     lib,name=a['foot'].split(':')
     if lib!='Saihub': shutil.copyfile(KICAD/'footprints'/(lib+'.pretty')/(name+'.kicad_mod'),FP/(name+'.kicad_mod'))
     local=p.FootprintLoad(str(FP),name)
-    for item in local.GraphicalItems():
-        if item.GetLayer()==p.F_SilkS: item.SetLayer(p.F_Fab)
+    for item in list(local.GraphicalItems()):
+        if item.GetLayer()==p.F_SilkS and name != 'LED_0603_1608Metric':
+            local.Delete(item)  # Keep package-body artwork on Fab; no added outer boxes.
     p.FootprintSave(str(FP),local)
     a['foot']='Saihub:'+name
 (LIB/'Saihub.kicad_sym').write_text('(kicad_symbol_lib (version 20241209) (generator "kicad_symbol_editor")\n'+'\n'.join(v['text'] for v in symbols.values())+'\n)')
@@ -346,7 +374,7 @@ for a in parts:
     for item in list(fp.GraphicalItems()):
         if hasattr(item,'GetText') and item.GetText() in ['${REFERENCE}','%R']:
             item.SetText('')
-        elif item.GetLayer()==p.F_SilkS: item.SetLayer(p.F_Fab)
+
     size=.85 if a['ref'] in ['U2','U3','L1','BZ1','J1','J2'] else .55
     fp.Reference().SetTextSize(xy(size,size));fp.Reference().SetTextThickness(mm(.1))
     fp.Reference().SetVisible(True);fp.Reference().SetLayer(p.F_SilkS)

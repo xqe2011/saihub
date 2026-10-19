@@ -1,8 +1,338 @@
 ** Drc report for saihub.kicad_pcb **
-** Created on 2026-10-04T13:46:59 **
+** Created on 2026-10-19T12:22:23 **
 ** Report includes: Errors, Warnings **
 
-** Found 0 DRC violations **
+** Found 110 DRC violations **
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(39.2000 mm, 20.7500 mm): Via [V5] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(11.3000 mm, 12.9000 mm): Via [V5] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(27.8500 mm, 19.3500 mm): Via [V5] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(25.4500 mm, 19.6000 mm): Via [V5] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(37.3000 mm, 21.3500 mm): Via [V5] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(30.1000 mm, 21.3500 mm): Via [V5] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(33.2500 mm, 19.0000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(33.7500 mm, 5.7500 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(33.7500 mm, 2.7500 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(28.4000 mm, 9.7500 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(32.6000 mm, 21.4000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(20.3756 mm, 18.3153 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(37.2500 mm, 27.5000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(12.7500 mm, 7.5000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(31.7500 mm, 23.0000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(8.2500 mm, 7.5000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(17.7500 mm, 18.2500 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(36.2500 mm, 18.5000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(0.7500 mm, 8.5000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(26.7500 mm, 3.2500 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(23.5000 mm, 10.0000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(40.0000 mm, 0.7500 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(34.2500 mm, 23.0000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(36.2500 mm, 10.7500 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(0.7500 mm, 3.0000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(36.0000 mm, 22.0000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(23.5000 mm, 26.2500 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(34.3500 mm, 8.9000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(17.0000 mm, 10.5000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(23.0000 mm, 22.5000 mm): Via [GND] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(23.9500 mm, 9.2500 mm): Via [V5_SW] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(23.9500 mm, 6.6500 mm): Via [V5_SW] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(21.8000 mm, 6.6000 mm): Via [V5_SW] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(15.4500 mm, 14.4500 mm): Via [V3V3] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(14.3000 mm, 13.3000 mm): Via [V3V3] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(45.1500 mm, 7.9500 mm): Via [VBUS] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(40.4000 mm, 7.8500 mm): Via [VBUS] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(30.1500 mm, 3.5000 mm): Via [V3_SW] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Power'; error
+    @(31.9000 mm, 3.5000 mm): Via [V3_SW] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(17.5000 mm, 9.4300 mm): Via [IO4] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(33.8500 mm, 9.9500 mm): Via [PWR3_EN] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(33.8500 mm, 11.5500 mm): Via [PWR5_EN] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(6.8000 mm, 2.9000 mm): Via [FAULT4] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(4.8000 mm, 10.8000 mm): Via [FAULT4] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(22.4000 mm, 19.2500 mm): Via [FAULT4] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(29.1000 mm, 19.5500 mm): Via [STATUS_LED] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(24.7500 mm, 21.2000 mm): Via [STATUS_LED] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(23.5500 mm, 20.2000 mm): Via [STATUS_LED] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(2.1000 mm, 19.4000 mm): Via [UART_TX] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(30.2500 mm, 15.3500 mm): Via [D7_A] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(27.7500 mm, 4.8000 mm): Via [ILIM4] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(30.7500 mm, 4.2000 mm): Via [D4_A] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(31.5000 mm, 10.5000 mm): Via [D6_A] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(25.1500 mm, 10.4500 mm): Via [ILIM5] on F.Cu - B.Cu
+[drill_out_of_range]: Hole size out of range (board setup constraints min hole 0.3000 mm; actual 0.2500 mm)
+    Rule: netclass 'Default'; error
+    @(30.0500 mm, 7.6000 mm): Via [D5_A] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(39.2000 mm, 20.7500 mm): Via [V5] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(11.3000 mm, 12.9000 mm): Via [V5] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(27.8500 mm, 19.3500 mm): Via [V5] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(25.4500 mm, 19.6000 mm): Via [V5] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(37.3000 mm, 21.3500 mm): Via [V5] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(30.1000 mm, 21.3500 mm): Via [V5] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(33.2500 mm, 19.0000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(33.7500 mm, 5.7500 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(33.7500 mm, 2.7500 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(28.4000 mm, 9.7500 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(32.6000 mm, 21.4000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(20.3756 mm, 18.3153 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(37.2500 mm, 27.5000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(12.7500 mm, 7.5000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(31.7500 mm, 23.0000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(8.2500 mm, 7.5000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(17.7500 mm, 18.2500 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(36.2500 mm, 18.5000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(0.7500 mm, 8.5000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(26.7500 mm, 3.2500 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(23.5000 mm, 10.0000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(40.0000 mm, 0.7500 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(34.2500 mm, 23.0000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(36.2500 mm, 10.7500 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(0.7500 mm, 3.0000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(36.0000 mm, 22.0000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(23.5000 mm, 26.2500 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(34.3500 mm, 8.9000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(17.0000 mm, 10.5000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(23.0000 mm, 22.5000 mm): Via [GND] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(23.9500 mm, 9.2500 mm): Via [V5_SW] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(23.9500 mm, 6.6500 mm): Via [V5_SW] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(21.8000 mm, 6.6000 mm): Via [V5_SW] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(15.4500 mm, 14.4500 mm): Via [V3V3] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(14.3000 mm, 13.3000 mm): Via [V3V3] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(45.1500 mm, 7.9500 mm): Via [VBUS] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(40.4000 mm, 7.8500 mm): Via [VBUS] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(30.1500 mm, 3.5000 mm): Via [V3_SW] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Power'; error
+    @(31.9000 mm, 3.5000 mm): Via [V3_SW] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(17.5000 mm, 9.4300 mm): Via [IO4] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(33.8500 mm, 9.9500 mm): Via [PWR3_EN] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(33.8500 mm, 11.5500 mm): Via [PWR5_EN] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(6.8000 mm, 2.9000 mm): Via [FAULT4] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(4.8000 mm, 10.8000 mm): Via [FAULT4] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(22.4000 mm, 19.2500 mm): Via [FAULT4] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(29.1000 mm, 19.5500 mm): Via [STATUS_LED] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(24.7500 mm, 21.2000 mm): Via [STATUS_LED] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(23.5500 mm, 20.2000 mm): Via [STATUS_LED] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(2.1000 mm, 19.4000 mm): Via [UART_TX] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(30.2500 mm, 15.3500 mm): Via [D7_A] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(27.7500 mm, 4.8000 mm): Via [ILIM4] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(30.7500 mm, 4.2000 mm): Via [D4_A] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(31.5000 mm, 10.5000 mm): Via [D6_A] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(25.1500 mm, 10.4500 mm): Via [ILIM5] on F.Cu - B.Cu
+[via_diameter]: Via diameter (board setup constraints min diameter 0.6000 mm; actual 0.5000 mm)
+    Rule: netclass 'Default'; error
+    @(30.0500 mm, 7.6000 mm): Via [D5_A] on F.Cu - B.Cu
 
 ** Found 0 unconnected pads **
 

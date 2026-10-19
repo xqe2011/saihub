@@ -28,7 +28,7 @@ C7,100n,100n,Saihub:C_0603_1608Metric,21.15,11.32,90.0,top,"X7R, 10V minimum",
 R5,10k,10k,Saihub:R_0603_1608Metric,18.67,14.41,90.0,top,"1%, 0603",
 C8,1u,1u,Saihub:C_0603_1608Metric,21.74,15.09,90.0,top,"X7R, 10V minimum",
 R6,10k,10k,Saihub:R_0603_1608Metric,24.14,15.24,180.0,top,"1%, 0603",
-SW1,BOOT,TS-2435VS,Saihub:SW_SPST_TS2435VS,34.5,1.55,0,top,"C47734518; side-push, no locating posts; manufacturer PCB land pattern",https://atta.szlcsc.com/upload/public/pdf/source/20250414/8774CEBD0F324351C3CF1F5D7421BC0B.pdf
+SW1,BOOT,2X4,Saihub:SW_SPST_2X4_LocatingPins,34.5,1.55,0,top,Side-push; two 0.75 mm locating holes on 1.7 mm centres; supplied 2X4 drawing,${KIPRJMOD}/agent/docs/button-2x4.pdf
 TP1,EN,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,18.54,19.32,0.0,top,Do not populate,
 TP2,GND,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,20.79,19.39,0.0,top,Do not populate,
 TP3,UART_TX,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,2.6,19.5,0.0,bottom,Do not populate,
@@ -46,19 +46,19 @@ R10,10k,10k,Saihub:R_0603_1608Metric,34.25,14.2,90,bottom,"1%, 0603",
 C10,100n,100n,Saihub:C_0603_1608Metric,24.95,12.1,90,top,"X7R, 10V minimum",
 C12,1u,1u,Saihub:C_0603_1608Metric,27.3,15.2,0,top,"X7R, 10V minimum",
 TP6,FAULT5,PCB test pad,Saihub:TestPoint_Pad_D1.0mm,34.48,20.28,0.0,top,Do not populate,
-BZ1,KLJ-5020 3.3V,KLJ-5020,Saihub:KLJ-5020,28.49,24.32,90.0,top,,https://datasheet.lcsc.com/datasheet/pdf/5a334e56ebfeea427b46ed3bd7f9e2de.pdf?productCode=C556937
+BZ1,5020 3V 4kHz,5020 supplied specification (MPN unspecified),Saihub:Buzzer_5020_Supplied,28.49,24.82,0.0,top,"5.2 x 5.2 x 2 mm; 3 V nominal, 2-4 V operating, 4 kHz, 100 mA max; derived lands require assembler review",${KIPRJMOD}/agent/docs/buzzer-5020-supplied.png
 Q1,AO3400A,AO3400A,Saihub:SOT-23,23.61,25.93,90.0,top,,https://www.aosmd.com/sites/default/files/res/datasheets/AO3400A.pdf
 D3,SS34,SS34,Saihub:D_SMA,27.8,18.2,0,top,"MDD SS34, 40V / 3A, SMA (DO-214AC); do not substitute SMC variants",https://datasheet.lcsc.com/datasheet/pdf/dfa1ff67dea875d0135103ba9ada713a.pdf?productCode=C8678
 R11,100,100,Saihub:R_0603_1608Metric,22.73,17.5,180.0,top,"1%, 0603",
 R12,10k,10k,Saihub:R_0603_1608Metric,23.71,22.55,180.0,top,"1%, 0603",
 C13,100n,100n,Saihub:C_0603_1608Metric,33.12,27.08,0.0,top,"X7R, 10V minimum",
-D4,GREEN,AA1608LCGSK,Saihub:LED_AA1608,30.3,5.2,90,top,Low-current indicator; 1.6 x 0.8 x 0.55 mm; cathode pad 1,https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LCGSK.pdf
-R19,680,680,Saihub:R_0603_1608Metric,32.1,5.2,90,bottom,"1%, 0603",
-D5,GREEN,AA1608LCGSK,Saihub:LED_AA1608,30.3,8.4,90,top,Low-current indicator; 1.6 x 0.8 x 0.55 mm; cathode pad 1,https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LCGSK.pdf
-R20,1.5k,1.5k,Saihub:R_0603_1608Metric,29.2,8.05,0,bottom,"1%, 0603",
-D6,RED,AA1608LSURSK,Saihub:LED_AA1608,30.3,11.600000000000001,90,top,Low-current indicator; 1.6 x 0.8 x 0.55 mm; cathode pad 1,https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LSURSK.pdf
+D4,GREEN,KT-0603G,Saihub:LED_0603_1608Metric,30.3,5.2,270,top,"0603 indicator; 1.6 x 0.8 x 0.6 mm; anode pad 1, cathode pad 2",${KIPRJMOD}/agent/docs/led-kt-0603g.pdf
+R19,330,330,Saihub:R_0603_1608Metric,32.1,5.2,90,bottom,"1%, 0603",
+D5,GREEN,KT-0603G,Saihub:LED_0603_1608Metric,30.3,8.4,270,top,"0603 indicator; 1.6 x 0.8 x 0.6 mm; anode pad 1, cathode pad 2",${KIPRJMOD}/agent/docs/led-kt-0603g.pdf
+R20,1.2k,1.2k,Saihub:R_0603_1608Metric,29.2,8.05,0,bottom,"1%, 0603",
+D6,RED,KT-0603R,Saihub:LED_0603_1608Metric,30.3,11.600000000000001,270,top,"0603 indicator; 1.6 x 0.8 x 0.6 mm; anode pad 1, cathode pad 2",${KIPRJMOD}/agent/docs/led-kt-0603r.pdf
 R21,1.5k,1.5k,Saihub:R_0603_1608Metric,32.0,10.75,90,bottom,"1%, 0603",
-D7,BLUE,AA1608LQBS/D-295V,Saihub:LED_AA1608,30.3,14.8,270,top,Low-current indicator; 1.6 x 0.8 x 0.55 mm; cathode pad 1,https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LQBS-D-295V.pdf
+D7,BLUE,KT-0603B,Saihub:LED_0603_1608Metric,30.3,14.8,90,top,"0603 indicator; 1.6 x 0.8 x 0.6 mm; anode pad 1, cathode pad 2",${KIPRJMOD}/agent/docs/led-kt-0603b.pdf
 R22,330,330,Saihub:R_0603_1608Metric,30.45,16.55,90,bottom,"1%, 0603",
 U6,TPD4E05U06DQAR,TPD4E05U06DQAR,Saihub:TPD4E05U06_DQA,19.39,4.32,-90.0,top,Four GPIO ESD shunts; USON-10 2.5x1mm; no supply required,https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf
 U7,TPD4E05U06DQAR,TPD4E05U06DQAR,Saihub:TPD4E05U06_DQA,22.92,5.15,0.0,top,Four GPIO ESD shunts; USON-10 2.5x1mm; no supply required,https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf
