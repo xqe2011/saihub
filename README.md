@@ -24,6 +24,11 @@
   · <a href="LICENSE">MIT</a>
 </p>
 
+<p align="center">
+  Watch the video: <a href="https://youtu.be/VpJexyDZVVk">YouTube</a>
+  · <a href="https://www.bilibili.com/video/BV1MVn66EEgq">Bilibili</a>
+</p>
+
 ---
 
 ## What it is
@@ -110,9 +115,7 @@ Logic pins are **3.3 V only** — full electrical limits in [docs/hardware.md](d
 ## Community
 
 - [Join our Discord](https://discord.gg/aZerprjxsc)
-- Join the QQ group **499504696** by scanning the code below:
-
-<a href="docs/assets/qq-group.png"><img src="docs/assets/qq-group.png" width="300" alt="QR code for the SAIHub QQ group 499504696"></a>
+- QQ group: **499504696**
 
 ## License
 

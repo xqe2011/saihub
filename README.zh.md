@@ -20,6 +20,11 @@
   · <a href="LICENSE">MIT</a>
 </p>
 
+<p align="center">
+  观看视频：<a href="https://youtu.be/VpJexyDZVVk">YouTube</a>
+  · <a href="https://www.bilibili.com/video/BV1MVn66EEgq">哔哩哔哩</a>
+</p>
+
 ---
 
 ## SAIHub 是什么
@@ -106,9 +111,7 @@ SAIHub 是给编程智能体用的口袋 IO 板。烧好固件、连上 Wi-Fi、
 ## 社区交流
 
 - [加入 Discord](https://discord.gg/aZerprjxsc)
-- 扫描下方二维码加入 QQ 群 **499504696**：
-
-<a href="docs/assets/qq-group.png"><img src="docs/assets/qq-group.png" width="300" alt="SAIHub QQ 交流群 499504696 的二维码"></a>
+- QQ 群：**499504696**
 
 ## 许可证
 
