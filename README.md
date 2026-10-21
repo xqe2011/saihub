@@ -25,8 +25,8 @@
 </p>
 
 <p align="center">
-  Watch the video: <a href="https://youtu.be/VpJexyDZVVk">YouTube</a>
-  · <a href="https://www.bilibili.com/video/BV1MVn66EEgq">Bilibili</a>
+  Watch the video: <a href="https://youtu.be/VpJexyDZVVk"><img src="docs/assets/youtube.svg" width="16" height="16" alt="" valign="middle"> YouTube</a>
+  · <a href="https://www.bilibili.com/video/BV1MVn66EEgq"><img src="docs/assets/bilibili.svg" width="16" height="16" alt="" valign="middle"> Bilibili</a>
 </p>
 
 ---

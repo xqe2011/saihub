@@ -21,8 +21,8 @@
 </p>
 
 <p align="center">
-  观看视频：<a href="https://youtu.be/VpJexyDZVVk">YouTube</a>
-  · <a href="https://www.bilibili.com/video/BV1MVn66EEgq">哔哩哔哩</a>
+  观看视频：<a href="https://youtu.be/VpJexyDZVVk"><img src="docs/assets/youtube.svg" width="16" height="16" alt="" valign="middle"> YouTube</a>
+  · <a href="https://www.bilibili.com/video/BV1MVn66EEgq"><img src="docs/assets/bilibili.svg" width="16" height="16" alt="" valign="middle"> 哔哩哔哩</a>
 </p>
 
 ---
