@@ -24,6 +24,11 @@
   · <a href="LICENSE">MIT</a>
 </p>
 
+<p align="center">
+  Watch the video: <a href="https://youtu.be/VpJexyDZVVk"><img src="docs/assets/youtube.svg" width="16" height="16" alt="" valign="middle"> YouTube</a>
+  · <a href="https://www.bilibili.com/video/BV1MVn66EEgq"><img src="docs/assets/bilibili.svg" width="16" height="16" alt="" valign="middle"> Bilibili</a>
+</p>
+
 ---
 
 ## What it is
@@ -106,6 +111,11 @@ Logic pins are **3.3 V only** — full electrical limits in [docs/hardware.md](d
 | `cloud/cloudflare/` | Cloudflare Worker relay + OAuth (reference server) |
 | `hardware/` | SAIHub-Mini KiCad project |
 | `docs/` | Cookbook, hardware, build, protocol, and BYO-board docs |
+
+## Community
+
+- [Join our Discord](https://discord.gg/aZerprjxsc)
+- QQ group: **499504696**
 
 ## License
 
