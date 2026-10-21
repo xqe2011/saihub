@@ -103,6 +103,13 @@ SAIHub 是给编程智能体用的口袋 IO 板。烧好固件、连上 Wi-Fi、
 | `hardware/` | SAIHub-Mini KiCad 工程 |
 | `docs/` | 使用手册、硬件文档、构建指南、协议设计笔记、自备开发板指南 |
 
+## 社区交流
+
+- [加入 Discord](https://discord.gg/aZerprjxsc)
+- 扫描下方二维码加入 QQ 群 **499504696**：
+
+<a href="docs/assets/qq-group.png"><img src="docs/assets/qq-group.png" width="300" alt="SAIHub QQ 交流群 499504696 的二维码"></a>
+
 ## 许可证
 
 [MIT](LICENSE)。
