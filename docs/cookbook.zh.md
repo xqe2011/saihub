@@ -6,10 +6,10 @@
 
 ## 1. 烧录固件
 
-1. 从 [GitHub Releases](https://github.com/xqe2011/saihub/releases) 下载固件 `.bin`。这是 ESP32-C5（4 MB Flash）的**合并镜像**，一个文件包含全部固件。
+1. 从 [GitHub Releases](https://github.com/xqe2011/saihub/releases) 下载**合并**固件 `.bin`（`saihub-*-merged.bin`）。这是 ESP32-C5（4 MB Flash）的完整烧录镜像。单独的应用 `.bin` 与 `manifest.json` 供控制页 / API 做空中升级，不要用网页烧录器烧应用镜像。
 2. 用 **Chrome** 或 **Edge** 打开官方 [ESP 网页烧录器](https://espressif.github.io/esptool-js/)（依赖 Web Serial）。
 3. 先让板子进入**下载模式**（见下文），再点击 Connect，选择对应的 USB 串口。
-4. 把 `.bin` 烧到地址 **`0x0`**，芯片选 **ESP32-C5**。如果工具询问其他参数，Flash 模式 DIO、80 MHz、4 MB 即可。
+4. 把**合并** `.bin` 烧到地址 **`0x0`**，芯片选 **ESP32-C5**。如果工具询问其他参数，Flash 模式 DIO、80 MHz、4 MB 即可。若板上仍是仅 factory 分区的旧布局，需先完整烧一次合并镜像，之后才能 OTA。
 5. 烧录完成后拔掉 USB，重新插上（这次**不要**按住 BOOT），新固件即会启动。
 
 务必使用 **USB 数据线**；纯充电线没有数据芯，无法烧录。

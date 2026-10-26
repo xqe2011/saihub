@@ -523,6 +523,40 @@ body{
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-size:.9em;
 }
+.about-row{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:.5rem 1rem;
+  padding:.55rem 0;
+  border-bottom:1px solid var(--md-sys-color-outline-variant);
+}
+.about-row:last-of-type{border-bottom:0}
+.about-label{
+  font-size:.78rem;
+  font-weight:600;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.about-value{
+  font-size:1rem;
+  font-weight:600;
+  text-align:right;
+  word-break:break-word;
+}
+.about-mono{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:.85rem;
+  font-weight:500;
+}
+.about-update{
+  font-weight:600;
+  color:var(--md-sys-color-primary);
+  margin-left:.35rem;
+}
+#about-upgrade{margin-top:.85rem}
 @media (max-width:560px){
   .tab{font-size:.78rem;padding:.65rem .25rem}
 }
@@ -620,7 +654,7 @@ body{
   <header class="top">
     <div class="brand-block">
       <h1 class="brand">SAIHUB</h1>
-      <p class="subtitle">Control pins, power, UART, buzzer, and cloud grants.</p>
+      <p class="subtitle">Control pins, power, UART, buzzer, cloud grants, and updates.</p>
     </div>
     <button class="icon-btn" type="button" id="refresh" aria-label="Refresh" title="Refresh">
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
@@ -633,6 +667,7 @@ body{
     <button class="tab" type="button" role="tab" data-tab="uart" aria-selected="false">UART</button>
     <button class="tab" type="button" role="tab" data-tab="buzzer" aria-selected="false">Buzzer</button>
     <button class="tab" type="button" role="tab" data-tab="cloud" aria-selected="false">Cloud</button>
+    <button class="tab" type="button" role="tab" data-tab="about" aria-selected="false">About</button>
   </nav>
 
   <section class="sheet panel" id="panel-power" aria-label="Power" role="tabpanel">
@@ -672,6 +707,26 @@ body{
     <div id="grants"></div>
   </section>
 
+  <section class="sheet panel" id="panel-about" aria-label="About" role="tabpanel">
+    <h2 class="section-label">About</h2>
+    <article class="uart-card" id="about-card">
+      <div class="about-row">
+        <span class="about-label">Version</span>
+        <span class="about-value" id="about-version">—</span>
+      </div>
+      <div class="about-row">
+        <span class="about-label">Compiled</span>
+        <span class="about-value" id="about-compiled">—</span>
+      </div>
+      <div class="about-row">
+        <span class="about-label">Authentication Digest</span>
+        <span class="about-value about-mono" id="about-digest">—</span>
+      </div>
+      <p class="hint" id="about-ota-hint" hidden></p>
+      <button type="button" class="btn btn-filled" id="about-upgrade" hidden>Upgrade</button>
+    </article>
+  </section>
+
   <p class="footer">API for agents: <a href="/openapi.json">/openapi.json</a></p>
 </main>
 <div class="snack" id="snack" role="alert" aria-live="assertive"></div>
@@ -696,6 +751,9 @@ let busy=false;
 let snackTimer=null;
 let uartLog='';
 let buzzerPlaying=false;
+let aboutLoaded=false;
+let aboutPending=null;
+let aboutUpgrading=false;
 
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -953,10 +1011,95 @@ function updateLiveLevels(pins){
   });
 }
 
+function renderAboutVersion(version,available){
+  const el=document.getElementById('about-version');
+  if(!el) return;
+  let html=escapeHtml(version||'—');
+  if(available) html+='<span class="about-update">'+escapeHtml(available)+' available</span>';
+  el.innerHTML=html;
+}
+
+async function loadAbout(forceCheck){
+  const hint=document.getElementById('about-ota-hint');
+  const btn=document.getElementById('about-upgrade');
+  let currentVersion='';
+  try{
+    const info=await api('GET','/system');
+    currentVersion=info.version||'';
+    document.getElementById('about-compiled').textContent=info.compiledDate||'—';
+    document.getElementById('about-digest').textContent=info.digest||'—';
+    renderAboutVersion(currentVersion, aboutPending&&aboutPending.version);
+    aboutLoaded=true;
+  }catch(e){
+    showError(e.message||'Could not load system info.');
+    return;
+  }
+  if(!forceCheck&&aboutPending) return;
+  try{
+    const check=await api('POST','/system/ota/check');
+    if(check.updateAvailable){
+      aboutPending={url:check.url,sha256:check.sha256,version:check.version};
+      renderAboutVersion(check.currentVersion||currentVersion, check.version);
+      hint.hidden=false;
+      hint.textContent=check.changelog?String(check.changelog).slice(0,400):'A newer firmware image is available.';
+      btn.hidden=false;
+      btn.disabled=!!aboutUpgrading;
+      btn.textContent='Upgrade';
+    }else{
+      aboutPending=null;
+      renderAboutVersion(check.currentVersion||currentVersion, null);
+      hint.hidden=true;
+      btn.hidden=true;
+    }
+  }catch(e){
+    if(e.status===503){
+      aboutUpgrading=true;
+      hint.hidden=false;
+      hint.textContent='Firmware update in progress…';
+      btn.hidden=true;
+      return;
+    }
+    hint.hidden=false;
+    hint.textContent=e.message||'Could not check for updates.';
+    btn.hidden=true;
+  }
+}
+
+async function pollAboutOta(){
+  if(activeTab!=='about') return;
+  try{
+    const st=await api('GET','/system/ota');
+    const hint=document.getElementById('about-ota-hint');
+    const btn=document.getElementById('about-upgrade');
+    if(st.state==='upgrading'){
+      aboutUpgrading=true;
+      hint.hidden=false;
+      hint.textContent=st.progressPercent>=0
+        ?('Firmware update in progress… '+st.progressPercent+'%')
+        :'Firmware update in progress…';
+      btn.hidden=true;
+    }else if(st.state==='failed'){
+      aboutUpgrading=false;
+      hint.hidden=false;
+      hint.textContent=st.reason||'Firmware update failed.';
+      if(aboutPending){btn.hidden=false;btn.disabled=false;btn.textContent='Upgrade';}
+    }else if(aboutUpgrading){
+      aboutUpgrading=false;
+      hint.hidden=false;
+      hint.textContent='Update finished. The device may reboot shortly.';
+    }
+  }catch(_){}
+}
+
 async function refresh(force){
   if(busy&&!force) return;
   busy=true;
   try{
+    if(activeTab==='about'){
+      if(force||!aboutLoaded) await loadAbout(true);
+      else await pollAboutOta();
+      return;
+    }
     const [pinRes,p3,p5,uartRes]=await Promise.all([
       api('GET','/pin/'),
       api('GET','/power/3v3'),
@@ -988,7 +1131,9 @@ async function refresh(force){
     }
     if(activeTab==='uart') await pollUartReceive();
   }catch(e){
-    showError(e.message||'Could not load device state.');
+    if(!(e.status===503&&/Firmware update/i.test(e.message||''))){
+      showError(e.message||'Could not load device state.');
+    }
   }finally{
     busy=false;
   }
@@ -1177,11 +1322,31 @@ function setTab(name){
   document.querySelectorAll('.panel').forEach(panel=>{
     panel.classList.toggle('active',panel.id==='panel-'+name);
   });
+  if(name==='about') loadAbout(true);
 }
 
 document.querySelectorAll('.tab').forEach(btn=>{
   btn.onclick=()=>setTab(btn.dataset.tab);
 });
+
+document.getElementById('about-upgrade').onclick=async()=>{
+  if(!aboutPending||!aboutPending.url||!aboutPending.sha256) return;
+  const btn=document.getElementById('about-upgrade');
+  const hint=document.getElementById('about-ota-hint');
+  btn.disabled=true;
+  btn.textContent='Starting…';
+  try{
+    await api('POST','/system/ota/upgrade',{url:aboutPending.url,sha256:aboutPending.sha256});
+    aboutUpgrading=true;
+    hint.hidden=false;
+    hint.textContent='Firmware update in progress…';
+    btn.hidden=true;
+  }catch(e){
+    showError(e.message);
+    btn.disabled=false;
+    btn.textContent='Upgrade';
+  }
+};
 
 const buzzerSeqEl=document.getElementById('buzzer-sequence');
 const buzzerPlayEl=document.getElementById('buzzer-play');

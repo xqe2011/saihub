@@ -6,10 +6,10 @@ Flash the board, join Wi-Fi, and hand an MCP URL to Cursor, Claude Code, or Code
 
 ## 1. Flash firmware
 
-1. Download the firmware `.bin` from [GitHub Releases](https://github.com/xqe2011/saihub/releases). That file is a **merged** image for ESP32-C5 (4 MB flash).
+1. Download the **merged** firmware `.bin` (`saihub-*-merged.bin`) from [GitHub Releases](https://github.com/xqe2011/saihub/releases). That file is a full flash image for ESP32-C5 (4 MB flash). The separate app `.bin` and `manifest.json` are for over-the-air updates from the control UI / APIs, not for the web flasher.
 2. Open the official [ESP web flasher](https://espressif.github.io/esptool-js/) in **Chrome** or **Edge** (Web Serial is required).
 3. Put the board in **download mode** (see below), click Connect, pick the USB serial port.
-4. Flash the `.bin` at address **`0x0`**. Chip: **ESP32-C5**. Flash mode DIO, 80 MHz, 4 MB is fine if the tool asks.
+4. Flash the **merged** `.bin` at address **`0x0`**. Chip: **ESP32-C5**. Flash mode DIO, 80 MHz, 4 MB is fine if the tool asks. Boards that previously ran a factory-only image need this merged flash once before OTA works.
 5. When it finishes, unplug USB and plug it back in **without** holding BOOT so the new firmware runs.
 
 Use a **USB data cable**, not a charge-only cable.

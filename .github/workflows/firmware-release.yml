@@ -18,18 +18,33 @@ jobs:
     container: espressif/idf:v6.0.2
     steps:
       - uses: actions/checkout@v4
-      - name: Build and merge ESP32-C5 firmware
+      - name: Build and merge firmware
         shell: bash
         run: |
           . "$IDF_PATH/export.sh"
+          TARGET=esp32c5
           echo "$GITHUB_REF_NAME" > version.txt
-          idf.py set-target esp32c5
+          idf.py set-target "$TARGET"
           idf.py build
-          idf.py merge-bin --output saihub-esp32c5-merged.bin
+          idf.py merge-bin --output "saihub-${TARGET}-merged.bin"
           mkdir -p release
-          cp build/saihub-esp32c5-merged.bin release/
+          cp "build/saihub-${TARGET}-merged.bin" release/
+          cp build/saihub.bin "release/saihub-${TARGET}.bin"
+          python3 - <<'PY'
+          import struct, pathlib
+          data = pathlib.Path("build/saihub.bin").read_bytes()
+          # image header (24) + first segment header (8) → esp_app_desc_t
+          desc = data[32:32 + 256]
+          magic = struct.unpack_from("<I", desc, 0)[0]
+          if magic != 0xABCD5432:
+              raise SystemExit(f"bad app desc magic: {magic:#x}")
+          # app_elf_sha256 at offset 144 within esp_app_desc_t
+          sha = desc[144:176].hex()
+          pathlib.Path("release/app-elf-sha256.txt").write_text(sha + "\n")
+          print("app_elf_sha256", sha)
+          PY
           cd release
-          sha256sum saihub-esp32c5-merged.bin > SHA256SUMS
+          sha256sum "saihub-${TARGET}-merged.bin" "saihub-${TARGET}.bin" > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: firmware-release
@@ -79,8 +94,49 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         shell: bash
         run: |
+          set -euo pipefail
+          TARGET=esp32c5
+          APP_BIN="saihub-${TARGET}.bin"
+          MERGED_BIN="saihub-${TARGET}-merged.bin"
+          APP_SHA=$(tr -d '[:space:]' < release/app-elf-sha256.txt)
+          APP_SIZE=$(wc -c < "release/${APP_BIN}" | tr -d ' ')
+          RELEASE_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          NOTES_JSON=$(gh api "repos/${GH_REPO}/releases/generate-notes" -f tag_name="$RELEASE_TAG" -f target_commitish="$GITHUB_SHA")
+          printf '%s' "$NOTES_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("body") or "", end="")' > release/changelog.txt
+          FLASH_NOTE="Merged firmware: flash ${MERGED_BIN} at address 0x0. App image ${APP_BIN} is for OTA (see manifest.json). Verify downloads with SHA256SUMS."
+          FULL_NOTES=$(printf '%s\n\n%s' "$FLASH_NOTE" "$(cat release/changelog.txt)")
+          REPO_URL="https://github.com/${GH_REPO}"
+          APP_URL="${REPO_URL}/releases/download/${RELEASE_TAG}/${APP_BIN}"
+          export RELEASE_TAG RELEASE_DATE APP_URL APP_SHA APP_SIZE TARGET
+          python3 - <<'PY'
+          import json, os, pathlib
+          changelog = pathlib.Path("release/changelog.txt").read_text()
+          manifest = {
+            "version": os.environ["RELEASE_TAG"],
+            "releaseDate": os.environ["RELEASE_DATE"],
+            "changelog": changelog,
+            "images": [
+              {
+                "target": os.environ["TARGET"],
+                "url": os.environ["APP_URL"],
+                "sha256": os.environ["APP_SHA"],
+                "size": int(os.environ["APP_SIZE"]),
+              }
+            ],
+          }
+          pathlib.Path("release/manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          print(json.dumps(manifest, indent=2))
+          PY
+          (
+            cd release
+            sha256sum "$MERGED_BIN" "$APP_BIN" manifest.json > SHA256SUMS
+          )
           if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" \
-              --generate-notes --notes 'ESP32-C5 merged firmware: flash saihub-esp32c5-merged.bin at address 0x0. Verify with SHA256SUMS.'
+            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --notes "$FULL_NOTES"
           fi
-          gh release upload "$RELEASE_TAG" release/saihub-esp32c5-merged.bin release/SHA256SUMS --clobber
+          gh release upload "$RELEASE_TAG" \
+            "release/${MERGED_BIN}" \
+            "release/${APP_BIN}" \
+            release/manifest.json \
+            release/SHA256SUMS \
+            --clobber

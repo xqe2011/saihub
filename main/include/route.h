@@ -19,5 +19,6 @@ esp_err_t Route_BuzzerRegister(void);
 esp_err_t Route_PortalRegister(void);
 esp_err_t Route_ControlRegister(void);
 esp_err_t Route_CloudRegister(void);
+esp_err_t Route_SystemRegister(void);
 
 #endif

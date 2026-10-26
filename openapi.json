@@ -3,7 +3,7 @@
   "info": {
     "title": "SAIHub REST API",
     "version": "1.0.0",
-    "description": "JSON REST API for logical pins 0-7, PWM, UART, power rails (3v3/5v), the onboard buzzer, edge tracing, resource locks, on-device Lua 5.4 scripts, and cloud management. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}."
+    "description": "JSON REST API for logical pins 0-7, PWM, UART, power rails (3v3/5v), the onboard buzzer, edge tracing, resource locks, on-device Lua 5.4 scripts, system info / firmware update, and cloud management. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}. While a firmware update is in progress, non-system routes return 503."
   },
   "servers": [
     {
@@ -40,10 +40,248 @@
       "description": "Named cloud grants minted by pairing. LAN has no bearer; cloud-proxied calls require a live grantSecret."
     },
     {
+      "name": "system",
+      "description": "Device identity, running firmware metadata, and over-the-air update check/upgrade. System routes remain available while an update runs; other routes return 503."
+    },
+    {
       "name": "meta"
     }
   ],
   "paths": {
+    "/system": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "System info",
+        "description": "Authentication Digest, firmware version, and compiled date from the running image header.",
+        "responses": {
+          "200": {
+            "description": "System info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "digest",
+                    "version",
+                    "compiledDate"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "digest": {
+                      "type": "string",
+                      "description": "Authentication Digest"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "compiledDate": {
+                      "type": "string",
+                      "description": "Compile date and time from the image header"
+                    }
+                  }
+                },
+                "example": {
+                  "digest": "1A2B3C4D5E6F7G8H9J0KLMNPQRSTUVWX",
+                  "version": "0.1.3",
+                  "compiledDate": "Oct 26 2026 12:00:00"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/system/ota": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Live firmware update status",
+        "description": "Returns idle, upgrading, or failed. Does not include last check results.",
+        "responses": {
+          "200": {
+            "description": "OTA status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "idle",
+                        "upgrading",
+                        "failed"
+                      ]
+                    },
+                    "progressPercent": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 100,
+                      "description": "Present while upgrading when progress is known"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Present when state is failed"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/system/ota/check": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Check for firmware update",
+        "description": "Fetches the published update manifest. Side-effect-free; does not store the result on the device. When an update is available, the response includes url and sha256 for POST /system/ota/upgrade.",
+        "responses": {
+          "200": {
+            "description": "Check result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "updateAvailable",
+                    "currentVersion"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "updateAvailable": {
+                      "type": "boolean"
+                    },
+                    "currentVersion": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "releaseDate": {
+                      "type": "string"
+                    },
+                    "changelog": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "minLength": 64,
+                      "maxLength": 64
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Manifest fetch or parse failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Firmware update already in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/system/ota/upgrade": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Start firmware upgrade",
+        "description": "Starts a background upgrade. url and sha256 are required (from POST /system/ota/check). The image digest is verified before writing. Returns quickly; poll GET /system/ota. Device reboots on success. Non-system APIs return 503 while upgrading.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url",
+                  "sha256"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64,
+                    "pattern": "^[0-9a-fA-F]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Upgrade started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "started"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "started": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "503": {
+            "description": "Firmware update already in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/": {
       "get": {
         "tags": [

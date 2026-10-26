@@ -14,7 +14,7 @@ idf.py build
 idf.py merge-bin   # 生成网页烧录器使用的合并镜像（烧到 0x0）
 ```
 
-如果不使用合并镜像，各分区单独烧录的偏移为：bootloader `0x2000`、分区表 `0x8000`、应用 `0x10000`。
+如果不使用合并镜像，各分区单独烧录的偏移为：bootloader `0x2000`、分区表 `0x8000`，其后为 NVS / otadata / phy / 双 OTA 应用分区（见 `partitions.csv`）。首次刷入支持 OTA 的版本必须用**合并镜像**烧到 `0x0`（分区表变更）；之后可用 OTA 升级。
 
 与板子相关的配置全部集中在 `main/include/config.h`：
 
@@ -26,10 +26,12 @@ idf.py merge-bin   # 生成网页烧录器使用的合并镜像（烧到 0x0）
 | `CONFIG_BUZZER_PIN` | 蜂鸣器 |
 | `CONFIG_CLOUD_URL` | 中继源站，`ws://` 或 `wss://` 开头、不带路径；留空则禁用中继。自行部署时必须修改并重新编译 |
 | `CONFIG_WIFI_SSID` / `CONFIG_WIFI_PASSWORD` | Wi-Fi 凭据种子，仅在 NVS 中没有已保存凭据时使用 |
+| `CONFIG_OTA_MANIFEST_URL` | 更新检查用的 `manifest.json` HTTPS 地址 |
+| `CONFIG_OTA_IMAGE_TARGET` | 与 manifest 中 `target` 匹配的镜像目标字符串（需与 CI 一致） |
 
 为 SAIHub-Mini 以外的板子编译：见[自备开发板](bring-your-own-board.zh.md)。
 
-推送 git tag 会跑 [`.github/workflows/firmware-release.yml`](../.github/workflows/firmware-release.yml)。tag 名写入 `version.txt`（固件 version 字符串），合并镜像发布为 GitHub Release。若 GitHub Environment `cloud` 配有变量 `ADMIN_URL`（含 `/admin` 的管理地址，例如 `https://example.com/admin`）和密钥 `ADMIN_TOKEN`，会在 `cloud/cloudflare` 下执行 `bun run upload-file-cache -- <adminUrl> <token> <version>`（把 `mcp.json` 和 `openapi.json` POST 到 `{ADMIN_URL}/file-cache`）。缺任一配置则跳过上传。
+推送 git tag 会跑 [`.github/workflows/firmware-release.yml`](../.github/workflows/firmware-release.yml)。tag 名写入 `version.txt`（固件 version 字符串）。Release 会上传合并烧录镜像、供 OTA 使用的应用镜像、`manifest.json`（版本、发布日期、changelog、各 target 的应用 `url` / `sha256` / `size`）以及 `SHA256SUMS`。若 GitHub Environment `cloud` 配有变量 `ADMIN_URL`（含 `/admin` 的管理地址，例如 `https://example.com/admin`）和密钥 `ADMIN_TOKEN`，会在 `cloud/cloudflare` 下执行 `bun run upload-file-cache -- <adminUrl> <token> <version>`（把 `mcp.json` 和 `openapi.json` POST 到 `{ADMIN_URL}/file-cache`）。缺任一配置则跳过上传。
 
 ## Cloudflare Worker
 
