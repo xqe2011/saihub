@@ -53,7 +53,6 @@ void System_GetInfo(System_Info* out)
   const esp_app_desc_t* desc = esp_app_get_description();
   out->digest = Cloud_GetPublicKeyDigest();
   out->version = desc->version;
-  out->landingPageUrl = Cloud_GetLandingPageUrl();
   snprintf(out->compiledDate, sizeof(out->compiledDate), "%s %s", desc->date, desc->time);
 }
 

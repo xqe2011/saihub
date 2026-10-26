@@ -6,6 +6,7 @@
 #include "tool_call.h"
 
 #include "buzzer.h"
+#include "cloud.h"
 #include "config.h"
 #include "gpio_ctrl.h"
 #include "http_server.h"
@@ -863,6 +864,8 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
                   ToolCall_ArgStr(args, "lockId"));
   } else if (strcmp(name, "play_buzzer") == 0) {
     TOOL_CALL_LOG("%s play_buzzer(sequence=%s)", via, ToolCall_ArgStr(args, "sequence"));
+  } else if (strcmp(name, "get_cloud_status") == 0) {
+    TOOL_CALL_LOG("%s get_cloud_status()", via);
   } else if (strcmp(name, "get_system_info") == 0) {
     TOOL_CALL_LOG("%s get_system_info()", via);
   } else if (strcmp(name, "check_system_ota") == 0) {
@@ -882,6 +885,18 @@ static bool ToolCall_IsSystemTool(const char* name)
                   strcmp(name, "get_system_ota") == 0 || strcmp(name, "upgrade_system_ota") == 0);
 }
 
+static ToolCall_Result ToolCall_GetCloudStatus(void)
+{
+  Cloud_Status st;
+  Cloud_GetStatus(&st);
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return ToolCall_Fail(500, "internal");
+  cJSON_AddBoolToObject(root, "connected", st.connected);
+  cJSON_AddStringToObject(root, "landingPageUrl", st.landingPageUrl ? st.landingPageUrl : "");
+  cJSON_AddStringToObject(root, "reason", st.reason);
+  return ToolCall_Ok(root);
+}
+
 static ToolCall_Result ToolCall_GetSystemInfo(void)
 {
   System_Info info;
@@ -891,7 +906,6 @@ static ToolCall_Result ToolCall_GetSystemInfo(void)
   cJSON_AddStringToObject(root, "digest", info.digest ? info.digest : "");
   cJSON_AddStringToObject(root, "version", info.version ? info.version : "");
   cJSON_AddStringToObject(root, "compiledDate", info.compiledDate);
-  cJSON_AddStringToObject(root, "landingPageUrl", info.landingPageUrl ? info.landingPageUrl : "");
   return ToolCall_Ok(root);
 }
 
@@ -987,6 +1001,8 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
     r = ToolCall_UartFlush(args);
   else if (strcmp(name, "play_buzzer") == 0)
     r = ToolCall_PlayBuzzer(args);
+  else if (strcmp(name, "get_cloud_status") == 0)
+    r = ToolCall_GetCloudStatus();
   else if (strcmp(name, "get_system_info") == 0)
     r = ToolCall_GetSystemInfo();
   else if (strcmp(name, "check_system_ota") == 0)

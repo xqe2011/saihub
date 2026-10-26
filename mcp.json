@@ -967,8 +967,21 @@
       }
     },
     {
+      "name": "get_cloud_status",
+      "description": "Return whether the device is connected and authenticated to the cloud relay, the public landingPageUrl (empty when cloud relay is disabled), and a reason when not connected.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "get_system_info",
-      "description": "Return Authentication Digest, firmware version, compiled date from the running image header, and cloud landingPageUrl (empty when cloud relay is disabled).",
+      "description": "Return Authentication Digest, firmware version, and compiled date from the running image header.",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false

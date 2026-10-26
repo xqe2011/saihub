@@ -124,6 +124,23 @@ body{
 .url-row .btn{width:auto;flex:none;min-width:4.5rem;min-height:2.75rem;margin:0}
 #landing-card{margin-bottom:1.1rem}
 #landing-card .hint{margin:.35rem 0 0 .35rem}
+.cloud-status{
+  display:inline-flex;
+  align-items:center;
+  gap:.4rem;
+  margin:0 0 .75rem .35rem;
+  padding:.35rem .75rem;
+  border-radius:999px;
+  font-size:.72rem;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  background:var(--md-sys-color-surface-container);
+  color:var(--md-sys-color-on-surface-variant);
+}
+.cloud-status .dot{width:.5rem;height:.5rem;border-radius:999px;background:currentColor}
+.cloud-status.online{background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}
+.cloud-status.offline{background:var(--md-sys-color-error-container);color:var(--md-sys-color-on-error-container)}
 .url-row .btn.done{background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-on-secondary-container);box-shadow:none}
 .sheet{
   background:var(--md-sys-color-surface-container-lowest);
@@ -736,6 +753,7 @@ body{
   <section class="sheet panel" id="panel-cloud" aria-label="Cloud" role="tabpanel" data-i18n-aria="tab.cloud">
     <h2 class="section-label" data-i18n="cloud.landing">Landing page</h2>
     <article class="uart-card" id="landing-card">
+      <div class="cloud-status" id="cloud-status" role="status" aria-live="polite"><span class="dot"></span><span id="cloud-status-text">—</span></div>
       <div class="url-row">
         <div class="field">
           <input id="landing-url" type="text" readonly spellcheck="false" value=""/>
@@ -784,6 +802,7 @@ const I18N={
     'cloud.landing':'Landing page','cloud.landingUrl':'Landing URL',
     'cloud.landingHint':'Open this page to pair MCP clients or copy REST URLs. The device must be online on the cloud relay.',
     'cloud.landingMissing':'Landing page URL is unavailable. Cloud relay may be disabled on this firmware.',
+    'cloud.online':'Online','cloud.offline':'Offline','cloud.checking':'Checking',
     'cloud.grants':'Cloud grants',
     'cloud.empty':'No cloud grants. Pair an MCP client from the landing page, then hold BOOT for 3 seconds.',
     'cloud.unnamed':'Unnamed','cloud.created':'Created','cloud.revoke':'Revoke','cloud.revokeConfirm':'Revoke grant {secret}?',
@@ -816,6 +835,7 @@ const I18N={
     'cloud.landing':'落地页','cloud.landingUrl':'落地页链接',
     'cloud.landingHint':'打开此页面可为 MCP 客户端配对，或复制 REST 地址。设备需已在云中继上线。',
     'cloud.landingMissing':'无法获取落地页链接。此固件可能未启用云中继。',
+    'cloud.online':'在线','cloud.offline':'离线','cloud.checking':'检查中',
     'cloud.grants':'云授权',
     'cloud.empty':'暂无云授权。请先在落地页配对 MCP 客户端，然后按住 BOOT 三秒。',
     'cloud.unnamed':'未命名','cloud.created':'创建于','cloud.revoke':'撤销','cloud.revokeConfirm':'撤销授权 {secret}？',
@@ -892,6 +912,8 @@ let aboutLoaded=false;
 let aboutPending=null;
 let aboutUpgrading=false;
 let landingPageUrl='';
+let cloudConnected=null;
+let cloudReason='';
 let aboutCurrentVersion='';
 let lastPins=[];
 let lastRails=null;
@@ -1174,8 +1196,6 @@ async function loadAbout(forceCheck){
     aboutCurrentVersion=currentVersion;
     document.getElementById('about-compiled').textContent=info.compiledDate||'—';
     document.getElementById('about-digest').textContent=info.digest||'—';
-    landingPageUrl=info.landingPageUrl||'';
-    renderLandingUrl();
     renderAboutVersion(currentVersion, aboutPending&&aboutPending.version);
     aboutLoaded=true;
   }catch(e){
@@ -1271,14 +1291,21 @@ async function refresh(force){
     }
     lastPins=pins;
     lastUarts=uartRes.uarts||[];
-    if(force||!landingPageUrl){
+    if(force||activeTab==='cloud'||!landingPageUrl){
       try{
-        const info=await api('GET','/system');
-        landingPageUrl=info.landingPageUrl||'';
-        renderLandingUrl();
-      }catch(_){}
-    }else if(activeTab==='cloud'){
-      renderLandingUrl();
+        const st=await api('GET','/cloud/status');
+        landingPageUrl=st.landingPageUrl||'';
+        cloudConnected=!!st.connected;
+        cloudReason=st.reason||'';
+        renderCloudStatus();
+      }catch(e){
+        if(force||activeTab==='cloud'){
+          cloudConnected=false;
+          cloudReason=e.message||t('err.load');
+          renderCloudStatus();
+          if(activeTab==='cloud') showError(e.message);
+        }
+      }
     }
     if(force||activeTab==='cloud'||!grantsEl.children.length){
       try{
@@ -1306,14 +1333,27 @@ function formatCreatedAt(us){
   return d.toISOString().slice(0,19).replace('T',' ')+' UTC';
 }
 
-function renderLandingUrl(){
+function renderCloudStatus(){
+  const statusEl=document.getElementById('cloud-status');
+  const statusText=document.getElementById('cloud-status-text');
   const input=document.getElementById('landing-url');
   const hint=document.getElementById('landing-hint');
   const copyBtn=document.getElementById('landing-copy');
+  if(statusEl&&statusText){
+    statusEl.classList.toggle('online', cloudConnected===true);
+    statusEl.classList.toggle('offline', cloudConnected===false);
+    if(cloudConnected===true) statusText.textContent=t('cloud.online');
+    else if(cloudConnected===false) statusText.textContent=t('cloud.offline');
+    else statusText.textContent=t('cloud.checking');
+  }
   if(!input) return;
   input.value=landingPageUrl||'';
   input.placeholder=landingPageUrl?'':t('cloud.landingMissing');
-  if(hint) hint.textContent=landingPageUrl?t('cloud.landingHint'):t('cloud.landingMissing');
+  if(hint){
+    if(!landingPageUrl) hint.textContent=t('cloud.landingMissing');
+    else if(cloudConnected===false&&cloudReason) hint.textContent=cloudReason;
+    else hint.textContent=t('cloud.landingHint');
+  }
   if(copyBtn) copyBtn.disabled=!landingPageUrl;
 }
 function copyLandingUrl(){
@@ -1583,7 +1623,7 @@ function setLang(next){
   lang=(next==='zh')?'zh':'en';
   localStorage.setItem(LANG_KEY,lang);
   applyStaticI18n();
-  renderLandingUrl();
+  renderCloudStatus();
   if(lastRails) renderRails(lastRails);
   if(lastPins&&lastPins.length) renderPins(lastPins);
   if(lastUarts) renderUarts(lastUarts);
