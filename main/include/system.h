@@ -14,6 +14,7 @@
 typedef struct {
   const char* digest;
   const char* version;
+  const char* landingPageUrl; /* empty when cloud relay is disabled */
   char compiledDate[48];
 } System_Info;
 

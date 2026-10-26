@@ -268,78 +268,136 @@ body{
 }
 .field select:focus,.field input[type=file]:focus{border-color:var(--md-sys-color-primary);background:var(--md-sys-color-surface-container-high)}
 .split{margin-top:1.75rem}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.5rem}
+.lang-select{
+  appearance:none;border:0;border-radius:999px;padding:.45rem .85rem;font:inherit;font-size:.82rem;font-weight:650;
+  background:var(--md-sys-color-surface-container);color:var(--md-sys-color-on-surface-variant);cursor:pointer;flex:none;
+}
 </style>
 </head>
 <body>
 <main class="app">
-  <h1 class="brand">SAIHUB</h1>
-  <p class="subtitle">Device whitelist and file cache</p>
+  <header class="top">
+    <div>
+      <h1 class="brand">SAIHUB</h1>
+      <p class="subtitle" data-i18n="subtitle">Device whitelist and file cache</p>
+    </div>
+    <select class="lang-select" id="lang" aria-label="Language" title="Language">
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+    </select>
+  </header>
   <section class="sheet" id="login">
-    <h2 class="section-label">Admin</h2>
-    <p class="hint">Enter the admin token to manage allowed devices.</p>
+    <h2 class="section-label" data-i18n="admin">Admin</h2>
+    <p class="hint" data-i18n="loginHint">Enter the admin token to manage allowed devices.</p>
     <p class="error hidden" id="loginError"></p>
     <form id="loginForm">
       <div class="row">
         <div class="field">
           <input id="token" type="password" autocomplete="current-password" required/>
-          <label for="token">Admin token</label>
+          <label for="token" data-i18n="adminToken">Admin token</label>
         </div>
-        <button class="btn" type="submit">Enter</button>
+        <button class="btn" type="submit" data-i18n="enter">Enter</button>
       </div>
     </form>
   </section>
   <section class="sheet hidden" id="panel">
-    <h2 class="section-label">Add device</h2>
+    <h2 class="section-label" data-i18n="addDevice">Add device</h2>
     <p class="error hidden" id="panelError"></p>
     <form id="addForm">
       <div class="row">
         <div class="field">
           <input id="digest" class="mono" type="text" spellcheck="false" required/>
-          <label for="digest">Digest</label>
+          <label for="digest" data-i18n="digest">Digest</label>
         </div>
-        <button class="btn" type="submit">Add</button>
+        <button class="btn" type="submit" data-i18n="add">Add</button>
       </div>
     </form>
-    <h2 class="section-label">Whitelist</h2>
+    <h2 class="section-label" data-i18n="whitelist">Whitelist</h2>
     <div class="list" id="items"></div>
-    <p class="empty hidden" id="empty">No devices yet.</p>
+    <p class="empty hidden" id="empty" data-i18n="noDevices">No devices yet.</p>
     <div class="pager">
-      <button class="btn ghost" type="button" id="prev">Previous</button>
+      <button class="btn ghost" type="button" id="prev" data-i18n="previous">Previous</button>
       <span id="pageLabel"></span>
-      <button class="btn ghost" type="button" id="next">Next</button>
+      <button class="btn ghost" type="button" id="next" data-i18n="next">Next</button>
     </div>
-    <h2 class="section-label split">File cache</h2>
-    <p class="hint">Upload mcp.json or openapi.json for a firmware version. Cached tools/list and OpenAPI skip the device.</p>
+    <h2 class="section-label split" data-i18n="fileCache">File cache</h2>
+    <p class="hint" data-i18n="cacheHint">Upload mcp.json or openapi.json for a firmware version. Cached tools/list and OpenAPI skip the device.</p>
     <form id="cacheForm">
       <div class="stack">
         <div class="field">
           <input id="cacheVersion" class="mono" type="text" spellcheck="false" required maxlength="64"/>
-          <label for="cacheVersion">Version</label>
+          <label for="cacheVersion" data-i18n="version">Version</label>
         </div>
         <div class="field">
           <select id="cacheFilename" required>
             <option value="mcp.json">mcp.json</option>
             <option value="openapi.json">openapi.json</option>
           </select>
-          <label for="cacheFilename">Filename</label>
+          <label for="cacheFilename" data-i18n="filename">Filename</label>
         </div>
         <div class="field">
           <input id="cacheFile" type="file" accept="application/json,.json" required/>
-          <label for="cacheFile">JSON file</label>
+          <label for="cacheFile" data-i18n="jsonFile">JSON file</label>
         </div>
       </div>
-      <button class="btn" type="submit">Upload</button>
+      <button class="btn" type="submit" data-i18n="upload">Upload</button>
     </form>
     <div class="list" id="cacheItems"></div>
-    <p class="empty hidden" id="cacheEmpty">No cached files yet.</p>
+    <p class="empty hidden" id="cacheEmpty" data-i18n="noCache">No cached files yet.</p>
     <div class="pager">
-      <button class="btn ghost" type="button" id="cachePrev">Previous</button>
+      <button class="btn ghost" type="button" id="cachePrev" data-i18n="previous">Previous</button>
       <span id="cachePageLabel"></span>
-      <button class="btn ghost" type="button" id="cacheNext">Next</button>
+      <button class="btn ghost" type="button" id="cacheNext" data-i18n="next">Next</button>
     </div>
   </section>
 </main>
 <script>
+const I18N = {
+  en: {
+    language: "Language", subtitle: "Device whitelist and file cache", admin: "Admin",
+    loginHint: "Enter the admin token to manage allowed devices.", adminToken: "Admin token", enter: "Enter",
+    addDevice: "Add device", digest: "Digest", add: "Add", whitelist: "Whitelist", noDevices: "No devices yet.",
+    previous: "Previous", next: "Next", fileCache: "File cache",
+    cacheHint: "Upload mcp.json or openapi.json for a firmware version. Cached tools/list and OpenAPI skip the device.",
+    version: "Version", filename: "Filename", jsonFile: "JSON file", upload: "Upload", noCache: "No cached files yet.",
+    delete: "Delete", pageOf: "Page {page} of {pages}", bytes: "{n} bytes",
+    invalidToken: "Invalid admin token.", chooseJson: "Choose a JSON file.", mustJson: "File must be JSON.",
+  },
+  zh: {
+    language: "语言", subtitle: "设备白名单与文件缓存", admin: "管理",
+    loginHint: "输入管理令牌以管理允许的设备。", adminToken: "管理令牌", enter: "进入",
+    addDevice: "添加设备", digest: "摘要", add: "添加", whitelist: "白名单", noDevices: "暂无设备。",
+    previous: "上一页", next: "下一页", fileCache: "文件缓存",
+    cacheHint: "为固件版本上传 mcp.json 或 openapi.json。缓存命中时 tools/list 与 OpenAPI 不必访问设备。",
+    version: "版本", filename: "文件名", jsonFile: "JSON 文件", upload: "上传", noCache: "暂无缓存文件。",
+    delete: "删除", pageOf: "第 {page} / {pages} 页", bytes: "{n} 字节",
+    invalidToken: "管理令牌无效。", chooseJson: "请选择 JSON 文件。", mustJson: "文件必须是 JSON。",
+  },
+};
+const LANG_KEY = "saihub-lang";
+function detectLang() {
+  const saved = localStorage.getItem(LANG_KEY);
+  if (saved === "en" || saved === "zh") return saved;
+  return (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+let lang = detectLang();
+function t(key, vars) {
+  const table = I18N[lang] || I18N.en;
+  let s = table[key] != null ? table[key] : I18N.en[key] != null ? I18N.en[key] : key;
+  if (vars) Object.keys(vars).forEach((k) => { s = s.replace(new RegExp("\\\\{" + k + "\\\\}", "g"), String(vars[k])); });
+  return s;
+}
+function applyI18n() {
+  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  const langEl = document.getElementById("lang");
+  if (langEl) {
+    langEl.value = lang;
+    langEl.setAttribute("aria-label", t("language"));
+    langEl.title = t("language");
+  }
+  document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+}
 const TOKEN_KEY = "saihub-admin-token";
 const loginEl = document.getElementById("login");
 const panelEl = document.getElementById("panel");
@@ -398,7 +456,7 @@ async function load() {
   if (res.status === 401) {
     sessionStorage.removeItem(TOKEN_KEY);
     setAuthed(false);
-    showError(loginError, "Invalid admin token.");
+    showError(loginError, t("invalidToken"));
     return;
   }
   if (!res.ok) {
@@ -430,14 +488,14 @@ async function load() {
     const del = document.createElement("button");
     del.className = "btn danger";
     del.type = "button";
-    del.textContent = "Delete";
+    del.textContent = t("delete");
     del.addEventListener("click", () => remove(item.digest));
     row.appendChild(meta);
     row.appendChild(del);
     itemsEl.appendChild(row);
   }
   const pages = Math.max(1, Math.ceil(total / pageSize) || 1);
-  pageLabel.textContent = "Page " + page + " of " + pages;
+  pageLabel.textContent = t("pageOf", { page, pages });
   prevBtn.disabled = page <= 1;
   nextBtn.disabled = page >= pages;
   await loadCache();
@@ -448,7 +506,7 @@ async function loadCache() {
   if (res.status === 401) {
     sessionStorage.removeItem(TOKEN_KEY);
     setAuthed(false);
-    showError(loginError, "Invalid admin token.");
+    showError(loginError, t("invalidToken"));
     return;
   }
   if (!res.ok) {
@@ -471,20 +529,20 @@ async function loadCache() {
     name.textContent = item.version + " / " + item.filename;
     const when = document.createElement("p");
     when.className = "when";
-    when.textContent = item.bytes + " bytes";
+    when.textContent = t("bytes", { n: item.bytes });
     meta.appendChild(name);
     meta.appendChild(when);
     const del = document.createElement("button");
     del.className = "btn danger";
     del.type = "button";
-    del.textContent = "Delete";
+    del.textContent = t("delete");
     del.addEventListener("click", () => removeCache(item.version, item.filename));
     row.appendChild(meta);
     row.appendChild(del);
     cacheItemsEl.appendChild(row);
   }
   const pages = Math.max(1, Math.ceil(cacheTotal / cachePageSize) || 1);
-  cachePageLabel.textContent = "Page " + cachePage + " of " + pages;
+  cachePageLabel.textContent = t("pageOf", { page: cachePage, pages });
   cachePrevBtn.disabled = cachePage <= 1;
   cacheNextBtn.disabled = cachePage >= pages;
 }
@@ -539,13 +597,13 @@ document.getElementById("cacheForm").addEventListener("submit", async (event) =>
   const filename = document.getElementById("cacheFilename").value;
   const file = document.getElementById("cacheFile").files[0];
   if (!file) {
-    showError(panelError, "Choose a JSON file.");
+    showError(panelError, t("chooseJson"));
     return;
   }
   let content;
   try { content = JSON.parse(await file.text()); }
   catch {
-    showError(panelError, "File must be JSON.");
+    showError(panelError, t("mustJson"));
     return;
   }
   const { res, body } = await api("/admin/file-cache", { method: "POST", body: JSON.stringify({ version, filename, content }) });
@@ -563,6 +621,13 @@ nextBtn.addEventListener("click", async () => { page += 1; await load(); });
 cachePrevBtn.addEventListener("click", async () => { if (cachePage > 1) { cachePage -= 1; await loadCache(); } });
 cacheNextBtn.addEventListener("click", async () => { cachePage += 1; await loadCache(); });
 
+document.getElementById("lang").onchange = (e) => {
+  lang = e.target.value === "zh" ? "zh" : "en";
+  localStorage.setItem(LANG_KEY, lang);
+  applyI18n();
+  if (token()) load();
+};
+applyI18n();
 if (token()) load();
 </script>
 </body>

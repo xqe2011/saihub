@@ -891,6 +891,7 @@ static ToolCall_Result ToolCall_GetSystemInfo(void)
   cJSON_AddStringToObject(root, "digest", info.digest ? info.digest : "");
   cJSON_AddStringToObject(root, "version", info.version ? info.version : "");
   cJSON_AddStringToObject(root, "compiledDate", info.compiledDate);
+  cJSON_AddStringToObject(root, "landingPageUrl", info.landingPageUrl ? info.landingPageUrl : "");
   return ToolCall_Ok(root);
 }
 

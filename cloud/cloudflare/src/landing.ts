@@ -206,6 +206,12 @@ body{
   box-shadow:var(--md-sys-elevation-1);
 }
 .cta:active{transform:scale(.985)}
+.top-right{display:flex;flex-direction:column;align-items:flex-end;gap:.5rem;flex:none}
+.lang-select{
+  appearance:none;border:0;border-radius:999px;padding:.45rem .85rem;font:inherit;font-size:.82rem;font-weight:650;
+  background:var(--md-sys-color-surface-container);color:var(--md-sys-color-on-surface-variant);cursor:pointer;
+}
+.lang-select:focus{outline:2px solid var(--md-sys-color-primary);outline-offset:2px}
 </style>
 </head>
 <body>
@@ -213,34 +219,40 @@ body{
   <header class="top">
     <div>
       <h1 class="brand">SAIHUB</h1>
-      <p class="subtitle">Give your agent a hand.</p>
+      <p class="subtitle" data-i18n="subtitle">Give your agent a hand.</p>
     </div>
-    <div class="pill" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Checking</span></div>
+    <div class="top-right">
+      <select class="lang-select" id="lang" aria-label="Language" title="Language">
+        <option value="en">English</option>
+        <option value="zh">中文</option>
+      </select>
+      <div class="pill" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Checking</span></div>
+    </div>
   </header>
   <section class="sheet">
-    <h2 class="section-label">MCP</h2>
-    <p class="hint">Paste the MCP URL into Cursor, Claude Code, or Codex CLI. The client completes OAuth in the browser.</p>
+    <h2 class="section-label" data-i18n="mcp">MCP</h2>
+    <p class="hint" data-i18n="mcpHint">Paste the MCP URL into Cursor, Claude Code, or Codex CLI. The client completes OAuth in the browser.</p>
     <div class="rows">
       <div class="row">
         <div class="row-head">
           <div class="field">
             <input id="mcp" type="text" readonly spellcheck="false" value="${escapeAttr(mcpUrl)}"/>
-            <label for="mcp">MCP URL</label>
+            <label for="mcp" data-i18n="mcpUrl">MCP URL</label>
           </div>
-          <button class="copy" type="button" data-copy="mcp">Copy</button>
+          <button class="copy" type="button" data-copy="mcp" data-i18n="copy">Copy</button>
         </div>
       </div>
     </div>
-    <div class="or">OR</div>
-    <h2 class="section-label">REST + OpenAPI</h2>
+    <div class="or" data-i18n="or">OR</div>
+    <h2 class="section-label" data-i18n="rest">REST + OpenAPI</h2>
     <div class="rows">
       <div class="row">
         <div class="row-head">
           <div class="field">
             <input id="rest" type="text" readonly spellcheck="false" value="${escapeAttr(restUrl)}"/>
-            <label for="rest">REST API base</label>
+            <label for="rest" data-i18n="restBase">REST API base</label>
           </div>
-          <button class="copy" type="button" data-copy="rest">Copy</button>
+          <button class="copy" type="button" data-copy="rest" data-i18n="copy">Copy</button>
         </div>
       </div>
       <div class="row">
@@ -249,23 +261,66 @@ body{
             <input id="openapi" type="text" readonly spellcheck="false" value="${escapeAttr(openapiUrl)}"/>
             <label for="openapi">openapi.json</label>
           </div>
-          <button class="copy" type="button" data-copy="openapi">Copy</button>
+          <button class="copy" type="button" data-copy="openapi" data-i18n="copy">Copy</button>
         </div>
       </div>
     </div>
-    <p class="hint">REST calls need a routing token first.</p>
-    <a class="cta" href="${escapeAttr(tokenUrl)}">Get routing token</a>
+    <p class="hint" data-i18n="restHint">REST calls need a routing token first.</p>
+    <a class="cta" href="${escapeAttr(tokenUrl)}" data-i18n="getToken">Get routing token</a>
   </section>
 </main>
 <script>
 const onlineUrl = ${JSON.stringify(onlineUrl)};
+const I18N = {
+  en: {
+    subtitle: "Give your agent a hand.", language: "Language", mcp: "MCP",
+    mcpHint: "Paste the MCP URL into Cursor, Claude Code, or Codex CLI. The client completes OAuth in the browser.",
+    mcpUrl: "MCP URL", or: "OR", rest: "REST + OpenAPI", restBase: "REST API base",
+    restHint: "REST calls need a routing token first.", getToken: "Get routing token",
+    copy: "Copy", copied: "Copied", online: "Online", offline: "Offline", checking: "Checking",
+  },
+  zh: {
+    subtitle: "给智能体一只手。", language: "语言", mcp: "MCP",
+    mcpHint: "将 MCP 链接粘贴到 Cursor、Claude Code 或 Codex CLI。客户端会在浏览器中完成 OAuth。",
+    mcpUrl: "MCP 链接", or: "或", rest: "REST + OpenAPI", restBase: "REST API 根地址",
+    restHint: "REST 调用需先获取路由令牌。", getToken: "获取路由令牌",
+    copy: "复制", copied: "已复制", online: "在线", offline: "离线", checking: "检查中",
+  },
+};
+const LANG_KEY = "saihub-lang";
+function detectLang() {
+  const saved = localStorage.getItem(LANG_KEY);
+  if (saved === "en" || saved === "zh") return saved;
+  const nav = (navigator.language || "").toLowerCase();
+  return nav.startsWith("zh") ? "zh" : "en";
+}
+let lang = detectLang();
+let onlineState = null;
+function t(key) {
+  const table = I18N[lang] || I18N.en;
+  return table[key] != null ? table[key] : I18N.en[key] != null ? I18N.en[key] : key;
+}
+function applyI18n() {
+  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  const langEl = document.getElementById("lang");
+  if (langEl) {
+    langEl.value = lang;
+    langEl.setAttribute("aria-label", t("language"));
+    langEl.title = t("language");
+  }
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  setOnline(onlineState);
+}
 const statusEl = document.getElementById("status");
 const statusText = document.getElementById("statusText");
 
 function setOnline(online) {
+  onlineState = online;
   statusEl.classList.toggle("online", online === true);
   statusEl.classList.toggle("offline", online === false);
-  statusText.textContent = online === true ? "Online" : online === false ? "Offline" : "Checking";
+  statusText.textContent = online === true ? t("online") : online === false ? t("offline") : t("checking");
 }
 
 async function refreshOnline() {
@@ -285,10 +340,10 @@ function copyFrom(id, button) {
   input.setSelectionRange(0, input.value.length);
   const done = () => {
     button.classList.add("done");
-    button.textContent = "Copied";
+    button.textContent = t("copied");
     setTimeout(() => {
       button.classList.remove("done");
-      button.textContent = "Copy";
+      button.textContent = t("copy");
     }, 1500);
   };
   const fallback = () => {
@@ -306,6 +361,12 @@ function copyFrom(id, button) {
 document.querySelectorAll("[data-copy]").forEach((button) => {
   button.addEventListener("click", () => copyFrom(button.getAttribute("data-copy"), button));
 });
+document.getElementById("lang").onchange = (e) => {
+  lang = e.target.value === "zh" ? "zh" : "en";
+  localStorage.setItem(LANG_KEY, lang);
+  applyI18n();
+};
+applyI18n();
 refreshOnline();
 setInterval(refreshOnline, 5000);
 </script>

@@ -54,6 +54,7 @@ static const char* tag = "SAIHub-Cloud";
 static psa_key_id_t signingKey = PSA_KEY_ID_NULL;
 static uint8_t publicKey[CLOUD_PUBLIC_KEY_BYTES];
 static char publicKeyDigest[CLOUD_DIGEST_CHARS + 1];
+static char landingPageUrl[576];
 static bool initialized;
 static esp_err_t Cloud_StartRelay(void);
 static bool Cloud_Base64Encode(const uint8_t* data, size_t length, char* out, size_t capacity);
@@ -436,6 +437,25 @@ esp_err_t Cloud_GetPublicKey(uint8_t out[CLOUD_PUBLIC_KEY_BYTES], size_t* lenOut
 const char* Cloud_GetPublicKeyDigest(void)
 {
   return publicKeyDigest;
+}
+
+const char* Cloud_GetLandingPageUrl(void)
+{
+  landingPageUrl[0] = '\0';
+  if (CONFIG_CLOUD_URL[0] == '\0' || publicKeyDigest[0] == '\0') return landingPageUrl;
+  const char* scheme;
+  const char* host;
+  if (strncmp(CONFIG_CLOUD_URL, "wss://", 6) == 0) {
+    scheme = "https://";
+    host = CONFIG_CLOUD_URL + 6;
+  } else if (strncmp(CONFIG_CLOUD_URL, "ws://", 5) == 0) {
+    scheme = "http://";
+    host = CONFIG_CLOUD_URL + 5;
+  } else {
+    return landingPageUrl;
+  }
+  snprintf(landingPageUrl, sizeof(landingPageUrl), "%s%s/cloud/landing/%s/page", scheme, host, publicKeyDigest);
+  return landingPageUrl;
 }
 
 esp_err_t Cloud_SignChallenge(const uint8_t* challenge, size_t challengeLen,
@@ -896,7 +916,7 @@ static void Cloud_RelayTask(void* arg)
         atomic_store(&authenticated, success);
         if (!success) Cloud_RequestRestart("cloud authentication rejected");
         if (success) {
-          ESP_LOGI(tag, "cloud authentication ready, access landing page at http%s/cloud/landing/%s/page", &CONFIG_CLOUD_URL[0] + 2, Cloud_GetPublicKeyDigest());
+          ESP_LOGI(tag, "cloud authentication ready, access landing page at %s", Cloud_GetLandingPageUrl());
         } else {
           ESP_LOGW(tag, "cloud authentication rejected");
         }

@@ -26,6 +26,8 @@
 /* The digest is Base58Check(payload = SHA-256(publicKey)[0..19]). */
 esp_err_t Cloud_GetPublicKey(uint8_t out[CLOUD_PUBLIC_KEY_BYTES], size_t* lenOut);
 const char* Cloud_GetPublicKeyDigest(void);
+/** HTTPS/HTTP landing page for this digest, or "" when cloud relay is disabled. */
+const char* Cloud_GetLandingPageUrl(void);
 
 /* Signs SHA-256(CLOUD_AUTH_DOMAIN || NUL || challenge); signature is raw r || s. */
 esp_err_t Cloud_SignChallenge(const uint8_t* challenge, size_t challengeLen,

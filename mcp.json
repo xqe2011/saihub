@@ -968,7 +968,7 @@
     },
     {
       "name": "get_system_info",
-      "description": "Return Authentication Digest, firmware version, and compiled date from the running image header.",
+      "description": "Return Authentication Digest, firmware version, compiled date from the running image header, and cloud landingPageUrl (empty when cloud relay is disabled).",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false

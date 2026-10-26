@@ -54,7 +54,7 @@
           "system"
         ],
         "summary": "System info",
-        "description": "Authentication Digest, firmware version, and compiled date from the running image header.",
+        "description": "Authentication Digest, firmware version, compiled date from the running image header, and cloud landing page URL.",
         "responses": {
           "200": {
             "description": "System info",
@@ -65,7 +65,8 @@
                   "required": [
                     "digest",
                     "version",
-                    "compiledDate"
+                    "compiledDate",
+                    "landingPageUrl"
                   ],
                   "additionalProperties": false,
                   "properties": {
@@ -79,13 +80,18 @@
                     "compiledDate": {
                       "type": "string",
                       "description": "Compile date and time from the image header"
+                    },
+                    "landingPageUrl": {
+                      "type": "string",
+                      "description": "Public cloud landing page for this device. Empty when cloud relay is disabled."
                     }
                   }
                 },
                 "example": {
                   "digest": "1A2B3C4D5E6F7G8H9J0KLMNPQRSTUVWX",
                   "version": "0.1.3",
-                  "compiledDate": "Oct 26 2026 12:00:00"
+                  "compiledDate": "Oct 26 2026 12:00:00",
+                  "landingPageUrl": "https://saihub.example.com/cloud/landing/1A2B3C4D5E6F7G8H9J0KLMNPQRSTUVWX/page"
                 }
               }
             }
