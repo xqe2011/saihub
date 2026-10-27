@@ -63,4 +63,10 @@
 #define CONFIG_SCRIPT_WAITER_STACK_BYTES 4096
 #define CONFIG_SCRIPT_MAX_OUTPUT_BYTES 4096
 
+/* OTA: latest-release manifest (app images only). Target must match CI image target. */
+#define CONFIG_OTA_MANIFEST_URL "https://github.com/xqe2011/saihub/releases/latest/download/manifest.json"
+#define CONFIG_OTA_IMAGE_TARGET "esp32c5"
+#define CONFIG_OTA_HTTP_TIMEOUT_MS 30000
+#define CONFIG_OTA_MANIFEST_MAX_BYTES (8 * 1024)
+
 #endif

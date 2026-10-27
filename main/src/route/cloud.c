@@ -1,5 +1,5 @@
 /**
- * @name Cloud grant-secret routes
+ * @name Cloud grant-secret and status routes
  * @file cloud.c
  * @author xqe2011
  */
@@ -9,9 +9,30 @@
 #include "http_server.h"
 #include "tool.h"
 
+#include <cJSON.h>
 #include <string.h>
 
 static const char* tag = "SAIHub-CloudGrant";
+
+static cJSON* Route_CloudStatusJson(void)
+{
+  Cloud_Status st;
+  Cloud_GetStatus(&st);
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return NULL;
+  cJSON_AddBoolToObject(root, "connected", st.connected);
+  cJSON_AddStringToObject(root, "landingPageUrl", st.landingPageUrl ? st.landingPageUrl : "");
+  cJSON_AddStringToObject(root, "reason", st.reason);
+  return root;
+}
+
+static esp_err_t Route_CloudStatusHandler(HttpServer_Context* ctx)
+{
+  HttpServer_LogCall(ctx);
+  cJSON* root = Route_CloudStatusJson();
+  if (!root) return HttpServer_SendError(ctx, 500, "internal");
+  return HttpServer_SendJson(ctx, 200, root);
+}
 
 static esp_err_t Route_CloudGrantListHandler(HttpServer_Context* ctx)
 {
@@ -41,12 +62,13 @@ static esp_err_t Route_CloudGrantDeleteHandler(HttpServer_Context* ctx)
 }
 
 static const HttpServer_Route uris[] = {
+    {.uri = "/cloud/status", .method = HTTP_SERVER_GET, .handler = Route_CloudStatusHandler},
     {.uri = "/cloud/grant-secrets", .method = HTTP_SERVER_GET, .handler = Route_CloudGrantListHandler},
     {.uri = "/cloud/grant-secrets/*", .method = HTTP_SERVER_DELETE, .handler = Route_CloudGrantDeleteHandler},
 };
 
 esp_err_t Route_CloudRegister(void)
 {
-  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(HttpServer_RegisterRoutes(uris, TOOL_GET_ARRAY_LENGTH(uris)), "register cloud grant uri failed");
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(HttpServer_RegisterRoutes(uris, TOOL_GET_ARRAY_LENGTH(uris)), "register cloud uri failed");
   return ESP_OK;
 }

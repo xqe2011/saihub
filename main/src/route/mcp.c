@@ -9,6 +9,7 @@
 #include "http_server.h"
 #include "lock.h"
 #include "script.h"
+#include "system.h"
 #include "tool.h"
 #include "tool_call.h"
 
@@ -274,6 +275,8 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
       "(pins:[1]). Power tools use rail=3v3|5v. UART tools use configure_uart, uart_transmit, uart_receive, uart_flush. "
       "play_buzzer plays a Morse-style sequence of . and - and blocks until it finishes (one at a time). "
       "create_lock resources use type pin with pins, type power with rails, or type uart with ids. "
+      "System tools: get_system_info, check_system_ota, get_system_ota, upgrade_system_ota (url+sha256 required). "
+      "While a firmware update runs, non-system tools return 503. "
       "For multi-step on-device work, use run_script with a Lua script that calls the same tools.");
   return result;
 }
@@ -484,10 +487,18 @@ static esp_err_t Route_McpDispatch(HttpServer_Context* ctx, cJSON* msg)
     if (cJSON_IsObject(params)) {
       cJSON* nameItem = cJSON_GetObjectItem(params, "name");
       if (cJSON_IsString(nameItem) && nameItem->valuestring != NULL) {
-        if (strcmp(nameItem->valuestring, "run_script") == 0) return Route_McpDispatchRunScript(ctx, id, params);
-        if (strcmp(nameItem->valuestring, "trace_pins") == 0) return Route_McpDispatchTrace(ctx, id, params);
-        if (strcmp(nameItem->valuestring, "play_buzzer") == 0) return Route_McpDispatchBuzzer(ctx, id, params);
+        const char* toolName = nameItem->valuestring;
+        bool systemTool = strncmp(toolName, "get_system_", 11) == 0 || strncmp(toolName, "check_system_", 13) == 0 ||
+                          strncmp(toolName, "upgrade_system_", 15) == 0;
+        if (System_OtaIsUpgrading() && !systemTool) {
+          return HttpServer_SendError(ctx, 503, "Firmware update in progress.");
+        }
+        if (strcmp(toolName, "run_script") == 0) return Route_McpDispatchRunScript(ctx, id, params);
+        if (strcmp(toolName, "trace_pins") == 0) return Route_McpDispatchTrace(ctx, id, params);
+        if (strcmp(toolName, "play_buzzer") == 0) return Route_McpDispatchBuzzer(ctx, id, params);
       }
+    } else if (System_OtaIsUpgrading()) {
+      return HttpServer_SendError(ctx, 503, "Firmware update in progress.");
     }
     return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpHandleToolsCall(ctx, params)));
   }

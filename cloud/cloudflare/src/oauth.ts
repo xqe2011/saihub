@@ -237,7 +237,8 @@ function pairingPageHtml(digest: string, redirectUri: string, state: string): st
 <title>Pair device</title>
 <style>
 body{margin:0;font-family:system-ui,sans-serif;background:#f5fbf7;color:#171d1b;display:flex;min-height:100vh;align-items:center;justify-content:center}
-main{max-width:28rem;padding:1.5rem;text-align:center}
+main{position:relative;max-width:28rem;width:100%;padding:1.5rem;text-align:center}
+.lang-select{position:absolute;top:1rem;right:1rem;appearance:none;border:0;border-radius:999px;padding:.4rem .75rem;font:inherit;font-size:.82rem;font-weight:650;background:#cee9dc;color:#072019;cursor:pointer}
 h1{font-size:1.25rem;margin:0 0 .75rem}
 p{margin:.5rem 0;color:#3f4945}
 .err{color:#ba1a1a}
@@ -245,6 +246,10 @@ p{margin:.5rem 0;color:#3f4945}
 </head>
 <body>
 <main>
+  <select class="lang-select" id="lang" aria-label="Language" title="Language">
+    <option value="en">English</option>
+    <option value="zh">中文</option>
+  </select>
   <h1 id="status">Name this client</h1>
   <p id="detail">Choose a name so you can revoke this grant later on the device.</p>
   <p id="count" hidden></p>
@@ -259,6 +264,35 @@ p{margin:.5rem 0;color:#3f4945}
   const digest = ${JSON.stringify(digest)};
   const redirectUri = ${JSON.stringify(redirectUri)};
   const state = ${JSON.stringify(state)};
+  const I18N = {
+    en: {
+      language: "Language", title: "Name this client",
+      detail: "Choose a name so you can revoke this grant later on the device.",
+      pair: "Pair", failed: "Pairing failed", failedDetail: "Choose a name so you can revoke this grant later on the device.",
+      enterName: "Enter a name.", holdBoot: "Hold BOOT for 3 seconds",
+      grantDetail: "This approval will create grant \`{name}\`.", remaining: "{s}s remaining",
+    },
+    zh: {
+      language: "语言", title: "为此客户端命名",
+      detail: "选择一个名称，以便稍后在设备上撤销此授权。",
+      pair: "配对", failed: "配对失败", failedDetail: "选择一个名称，以便稍后在设备上撤销此授权。",
+      enterName: "请输入名称。", holdBoot: "按住 BOOT 三秒",
+      grantDetail: "确认后将创建授权 \`{name}\`。", remaining: "剩余 {s} 秒",
+    },
+  };
+  const LANG_KEY = "saihub-lang";
+  function detectLang() {
+    const saved = localStorage.getItem(LANG_KEY);
+    if (saved === "en" || saved === "zh") return saved;
+    return (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+  }
+  let lang = detectLang();
+  function t(key, vars) {
+    const table = I18N[lang] || I18N.en;
+    let s = table[key] != null ? table[key] : I18N.en[key] != null ? I18N.en[key] : key;
+    if (vars) Object.keys(vars).forEach((k) => { s = s.replace(new RegExp("\\\\{" + k + "\\\\}", "g"), String(vars[k])); });
+    return s;
+  }
   const statusEl = document.getElementById('status');
   const detailEl = document.getElementById('detail');
   const countEl = document.getElementById('count');
@@ -266,7 +300,31 @@ p{margin:.5rem 0;color:#3f4945}
   const errEl = document.getElementById('err');
   const nameEl = document.getElementById('name');
   const startEl = document.getElementById('start');
+  const langEl = document.getElementById('lang');
   let countdownTimer = null;
+  let pairingName = '';
+  let expiredAt = 0;
+  let phase = 'idle';
+
+  function applyIdleCopy() {
+    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+    document.title = t("title");
+    langEl.value = lang;
+    langEl.setAttribute("aria-label", t("language"));
+    langEl.title = t("language");
+    startEl.textContent = t("pair");
+    if (phase === "idle" || phase === "failed") {
+      statusEl.textContent = phase === "failed" ? t("failed") : t("title");
+      detailEl.textContent = phase === "failed" ? t("failedDetail") : t("detail");
+    } else if (phase === "waiting") {
+      statusEl.textContent = t("holdBoot");
+      detailEl.textContent = t("grantDetail", { name: pairingName });
+      if (expiredAt) {
+        const left = Math.max(0, expiredAt - Math.floor(Date.now() / 1000));
+        countEl.textContent = t("remaining", { s: left });
+      }
+    }
+  }
 
   function fail(msg) {
     if (countdownTimer) clearInterval(countdownTimer);
@@ -275,15 +333,16 @@ p{margin:.5rem 0;color:#3f4945}
     countEl.hidden = true;
     nameEl.disabled = false;
     startEl.disabled = false;
-    statusEl.textContent = 'Pairing failed';
-    detailEl.textContent = 'Choose a name so you can revoke this grant later on the device.';
-    errEl.textContent = msg || 'Pairing failed.';
+    phase = "failed";
+    applyIdleCopy();
+    errEl.textContent = msg || t("failed");
   }
 
-  function startCountdown(expiredAt) {
+  function startCountdown(nextExpiredAt) {
+    expiredAt = nextExpiredAt;
     const tick = () => {
       const left = Math.max(0, expiredAt - Math.floor(Date.now() / 1000));
-      countEl.textContent = left + 's remaining';
+      countEl.textContent = t("remaining", { s: left });
       if (left <= 0 && countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
@@ -300,15 +359,23 @@ p{margin:.5rem 0;color:#3f4945}
     location.href = target.toString();
   }
 
+  langEl.onchange = (e) => {
+    lang = e.target.value === "zh" ? "zh" : "en";
+    localStorage.setItem(LANG_KEY, lang);
+    applyIdleCopy();
+  };
+  applyIdleCopy();
+
   startEl.onclick = async () => {
     const name = (nameEl.value || '').trim();
     if (!name) {
-      errEl.textContent = 'Enter a name.';
+      errEl.textContent = t("enterName");
       return;
     }
     errEl.textContent = '';
     startEl.disabled = true;
     nameEl.disabled = true;
+    pairingName = name;
     try {
       const sessionRes = await fetch('/cloud/pairing/session', {
         method: 'POST',
@@ -320,8 +387,8 @@ p{margin:.5rem 0;color:#3f4945}
 
       formEl.hidden = true;
       countEl.hidden = false;
-      statusEl.textContent = 'Hold BOOT for 3 seconds';
-      detailEl.textContent = 'This approval will create grant \`' + name + '\`.';
+      phase = "waiting";
+      applyIdleCopy();
       startCountdown(Number(sessionBody.expiredAt) || 0);
 
       const tokenRes = await fetch('/cloud/pairing/token', {
@@ -335,7 +402,7 @@ p{margin:.5rem 0;color:#3f4945}
       if (countdownTimer) clearInterval(countdownTimer);
       redirectWithCode(tokenBody.routingToken);
     } catch (e) {
-      fail(e && e.message ? e.message : 'Pairing failed.');
+      fail(e && e.message ? e.message : t("failed"));
     }
   };
 })();
@@ -454,28 +521,77 @@ body{
 .empty.show{display:block}
 .token{display:none}
 .token.show{display:block}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.5rem}
+.lang-select{
+  appearance:none;border:0;border-radius:999px;padding:.45rem .85rem;font:inherit;font-size:.82rem;font-weight:650;
+  background:var(--md-sys-color-surface-container);color:var(--md-sys-color-on-surface-variant);cursor:pointer;flex:none;
+}
 </style>
 </head>
 <body>
 <main class="app">
-  <h1 class="brand">SAIHUB</h1>
-  <p class="subtitle">Routing token for REST calls.</p>
+  <header class="top">
+    <div>
+      <h1 class="brand">SAIHUB</h1>
+      <p class="subtitle" data-i18n="subtitle">Routing token for REST calls.</p>
+    </div>
+    <select class="lang-select" id="lang" aria-label="Language" title="Language">
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+    </select>
+  </header>
   <section class="sheet">
-    <h2 class="section-label">Bearer token</h2>
-    <p class="hint empty" id="missing">No routing token in this URL. Get one from the landing page.</p>
+    <h2 class="section-label" data-i18n="bearer">Bearer token</h2>
+    <p class="hint empty" id="missing" data-i18n="missing">No routing token in this URL. Get one from the landing page.</p>
     <div class="token" id="tokenBox">
-      <p class="hint">Send this as <code>Authorization: Bearer</code> on REST requests.</p>
+      <p class="hint" data-i18n-html="hint">Send this as <code>Authorization: Bearer</code> on REST requests.</p>
       <div class="row-head">
         <div class="field">
           <input id="token" type="text" readonly spellcheck="false" value=""/>
-          <label for="token">Routing token</label>
+          <label for="token" data-i18n="token">Routing token</label>
         </div>
-        <button class="copy" type="button" id="copy">Copy</button>
+        <button class="copy" type="button" id="copy" data-i18n="copy">Copy</button>
       </div>
     </div>
   </section>
 </main>
 <script>
+const I18N = {
+  en: {
+    language: "Language", subtitle: "Routing token for REST calls.", bearer: "Bearer token",
+    missing: "No routing token in this URL. Get one from the landing page.",
+    hint: "Send this as <code>Authorization: Bearer</code> on REST requests.",
+    token: "Routing token", copy: "Copy", copied: "Copied",
+  },
+  zh: {
+    language: "语言", subtitle: "用于 REST 调用的路由令牌。", bearer: "Bearer 令牌",
+    missing: "此链接中没有路由令牌。请从落地页获取。",
+    hint: "在 REST 请求中作为 <code>Authorization: Bearer</code> 发送。",
+    token: "路由令牌", copy: "复制", copied: "已复制",
+  },
+};
+const LANG_KEY = "saihub-lang";
+function detectLang() {
+  const saved = localStorage.getItem(LANG_KEY);
+  if (saved === "en" || saved === "zh") return saved;
+  return (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+let lang = detectLang();
+function t(key) {
+  const table = I18N[lang] || I18N.en;
+  return table[key] != null ? table[key] : I18N.en[key] != null ? I18N.en[key] : key;
+}
+function applyI18n() {
+  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  const langEl = document.getElementById("lang");
+  if (langEl) {
+    langEl.value = lang;
+    langEl.setAttribute("aria-label", t("language"));
+    langEl.title = t("language");
+  }
+  document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-html]").forEach((el) => { el.innerHTML = t(el.dataset.i18nHtml); });
+}
 const token = new URLSearchParams(location.search).get("code") || "";
 const missingEl = document.getElementById("missing");
 const tokenBox = document.getElementById("tokenBox");
@@ -490,10 +606,10 @@ if (token) {
 }
 function done() {
   button.classList.add("done");
-  button.textContent = "Copied";
+  button.textContent = t("copied");
   setTimeout(() => {
     button.classList.remove("done");
-    button.textContent = "Copy";
+    button.textContent = t("copy");
   }, 1500);
 }
 function fallback() {
@@ -512,6 +628,12 @@ button.addEventListener("click", () => {
     fallback();
   }
 });
+document.getElementById("lang").onchange = (e) => {
+  lang = e.target.value === "zh" ? "zh" : "en";
+  localStorage.setItem(LANG_KEY, lang);
+  applyI18n();
+};
+applyI18n();
 </script>
 </body>
 </html>`;

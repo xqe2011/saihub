@@ -6,13 +6,16 @@
 #include "tool_call.h"
 
 #include "buzzer.h"
+#include "cloud.h"
 #include "config.h"
 #include "gpio_ctrl.h"
 #include "http_server.h"
 #include "lock.h"
+#include "system.h"
 #include "tool.h"
 #include "uart_ctrl.h"
 
+#include <esp_err.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -861,9 +864,90 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
                   ToolCall_ArgStr(args, "lockId"));
   } else if (strcmp(name, "play_buzzer") == 0) {
     TOOL_CALL_LOG("%s play_buzzer(sequence=%s)", via, ToolCall_ArgStr(args, "sequence"));
+  } else if (strcmp(name, "get_cloud_status") == 0) {
+    TOOL_CALL_LOG("%s get_cloud_status()", via);
+  } else if (strcmp(name, "get_system_info") == 0) {
+    TOOL_CALL_LOG("%s get_system_info()", via);
+  } else if (strcmp(name, "check_system_ota") == 0) {
+    TOOL_CALL_LOG("%s check_system_ota()", via);
+  } else if (strcmp(name, "get_system_ota") == 0) {
+    TOOL_CALL_LOG("%s get_system_ota()", via);
+  } else if (strcmp(name, "upgrade_system_ota") == 0) {
+    TOOL_CALL_LOG("%s upgrade_system_ota(url=%s)", via, ToolCall_ArgStr(args, "url"));
   } else {
     TOOL_CALL_LOG("%s %s(...)", via, name);
   }
+}
+
+static bool ToolCall_IsSystemTool(const char* name)
+{
+  return name && (strcmp(name, "get_system_info") == 0 || strcmp(name, "check_system_ota") == 0 ||
+                  strcmp(name, "get_system_ota") == 0 || strcmp(name, "upgrade_system_ota") == 0);
+}
+
+static ToolCall_Result ToolCall_GetCloudStatus(void)
+{
+  Cloud_Status st;
+  Cloud_GetStatus(&st);
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return ToolCall_Fail(500, "internal");
+  cJSON_AddBoolToObject(root, "connected", st.connected);
+  cJSON_AddStringToObject(root, "landingPageUrl", st.landingPageUrl ? st.landingPageUrl : "");
+  cJSON_AddStringToObject(root, "reason", st.reason);
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_GetSystemInfo(void)
+{
+  System_Info info;
+  System_GetInfo(&info);
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return ToolCall_Fail(500, "internal");
+  cJSON_AddStringToObject(root, "digest", info.digest ? info.digest : "");
+  cJSON_AddStringToObject(root, "version", info.version ? info.version : "");
+  cJSON_AddStringToObject(root, "compiledDate", info.compiledDate);
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_CheckSystemOta(void)
+{
+  char reason[192];
+  cJSON* root = System_OtaCheck(reason, sizeof(reason));
+  if (!root) return ToolCall_Fail(System_OtaIsUpgrading() ? 503 : 502, reason[0] ? reason : "Could not check for updates.");
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_GetSystemOta(void)
+{
+  System_OtaStatus st;
+  System_OtaGetStatus(&st);
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return ToolCall_Fail(500, "internal");
+  const char* state = "idle";
+  if (st.state == SYSTEM_OTA_UPGRADING) state = "upgrading";
+  else if (st.state == SYSTEM_OTA_FAILED) state = "failed";
+  cJSON_AddStringToObject(root, "state", state);
+  if (st.progressPercent >= 0) cJSON_AddNumberToObject(root, "progressPercent", st.progressPercent);
+  if (st.state == SYSTEM_OTA_FAILED && st.reason[0]) cJSON_AddStringToObject(root, "reason", st.reason);
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_UpgradeSystemOta(cJSON* args)
+{
+  cJSON* url = cJSON_GetObjectItem(args, "url");
+  cJSON* sha = cJSON_GetObjectItem(args, "sha256");
+  if (!cJSON_IsString(url) || !url->valuestring || !url->valuestring[0] || !cJSON_IsString(sha) || !sha->valuestring) {
+    return ToolCall_Err("url and sha256 are required.");
+  }
+  char reason[192];
+  esp_err_t err = System_OtaUpgrade(url->valuestring, sha->valuestring, reason, sizeof(reason));
+  if (err == ESP_ERR_INVALID_ARG) return ToolCall_Err(reason);
+  if (err == ESP_ERR_INVALID_STATE) return ToolCall_Fail(503, reason);
+  if (err != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return ToolCall_Fail(500, "internal");
+  cJSON_AddBoolToObject(root, "started", true);
+  return ToolCall_Ok(root);
 }
 
 ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
@@ -877,7 +961,9 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
   ToolCall_LogInvoke(via, name, args);
 
   ToolCall_Result r;
-  if (strcmp(name, "list_pins") == 0)
+  if (System_OtaIsUpgrading() && !ToolCall_IsSystemTool(name)) {
+    r = ToolCall_Fail(503, "Firmware update in progress.");
+  } else if (strcmp(name, "list_pins") == 0)
     r = ToolCall_ListPins();
   else if (strcmp(name, "configure_pins") == 0)
     r = ToolCall_ConfigurePins(args);
@@ -915,6 +1001,16 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
     r = ToolCall_UartFlush(args);
   else if (strcmp(name, "play_buzzer") == 0)
     r = ToolCall_PlayBuzzer(args);
+  else if (strcmp(name, "get_cloud_status") == 0)
+    r = ToolCall_GetCloudStatus();
+  else if (strcmp(name, "get_system_info") == 0)
+    r = ToolCall_GetSystemInfo();
+  else if (strcmp(name, "check_system_ota") == 0)
+    r = ToolCall_CheckSystemOta();
+  else if (strcmp(name, "get_system_ota") == 0)
+    r = ToolCall_GetSystemOta();
+  else if (strcmp(name, "upgrade_system_ota") == 0)
+    r = ToolCall_UpgradeSystemOta(args);
   else {
     char reason[96];
     snprintf(reason, sizeof(reason), "Unknown tool: %s", name);

@@ -11,6 +11,7 @@
 #include "gpio_ctrl.h"
 #include "ntp.h"
 #include "route.h"
+#include "system.h"
 #include "tool.h"
 #include "wifi.h"
 
@@ -328,10 +329,28 @@ esp_err_t HttpServer_AsyncComplete(HttpServer_Context* ctx)
   return ret;
 }
 
+static bool HttpServer_UriIsSystem(const char* uri)
+{
+  if (!uri) return false;
+  size_t n = strcspn(uri, "?");
+  return n >= 7 && strncmp(uri, "/system", 7) == 0 && (n == 7 || uri[7] == '/' || uri[7] == '?');
+}
+
+static bool HttpServer_UriAllowsDuringOta(const char* uri)
+{
+  if (HttpServer_UriIsSystem(uri)) return true;
+  /* MCP stays reachable so system_* tools can run; non-system tools are gated in MCP dispatch. */
+  size_t n = strcspn(uri ? uri : "", "?");
+  return n == 4 && strncmp(uri, "/mcp", 4) == 0;
+}
+
 static esp_err_t HttpServer_RouteAdapter(httpd_req_t* req)
 {
   const HttpServer_Route* route = req->user_ctx;
   HttpServer_Context ctx = {.req = req, .from = "local"};
+  if (System_OtaIsUpgrading() && !HttpServer_UriAllowsDuringOta(req->uri)) {
+    return HttpServer_SendError(&ctx, 503, "Firmware update in progress.");
+  }
   return route->handler(&ctx);
 }
 
@@ -1017,6 +1036,10 @@ esp_err_t HttpServer_DispatchCloud(cJSON* request, HttpServer_CloudWrite write, 
     ret = HttpServer_SendOptions(&ctx);
     goto cleanup;
   }
+  if (System_OtaIsUpgrading() && !HttpServer_UriAllowsDuringOta(path->valuestring)) {
+    ret = HttpServer_SendError(&ctx, 503, "Firmware update in progress.");
+    goto cleanup;
+  }
   size_t pathLen = strcspn(path->valuestring, "?");
   HttpServer_Handler handler = NULL;
   bool foundPath = false;
@@ -1082,6 +1105,7 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PowerRegister(), "power routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ScriptRegister(), "script routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_BuzzerRegister(), "buzzer routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_SystemRegister(), "system routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_McpRegister(), "mcp routes failed");
   }
 

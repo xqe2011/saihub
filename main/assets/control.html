@@ -40,6 +40,7 @@
   --md-sys-elevation-2:0 1px 2px rgba(0,0,0,.16),0 2px 6px 2px rgba(0,0,0,.08);
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{
   margin:0;
   min-height:100%;
@@ -100,6 +101,32 @@ body{
 .icon-btn:active{transform:scale(.96)}
 .icon-btn:hover{box-shadow:var(--md-sys-elevation-1)}
 .icon-btn svg{width:1.35rem;height:1.35rem}
+.top-actions{display:flex;align-items:center;gap:.5rem;flex:none}
+.lang-select{
+  appearance:none;
+  -webkit-appearance:none;
+  border:0;
+  border-radius:999px;
+  padding:.55rem .9rem;
+  font:inherit;
+  font-size:.82rem;
+  font-weight:650;
+  text-align:center;
+  text-align-last:center;
+  background:var(--md-sys-color-secondary-container);
+  color:var(--md-sys-color-on-secondary-container);
+  cursor:pointer;
+  min-height:2.75rem;
+}
+.lang-select:focus{outline:2px solid var(--md-sys-color-primary);outline-offset:2px}
+.url-row{display:flex;align-items:flex-end;gap:.65rem}
+.url-row .field{flex:1;min-width:0}
+.url-row .field input{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:.82rem;
+}
+.url-row .btn{width:auto;flex:none;min-width:5.5rem;margin:0}
+.url-row .btn.done{background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-on-secondary-container);box-shadow:none}
 .sheet{
   background:var(--md-sys-color-surface-container-lowest);
   border-radius:var(--md-sys-shape-corner-extra-large);
@@ -160,6 +187,23 @@ body{
 }
 @media (min-width:1200px){
   .card-grid{grid-template-columns:repeat(4, minmax(0, 1fr))}
+}
+.two-col-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:.65rem;
+  align-items:start;
+}
+@media (min-width:760px){
+  .two-col-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}
+}
+.three-col-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:.65rem;
+}
+@media (min-width:640px){
+  .three-col-grid{grid-template-columns:repeat(3, minmax(0, 1fr))}
 }
 .rail{
   display:flex;
@@ -263,9 +307,13 @@ body{
   background:var(--md-sys-color-surface-container-highest);
   color:var(--md-sys-color-on-surface-variant);
 }
-.level-pill.high{
+.level-pill.high,.level-pill.online{
   background:var(--md-sys-color-primary-container);
   color:var(--md-sys-color-on-primary-container);
+}
+.level-pill.offline{
+  background:var(--md-sys-color-error-container);
+  color:var(--md-sys-color-on-error-container);
 }
 .level-pill .dot{
   width:.45rem;
@@ -362,7 +410,9 @@ body{
   min-width:0;
 }
 .field input[type=number],
-.field input[type=text]{
+.field input[type=text],
+.field select,
+.field textarea{
   width:100%;
   appearance:none;
   border:1px solid var(--md-sys-color-outline);
@@ -376,8 +426,15 @@ body{
   outline:none;
   transition:border-color .15s, background .15s;
 }
+.field textarea{
+  min-height:5.25rem;
+  resize:vertical;
+  line-height:1.4;
+}
 .field input[type=number]:focus,
-.field input[type=text]:focus{
+.field input[type=text]:focus,
+.field select:focus,
+.field textarea:focus{
   border-color:var(--md-sys-color-primary);
   background:var(--md-sys-color-surface-container-high);
 }
@@ -391,9 +448,17 @@ body{
   pointer-events:none;
   transition:top .15s, font-size .15s, color .15s;
 }
+.field textarea + label{
+  top:1.1rem;
+  transform:none;
+}
 .field input:focus + label,
-.field input:not(:placeholder-shown) + label{
-  top:.55rem;
+.field input:not(:placeholder-shown) + label,
+.field select + label,
+.field select:focus + label,
+.field textarea:focus + label,
+.field textarea:not(:placeholder-shown) + label{
+  top:.45rem;
   transform:none;
   font-size:.72rem;
   font-weight:600;
@@ -427,7 +492,7 @@ body{
   font-weight:650;
   letter-spacing:.02em;
   cursor:pointer;
-  transition:box-shadow .15s, opacity .15s, transform .12s;
+  transition:box-shadow .15s, opacity .15s, transform .12s, background .15s;
 }
 .btn:active{transform:scale(.985)}
 .btn-filled{
@@ -446,73 +511,40 @@ body{
   background:var(--md-sys-color-secondary-container);
   color:var(--md-sys-color-on-secondary-container);
 }
-.uart-card{
-  padding:1rem;
-  border-radius:var(--md-sys-shape-corner-large);
-  background:var(--md-sys-color-surface-container);
-  display:flex;
-  flex-direction:column;
-  gap:.85rem;
-}
+.btn-tonal:hover{box-shadow:var(--md-sys-elevation-1)}
 .uart-grid{
   display:grid;
   grid-template-columns:1fr;
-  gap:.75rem;
+  gap:.65rem;
 }
-@media (min-width:560px){
+@media (min-width:480px){
   .uart-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
-.field select,
-.field textarea{
-  width:100%;
-  border:0;
-  border-radius:var(--md-sys-shape-corner-medium);
-  background:var(--md-sys-color-surface-container-highest);
-  color:var(--md-sys-color-on-surface);
-  font:inherit;
-  padding:1.15rem .95rem .45rem;
-  outline:none;
-}
-.field textarea{
-  min-height:5.5rem;
-  resize:vertical;
-  line-height:1.4;
-}
-.field select:focus,
-.field textarea:focus{
-  background:var(--md-sys-color-surface-container-high);
-}
-.field select + label,
-.field textarea + label,
-.field select:focus + label,
-.field textarea:focus + label,
-.field textarea:not(:placeholder-shown) + label{
-  top:.55rem;
-  transform:none;
-  font-size:.72rem;
-  font-weight:600;
-  color:var(--md-sys-color-primary);
-}
 .rx-log{
-  min-height:10rem;
-  max-height:18rem;
+  min-height:9.5rem;
+  max-height:16rem;
   overflow:auto;
   white-space:pre-wrap;
   word-break:break-word;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-size:.82rem;
   line-height:1.45;
-  padding:.9rem 1rem;
+  padding:.85rem 1rem;
   border-radius:var(--md-sys-shape-corner-medium);
   background:var(--md-sys-color-surface-container-highest);
   color:var(--md-sys-color-on-surface);
+}
+.rx-log:empty::before{
+  content:attr(data-placeholder);
+  color:var(--md-sys-color-on-surface-variant);
+  opacity:.7;
 }
 .row-actions{
   display:flex;
   flex-wrap:wrap;
   gap:.55rem;
 }
-.row-actions .btn{width:auto;flex:1;min-width:7rem}
+.row-actions .btn{width:auto;flex:1;min-width:6.5rem}
 .hint{
   margin:0;
   font-size:.78rem;
@@ -523,33 +555,63 @@ body{
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-size:.9em;
 }
-@media (max-width:560px){
-  .tab{font-size:.78rem;padding:.65rem .25rem}
+.about-row{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:.5rem 1rem;
+  padding:.5rem 0;
+  border-bottom:1px solid var(--md-sys-color-outline-variant);
 }
-.grant-list{
-  list-style:none;
-  margin:0;
-  padding:0;
+.about-row:last-of-type{border-bottom:0}
+.about-label{
+  font-size:.78rem;
+  font-weight:600;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:var(--md-sys-color-on-surface-variant);
 }
-.grant-item{
+.about-value{
+  font-size:.95rem;
+  font-weight:600;
+  text-align:right;
+  word-break:break-word;
+}
+.about-mono{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:.82rem;
+  font-weight:500;
+}
+.about-value a{
+  color:var(--md-sys-color-primary);
+  text-decoration:none;
+}
+.about-value a:hover{text-decoration:underline}
+.about-update{
+  font-weight:600;
+  color:var(--md-sys-color-primary);
+  margin-left:.35rem;
+}
+.resource-item{
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:1rem;
-  padding:.9rem .15rem .9rem .35rem;
-  border-bottom:1px solid var(--md-sys-color-outline-variant);
-  min-width:0;
-}
-.grant-item:last-child{border-bottom:0}
-.grant-meta{min-width:0;flex:1}
-.grant-name{
-  display:block;
+  padding:.95rem 1.1rem;
+  border-radius:var(--md-sys-shape-corner-large);
+  background:var(--md-sys-color-surface-container);
+  text-decoration:none;
+  color:var(--md-sys-color-on-surface);
   font-weight:650;
-  font-size:1rem;
+  font-size:.95rem;
+  transition:background .15s, box-shadow .15s;
+}
+.resource-item:hover{
+  background:var(--md-sys-color-secondary-container);
+  color:var(--md-sys-color-on-secondary-container);
+  box-shadow:var(--md-sys-elevation-1);
 }
 .grant-secret{
-  display:block;
-  margin-top:.2rem;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-size:.78rem;
   line-height:1.4;
@@ -557,15 +619,7 @@ body{
   color:var(--md-sys-color-on-surface-variant);
 }
 .grant-created{
-  display:block;
-  margin-top:.15rem;
   font-size:.72rem;
-  color:var(--md-sys-color-on-surface-variant);
-}
-.grant-item .btn{width:auto;flex:none;min-width:6.5rem}
-.empty{
-  margin:0;
-  padding:1rem;
   color:var(--md-sys-color-on-surface-variant);
 }
 .snack{
@@ -609,6 +663,9 @@ body{
   from{opacity:0;transform:translateY(10px)}
   to{opacity:1;transform:none}
 }
+@media (max-width:560px){
+  .tab{font-size:.78rem;padding:.65rem .25rem}
+}
 @media (max-width:360px){
   .app{padding-left:.75rem;padding-right:.75rem}
   .sheet{padding:1rem .75rem 1.1rem}
@@ -620,69 +677,234 @@ body{
   <header class="top">
     <div class="brand-block">
       <h1 class="brand">SAIHUB</h1>
-      <p class="subtitle">Control pins, power, UART, buzzer, and cloud grants.</p>
+      <p class="subtitle" data-i18n="subtitle">Control pins, power, UART, buzzer, cloud grants, and updates.</p>
     </div>
-    <button class="icon-btn" type="button" id="refresh" aria-label="Refresh" title="Refresh">
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
-    </button>
+    <div class="top-actions">
+      <select class="lang-select" id="lang" aria-label="Language" title="Language">
+        <option value="en">English</option>
+        <option value="zh">中文</option>
+      </select>
+      <button class="icon-btn" type="button" id="refresh" aria-label="Refresh" title="Refresh" data-i18n-aria="refresh" data-i18n-title="refresh">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+      </button>
+    </div>
   </header>
 
-  <nav class="tabs" role="tablist" aria-label="Sections">
-    <button class="tab" type="button" role="tab" data-tab="power" aria-selected="false">Power</button>
-    <button class="tab active" type="button" role="tab" data-tab="pins" aria-selected="true">Pins</button>
-    <button class="tab" type="button" role="tab" data-tab="uart" aria-selected="false">UART</button>
-    <button class="tab" type="button" role="tab" data-tab="buzzer" aria-selected="false">Buzzer</button>
-    <button class="tab" type="button" role="tab" data-tab="cloud" aria-selected="false">Cloud</button>
+  <nav class="tabs" role="tablist" aria-label="Sections" data-i18n-aria="sections">
+    <button class="tab" type="button" role="tab" data-tab="power" aria-selected="false" data-i18n="tab.power">Power</button>
+    <button class="tab active" type="button" role="tab" data-tab="pins" aria-selected="true" data-i18n="tab.pins">Pins</button>
+    <button class="tab" type="button" role="tab" data-tab="uart" aria-selected="false" data-i18n="tab.uart">UART</button>
+    <button class="tab" type="button" role="tab" data-tab="buzzer" aria-selected="false" data-i18n="tab.buzzer">Buzzer</button>
+    <button class="tab" type="button" role="tab" data-tab="cloud" aria-selected="false" data-i18n="tab.cloud">Cloud</button>
+    <button class="tab" type="button" role="tab" data-tab="about" aria-selected="false" data-i18n="tab.about">About</button>
   </nav>
 
-  <section class="sheet panel" id="panel-power" aria-label="Power" role="tabpanel">
-    <h2 class="section-label">Power</h2>
+  <section class="sheet panel" id="panel-power" aria-label="Power" role="tabpanel" data-i18n-aria="tab.power">
+    <h2 class="section-label" data-i18n="tab.power">Power</h2>
     <div class="card-grid" id="rails"></div>
   </section>
 
-  <section class="sheet panel active" id="panel-pins" aria-label="Pins" role="tabpanel">
-    <h2 class="section-label">Pins</h2>
+  <section class="sheet panel active" id="panel-pins" aria-label="Pins" role="tabpanel" data-i18n-aria="tab.pins">
+    <h2 class="section-label" data-i18n="tab.pins">Pins</h2>
     <div class="card-grid" id="pins"></div>
   </section>
 
-  <section class="sheet panel" id="panel-uart" aria-label="UART" role="tabpanel">
-    <h2 class="section-label">UART</h2>
-    <div id="uarts"></div>
+  <section class="sheet panel" id="panel-uart" aria-label="UART" role="tabpanel" data-i18n-aria="tab.uart">
+    <h2 class="section-label" data-i18n="tab.uart">UART</h2>
+    <div class="two-col-grid" id="uarts"></div>
   </section>
 
-  <section class="sheet panel" id="panel-buzzer" aria-label="Buzzer" role="tabpanel">
-    <h2 class="section-label">Buzzer</h2>
-    <article class="uart-card">
-      <div class="field">
-        <input type="text" id="buzzer-sequence" maxlength="64" placeholder=" " value="" autocomplete="off" spellcheck="false"/>
-        <label>Sequence</label>
+  <section class="sheet panel" id="panel-buzzer" aria-label="Buzzer" role="tabpanel" data-i18n-aria="tab.buzzer">
+    <h2 class="section-label" data-i18n="tab.buzzer">Buzzer</h2>
+    <article class="pin-card">
+      <div class="pin-head">
+        <h3 class="pin-title" data-i18n="tab.buzzer">Buzzer</h3>
+        <span class="level-pill" id="buzzer-pill"><span class="dot"></span><span id="buzzer-pill-text" data-i18n="buzzer.ready">Idle</span></span>
       </div>
-      <p class="hint">Morse-style pattern. <code>.</code> is a short beep, <code>-</code> is a long beep, space is an extra gap. Play waits until the sequence finishes.</p>
       <div class="modes" id="buzzer-presets">
-        <button type="button" class="chip" data-seq=".">Short</button>
-        <button type="button" class="chip" data-seq="-">Long</button>
+        <button type="button" class="chip" data-seq="." data-i18n="buzzer.short">Short</button>
+        <button type="button" class="chip" data-seq=".." data-i18n="buzzer.double">Double</button>
+        <button type="button" class="chip" data-seq="-" data-i18n="buzzer.long">Long</button>
         <button type="button" class="chip" data-seq="...---...">SOS</button>
       </div>
-      <button type="button" class="btn btn-filled" id="buzzer-play">Play</button>
+      <div class="field">
+        <input type="text" id="buzzer-sequence" maxlength="64" placeholder=" " value="" autocomplete="off" spellcheck="false"/>
+        <label data-i18n="buzzer.sequence">Sequence</label>
+      </div>
+      <p class="hint" data-i18n-html="buzzer.hint">Morse-style pattern. <code>.</code> is a short beep, <code>-</code> is a long beep, space is an extra gap. Play waits until the sequence finishes.</p>
+      <button type="button" class="btn btn-filled" id="buzzer-play" data-i18n="buzzer.play">Play</button>
     </article>
   </section>
 
-  <section class="sheet panel" id="panel-cloud" aria-label="Cloud" role="tabpanel">
-    <h2 class="section-label">Cloud grants</h2>
-    <div id="grants"></div>
+  <section class="sheet panel" id="panel-cloud" aria-label="Cloud" role="tabpanel" data-i18n-aria="tab.cloud">
+    <h2 class="section-label" data-i18n="tab.cloud">Cloud</h2>
+    <article class="pin-card" id="landing-card" style="margin-bottom:1rem">
+      <div class="pin-head">
+        <h3 class="pin-title" data-i18n="cloud.landing">Landing page</h3>
+        <span class="level-pill" id="cloud-status" role="status" aria-live="polite"><span class="dot"></span><span id="cloud-status-text">—</span></span>
+      </div>
+      <div class="url-row" id="landing-url-row" hidden>
+        <div class="field">
+          <input id="landing-url" type="text" readonly spellcheck="false" placeholder=" " value=""/>
+          <label for="landing-url" data-i18n="cloud.landingUrl">Landing URL</label>
+        </div>
+        <button class="btn btn-filled" type="button" id="landing-copy" data-i18n="copy">Copy</button>
+      </div>
+      <p class="hint" id="landing-hint" data-i18n="cloud.landingHint" hidden>Open this page to pair MCP clients or copy REST URLs.</p>
+    </article>
+    <h2 class="section-label" data-i18n="cloud.grants">Cloud grants</h2>
+    <div class="card-grid" id="grants"></div>
   </section>
 
-  <p class="footer">API for agents: <a href="/openapi.json">/openapi.json</a></p>
+  <section class="sheet panel" id="panel-about" aria-label="About" role="tabpanel" data-i18n-aria="tab.about">
+    <h2 class="section-label" data-i18n="tab.about">About</h2>
+    <article class="pin-card" id="about-card" style="margin-bottom:.65rem">
+      <div class="pin-head">
+        <h3 class="pin-title" data-i18n="about.system">System</h3>
+      </div>
+      <div class="about-row">
+        <span class="about-label" data-i18n="about.version">Version</span>
+        <span class="about-value" id="about-version">—</span>
+      </div>
+      <div class="about-row">
+        <span class="about-label" data-i18n="about.compiled">Compiled</span>
+        <span class="about-value" id="about-compiled">—</span>
+      </div>
+      <div class="about-row">
+        <span class="about-label" data-i18n="about.digest">Authentication Digest</span>
+        <span class="about-value about-mono" id="about-digest">—</span>
+      </div>
+      <p class="hint" id="about-ota-hint" hidden></p>
+      <button type="button" class="btn btn-filled" id="about-upgrade" hidden data-i18n="about.upgrade">Upgrade</button>
+    </article>
+    <div class="three-col-grid">
+      <a class="resource-item" href="/mcp" target="_blank" rel="noopener">
+        <span data-i18n="about.mcpEndpoint">MCP Protocol Endpoint</span>
+        <span>↗</span>
+      </a>
+      <a class="resource-item" href="/openapi.json" target="_blank" rel="noopener">
+        <span data-i18n="about.openApiSpec">OpenAPI 3.1 Specification</span>
+        <span>↗</span>
+      </a>
+      <a class="resource-item" href="https://github.com/xqe2011/saihub" target="_blank" rel="noopener">
+        <span data-i18n="about.github">Source Repository</span>
+        <span>↗</span>
+      </a>
+    </div>
+  </section>
+
+  <p class="footer"><span data-i18n="footer.api">API for agents:</span> <a href="/openapi.json">/openapi.json</a></p>
 </main>
 <div class="snack" id="snack" role="alert" aria-live="assertive"></div>
 <script>
-const MODES=[
-  {id:'disable',label:'Off'},
-  {id:'digitalInput',label:'Input'},
-  {id:'digitalOutput',label:'Output'},
-  {id:'digitalInputOutput',label:'In-Out'},
-  {id:'pwmOutput',label:'PWM'}
-];
+const I18N={
+  en:{
+    subtitle:'Control pins, power, UART, buzzer, cloud grants, and updates.',
+    refresh:'Refresh', sections:'Sections', language:'Language',
+    'tab.power':'Power','tab.pins':'Pins','tab.uart':'UART','tab.buzzer':'Buzzer','tab.cloud':'Cloud','tab.about':'About',
+    'buzzer.ready':'Idle','buzzer.sequence':'Sequence',
+    'buzzer.hint':'Morse-style pattern. <code>.</code> is a short beep, <code>-</code> is a long beep, space is an extra gap. Play waits until the sequence finishes.',
+    'buzzer.short':'Short','buzzer.double':'Double','buzzer.long':'Long','buzzer.play':'Play','buzzer.playing':'Playing…','buzzer.needSeq':'Enter a sequence of . and -.',
+    'cloud.landing':'Landing page','cloud.landingUrl':'Landing URL',
+    'cloud.landingHint':'Open this page to pair MCP clients or copy REST URLs.',
+    'cloud.landingMissing':'Landing page URL is unavailable. Cloud relay may be disabled on this firmware.',
+    'cloud.online':'Online','cloud.offline':'Offline','cloud.checking':'Checking',
+    'cloud.grants':'Cloud grants',
+    'cloud.empty':'No cloud grants. Pair an MCP client from the landing page, then hold BOOT for 3 seconds.',
+    'cloud.unnamed':'Unnamed','cloud.created':'Created','cloud.revoke':'Revoke','cloud.revokeConfirm':'Revoke grant {secret}?',
+    'about.system':'System','about.version':'Version','about.compiled':'Compiled','about.digest':'Authentication Digest','about.upgrade':'Upgrade',
+    'about.openApiSpec':'OpenAPI 3.1 Specification','about.mcpEndpoint':'MCP Protocol Endpoint','about.github':'Source Repository',
+    'about.available':'{version} available','about.newer':'A newer firmware image is available.',
+    'about.progress':'Firmware update in progress…','about.progressPct':'Firmware update in progress… {pct}%',
+    'about.failed':'Firmware update failed.','about.finished':'Update finished. The device may reboot shortly.',
+    'about.starting':'Starting…','about.loadFail':'Could not load system info.','about.checkFail':'Could not check for updates.',
+    'footer.api':'API for agents:',
+    'mode.off':'Off','mode.input':'Input','mode.output':'Output','mode.inout':'In-Out','mode.pwm':'PWM',
+    'rail.logic':'Logic rail','rail.peripheral':'Peripheral rail',
+    high:'High',low:'Low',pullUp:'Pull-up',pullDown:'Pull-down',openDrain:'Open-drain',
+    'level.output':'Output level','level.live':'Live level',
+    'pwm.freq':'Frequency (Hz)',duty:'Duty','pwm.apply':'Apply PWM',
+    'pin.title':'Pin {n}',none:'None',
+    'uart.serial':'Serial port','uart.baud':'Baud rate','uart.dataBits':'Data bits','uart.parity':'Parity',
+    'uart.stopBits':'Stop bits','uart.encoding':'Encoding','uart.rx':'RX pin','uart.tx':'TX pin',
+    'uart.apply':'Apply config',transmit:'Transmit',send:'Send','uart.flush':'Flush RX','uart.clear':'Clear log',
+    'uart.rxLog':'Receive log','uart.emptyLog':'No data received yet.','uart.active':'Active','uart.off':'Off',
+    'uart.bytes':'Byte data must be integers from 0 to 255.',
+    copy:'Copy',copied:'Copied',
+    'err.generic':'Something went wrong.','err.load':'Could not load device state.','err.request':'Request failed ({status})'
+  },
+  zh:{
+    subtitle:'控制引脚、电源、UART、蜂鸣器、云授权与更新。',
+    refresh:'刷新', sections:'分区', language:'语言',
+    'tab.power':'电源','tab.pins':'引脚','tab.uart':'UART','tab.buzzer':'蜂鸣器','tab.cloud':'云','tab.about':'关于',
+    'buzzer.ready':'空闲','buzzer.sequence':'序列',
+    'buzzer.hint':'摩尔斯风格图案。<code>.</code> 为短响，<code>-</code> 为长响，空格为额外间隔。播放会等到序列结束。',
+    'buzzer.short':'短响','buzzer.double':'双短响','buzzer.long':'长响','buzzer.play':'播放','buzzer.playing':'播放中…','buzzer.needSeq':'请输入由 . 和 - 组成的序列。',
+    'cloud.landing':'落地页','cloud.landingUrl':'落地页链接',
+    'cloud.landingHint':'打开此页面可为 MCP 客户端配对，或复制 REST 地址。',
+    'cloud.landingMissing':'无法获取落地页链接。此固件可能未启用云中继。',
+    'cloud.online':'在线','cloud.offline':'离线','cloud.checking':'检查中',
+    'cloud.grants':'云授权',
+    'cloud.empty':'暂无云授权。请先在落地页配对 MCP 客户端，然后按住 BOOT 三秒。',
+    'cloud.unnamed':'未命名','cloud.created':'创建于','cloud.revoke':'撤销','cloud.revokeConfirm':'撤销授权 {secret}？',
+    'about.system':'系统信息','about.version':'版本','about.compiled':'编译时间','about.digest':'认证摘要','about.upgrade':'升级',
+    'about.openApiSpec':'OpenAPI 3.1 规范','about.mcpEndpoint':'MCP 协议端点','about.github':'开源仓库',
+    'about.available':'{version} 可用','about.newer':'有可用的新固件镜像。',
+    'about.progress':'固件更新进行中…','about.progressPct':'固件更新进行中… {pct}%',
+    'about.failed':'固件更新失败。','about.finished':'更新完成。设备可能即将重启。',
+    'about.starting':'开始中…','about.loadFail':'无法加载系统信息。','about.checkFail':'无法检查更新。',
+    'footer.api':'供智能体使用的 API：',
+    'mode.off':'关闭','mode.input':'输入','mode.output':'输出','mode.inout':'输入输出','mode.pwm':'PWM',
+    'rail.logic':'逻辑电源','rail.peripheral':'外设电源',
+    high:'高',low:'低',pullUp:'上拉',pullDown:'下拉',openDrain:'开漏',
+    'level.output':'输出电平','level.live':'实时电平',
+    'pwm.freq':'频率 (Hz)',duty:'占空比','pwm.apply':'应用 PWM',
+    'pin.title':'引脚 {n}',none:'无',
+    'uart.serial':'串口','uart.baud':'波特率','uart.dataBits':'数据位','uart.parity':'校验','uart.stopBits':'停止位',
+    'uart.encoding':'编码','uart.rx':'RX 引脚','uart.tx':'TX 引脚','uart.apply':'应用配置',transmit:'发送数据',
+    send:'发送','uart.flush':'清空 RX','uart.clear':'清空日志','uart.rxLog':'接收日志','uart.emptyLog':'暂无接收数据。',
+    'uart.active':'已启用','uart.off':'关闭',
+    'uart.bytes':'字节数据必须是 0 到 255 的整数。',
+    copy:'复制',copied:'已复制',
+    'err.generic':'出错了。','err.load':'无法加载设备状态。','err.request':'请求失败（{status}）'
+  }
+};
+const LANG_KEY='saihub-lang';
+function detectLang(){
+  const saved=localStorage.getItem(LANG_KEY);
+  if(saved==='en'||saved==='zh') return saved;
+  const nav=(navigator.language||navigator.userLanguage||'').toLowerCase();
+  return nav.startsWith('zh')?'zh':'en';
+}
+let lang=detectLang();
+function t(key,vars){
+  const table=I18N[lang]||I18N.en;
+  let s=table[key];
+  if(s==null) s=(I18N.en[key]!=null?I18N.en[key]:key);
+  if(vars) Object.keys(vars).forEach(k=>{s=s.replace(new RegExp('\\{'+k+'\\}','g'),String(vars[k]));});
+  return s;
+}
+function applyStaticI18n(){
+  document.documentElement.lang=lang==='zh'?'zh-CN':'en';
+  const langEl=document.getElementById('lang');
+  if(langEl){langEl.value=lang;langEl.setAttribute('aria-label',t('language'));langEl.title=t('language');}
+  document.querySelectorAll('[data-i18n]').forEach(el=>{el.textContent=t(el.dataset.i18n);});
+  document.querySelectorAll('[data-i18n-html]').forEach(el=>{el.innerHTML=t(el.dataset.i18nHtml);});
+  document.querySelectorAll('[data-i18n-aria]').forEach(el=>{el.setAttribute('aria-label',t(el.dataset.i18nAria));});
+  document.querySelectorAll('[data-i18n-title]').forEach(el=>{el.title=t(el.dataset.i18nTitle);});
+}
+function modeLabel(id){
+  return ({disable:t('mode.off'),digitalInput:t('mode.input'),digitalOutput:t('mode.output'),digitalInputOutput:t('mode.inout'),pwmOutput:t('mode.pwm')})[id]||id;
+}
+function modesList(){
+  return [
+    {id:'disable',label:modeLabel('disable')},
+    {id:'digitalInput',label:modeLabel('digitalInput')},
+    {id:'digitalOutput',label:modeLabel('digitalOutput')},
+    {id:'digitalInputOutput',label:modeLabel('digitalInputOutput')},
+    {id:'pwmOutput',label:modeLabel('pwmOutput')}
+  ];
+}
 const snackEl=document.getElementById('snack');
 const railsEl=document.getElementById('rails');
 const pinsEl=document.getElementById('pins');
@@ -696,6 +918,17 @@ let busy=false;
 let snackTimer=null;
 let uartLog='';
 let buzzerPlaying=false;
+let aboutLoaded=false;
+let aboutPending=null;
+let aboutUpgrading=false;
+let landingPageUrl='';
+let cloudConnected=null;
+let cloudReason='';
+let aboutCurrentVersion='';
+let lastPins=[];
+let lastRails=null;
+let lastUarts=null;
+let lastGrants=[];
 
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -703,7 +936,7 @@ function escapeHtml(s){
 
 function showError(text){
   clearTimeout(snackTimer);
-  snackEl.textContent=text||'Something went wrong.';
+  snackEl.textContent=text||t('err.generic');
   snackEl.classList.add('show');
   snackTimer=setTimeout(()=>snackEl.classList.remove('show'),4200);
 }
@@ -719,7 +952,7 @@ async function api(method,path,body){
   let j=null;
   try{j=await r.json()}catch(_){}
   if(!r.ok){
-    const err=new Error((j&&j.reason)||('Request failed ('+r.status+')'));
+    const err=new Error((j&&j.reason)||t('err.request',{status:r.status}));
     err.status=r.status;
     throw err;
   }
@@ -743,9 +976,10 @@ function switchHtml(id,checked,disabled){
 }
 
 function renderRails(power){
+  lastRails=power;
   const items=[
-    {key:'3v3',label:'3V3',sub:'Logic rail'},
-    {key:'5v',label:'5V',sub:'Peripheral rail'}
+    {key:'3v3',label:'3V3',sub:t('rail.logic')},
+    {key:'5v',label:'5V',sub:t('rail.peripheral')}
   ];
   railsEl.innerHTML=items.map(r=>{
     const on=!!(power[r.key]&&power[r.key].enable);
@@ -770,7 +1004,7 @@ function renderRails(power){
 function pinCardHtml(p){
   const mode=p.mode||'disable';
   const levelHigh=!!p.level;
-  const modes=MODES.map(m=>
+  const modes=modesList().map(m=>
     '<button type="button" class="chip'+(m.id===mode?' active':'')+'" data-mode="'+m.id+'">'+m.label+'</button>'
   ).join('');
   const odAllowed=canOpenDrain(mode);
@@ -779,31 +1013,31 @@ function pinCardHtml(p){
   const showLevel=write||isInputMode(mode)||mode==='disable';
   return '<article class="pin-card" data-pin="'+p.pin+'">'+
     '<div class="pin-head">'+
-      '<h3 class="pin-title">Pin '+p.pin+'</h3>'+
-      '<span class="level-pill'+(levelHigh?' high':'')+'" data-role="pill"><span class="dot"></span><span data-role="pill-text">'+(levelHigh?'High':'Low')+'</span></span>'+
+      '<h3 class="pin-title">'+t('pin.title',{n:p.pin})+'</h3>'+
+      '<span class="level-pill'+(levelHigh?' high':'')+'" data-role="pill"><span class="dot"></span><span data-role="pill-text">'+(levelHigh?t('high'):t('low'))+'</span></span>'+
     '</div>'+
     '<div class="modes" data-role="modes">'+modes+'</div>'+
     '<div class="toggles">'+
-      '<label class="toggle"><input type="checkbox" data-role="pullUp"'+(p.pullUp?' checked':'')+'/>Pull-up</label>'+
-      '<label class="toggle"><input type="checkbox" data-role="pullDown"'+(p.pullDown?' checked':'')+'/>Pull-down</label>'+
-      '<label class="toggle'+(odAllowed?'':' hidden')+'" data-role="od-wrap"><input type="checkbox" data-role="openDrain"'+(p.openDrain?' checked':'')+(odAllowed?'':' disabled')+'/>Open-drain</label>'+
+      '<label class="toggle"><input type="checkbox" data-role="pullUp"'+(p.pullUp?' checked':'')+'/>'+t('pullUp')+'</label>'+
+      '<label class="toggle"><input type="checkbox" data-role="pullDown"'+(p.pullDown?' checked':'')+'/>'+t('pullDown')+'</label>'+
+      '<label class="toggle'+(odAllowed?'':' hidden')+'" data-role="od-wrap"><input type="checkbox" data-role="openDrain"'+(p.openDrain?' checked':'')+(odAllowed?'':' disabled')+'/>'+t('openDrain')+'</label>'+
     '</div>'+
     '<div class="digital-row'+(showLevel&&!pwm?' show':'')+'" data-role="digital">'+
       '<div class="level-row">'+
-        '<span class="level-label">'+(write?'Output level':'Live level')+'</span>'+
-        (write?switchHtml('lvl-'+p.pin,levelHigh,false):'<span class="level-pill'+(levelHigh?' high':'')+'"><span class="dot"></span>'+(levelHigh?'High':'Low')+'</span>')+
+        '<span class="level-label">'+(write?t('level.output'):t('level.live'))+'</span>'+
+        (write?switchHtml('lvl-'+p.pin,levelHigh,false):'<span class="level-pill'+(levelHigh?' high':'')+'"><span class="dot"></span>'+(levelHigh?t('high'):t('low'))+'</span>')+
       '</div>'+
     '</div>'+
     '<div class="pwm-row'+(pwm?' show':'')+'" data-role="pwm">'+
       '<div class="field">'+
         '<input type="number" data-role="freq" min="1" max="50000" step="1" placeholder=" " value="'+(p.frequency!=null?p.frequency:1000)+'"/>'+
-        '<label>Frequency (Hz)</label>'+
+        '<label>'+t('pwm.freq')+'</label>'+
       '</div>'+
       '<div class="slider-wrap">'+
-        '<div class="slider-meta"><span>Duty</span><span data-role="duty-label">'+(p.duty!=null?Number(p.duty).toFixed(1):'50.0')+'%</span></div>'+
+        '<div class="slider-meta"><span>'+t('duty')+'</span><span data-role="duty-label">'+(p.duty!=null?Number(p.duty).toFixed(1):'50.0')+'%</span></div>'+
         '<input type="range" data-role="duty" min="0" max="100" step="0.1" value="'+(p.duty!=null?p.duty:50)+'"/>'+
       '</div>'+
-      '<button type="button" class="btn btn-filled" data-role="pwm-apply">Apply PWM</button>'+
+      '<button type="button" class="btn btn-filled" data-role="pwm-apply">'+t('pwm.apply')+'</button>'+
     '</div>'+
   '</article>';
 }
@@ -902,6 +1136,7 @@ function bindPinCard(card,state){
 }
 
 function renderPins(pins){
+  lastPins=pins;
   const keep={};
   pins.forEach(p=>{
     if(editing.has(p.pin)){
@@ -946,17 +1181,105 @@ function updateLiveLevels(pins){
     if(pill&&pillText){
       const high=!!p.level;
       pill.classList.toggle('high',high);
-      pillText.textContent=high?'High':'Low';
+      pillText.textContent=high?t('high'):t('low');
     }
     const lvl=document.getElementById('lvl-'+p.pin);
     if(lvl&&document.activeElement!==lvl) lvl.checked=!!p.level;
   });
 }
 
+function renderAboutVersion(version,available){
+  const el=document.getElementById('about-version');
+  if(!el) return;
+  let html=escapeHtml(version||'—');
+  if(available) html+='<span class="about-update">'+escapeHtml(t('about.available',{version:available}))+'</span>';
+  el.innerHTML=html;
+}
+
+async function loadAbout(forceCheck){
+  const hint=document.getElementById('about-ota-hint');
+  const btn=document.getElementById('about-upgrade');
+  let currentVersion='';
+  try{
+    const info=await api('GET','/system');
+    currentVersion=info.version||'';
+    aboutCurrentVersion=currentVersion;
+    document.getElementById('about-compiled').textContent=info.compiledDate||'—';
+    document.getElementById('about-digest').textContent=info.digest||'—';
+    renderAboutVersion(currentVersion, aboutPending&&aboutPending.version);
+    aboutLoaded=true;
+  }catch(e){
+    showError(e.message||t('about.loadFail'));
+    return;
+  }
+  if(!forceCheck&&aboutPending) return;
+  try{
+    const check=await api('POST','/system/ota/check');
+    if(check.updateAvailable){
+      aboutPending={url:check.url,sha256:check.sha256,version:check.version};
+      renderAboutVersion(check.currentVersion||currentVersion, check.version);
+      hint.hidden=false;
+      hint.textContent=check.changelog?String(check.changelog).slice(0,400):t('about.newer');
+      btn.hidden=false;
+      btn.disabled=!!aboutUpgrading;
+      btn.textContent=t('about.upgrade');
+    }else{
+      aboutPending=null;
+      renderAboutVersion(check.currentVersion||currentVersion, null);
+      hint.hidden=true;
+      btn.hidden=true;
+    }
+  }catch(e){
+    if(e.status===503){
+      aboutUpgrading=true;
+      hint.hidden=false;
+      hint.textContent=t('about.progress');
+      btn.hidden=true;
+      return;
+    }
+    /* Check failed (network, OOM, bad manifest): treat as no update available. */
+    aboutPending=null;
+    renderAboutVersion(currentVersion, null);
+    hint.hidden=true;
+    btn.hidden=true;
+  }
+}
+
+async function pollAboutOta(){
+  if(activeTab!=='about') return;
+  try{
+    const st=await api('GET','/system/ota');
+    const hint=document.getElementById('about-ota-hint');
+    const btn=document.getElementById('about-upgrade');
+    if(st.state==='upgrading'){
+      aboutUpgrading=true;
+      hint.hidden=false;
+      hint.textContent=st.progressPercent>=0
+        ?t('about.progressPct',{pct:st.progressPercent})
+        :t('about.progress');
+      btn.hidden=true;
+    }else if(st.state==='failed'){
+      aboutUpgrading=false;
+      hint.hidden=false;
+      hint.textContent=st.reason||t('about.failed');
+      if(aboutPending){btn.hidden=false;btn.disabled=false;btn.textContent=t('about.upgrade');}
+    }else if(aboutUpgrading){
+      aboutUpgrading=false;
+      hint.hidden=false;
+      hint.textContent=t('about.finished');
+    }
+  }catch(_){}
+}
+
 async function refresh(force){
   if(busy&&!force) return;
   busy=true;
   try{
+    if(activeTab==='about'){
+      if(force||!aboutLoaded) await loadAbout(true);
+      else await pollAboutOta();
+      return;
+    }
     const [pinRes,p3,p5,uartRes]=await Promise.all([
       api('GET','/pin/'),
       api('GET','/power/3v3'),
@@ -978,6 +1301,24 @@ async function refresh(force){
     if(force||!uartEditing||!uartsEl.children.length){
       renderUarts(uartRes.uarts||[]);
     }
+    lastPins=pins;
+    lastUarts=uartRes.uarts||[];
+    if(force||activeTab==='cloud'||!landingPageUrl){
+      try{
+        const st=await api('GET','/cloud/status');
+        landingPageUrl=st.landingPageUrl||'';
+        cloudConnected=!!st.connected;
+        cloudReason=st.reason||'';
+        renderCloudStatus();
+      }catch(e){
+        if(force||activeTab==='cloud'){
+          cloudConnected=false;
+          cloudReason=e.message||t('err.load');
+          renderCloudStatus();
+          if(activeTab==='cloud') showError(e.message);
+        }
+      }
+    }
     if(force||activeTab==='cloud'||!grantsEl.children.length){
       try{
         const grantRes=await api('GET','/cloud/grant-secrets');
@@ -988,7 +1329,9 @@ async function refresh(force){
     }
     if(activeTab==='uart') await pollUartReceive();
   }catch(e){
-    showError(e.message||'Could not load device state.');
+    if(!(e.status===503&&/Firmware update/i.test(e.message||''))){
+      showError(e.message||t('err.load'));
+    }
   }finally{
     busy=false;
   }
@@ -1002,26 +1345,70 @@ function formatCreatedAt(us){
   return d.toISOString().slice(0,19).replace('T',' ')+' UTC';
 }
 
+function renderCloudStatus(){
+  const statusEl=document.getElementById('cloud-status');
+  const statusText=document.getElementById('cloud-status-text');
+  const input=document.getElementById('landing-url');
+  const hint=document.getElementById('landing-hint');
+  const copyBtn=document.getElementById('landing-copy');
+  const urlRow=document.getElementById('landing-url-row');
+  const showUrl=cloudConnected===true&&!!landingPageUrl;
+  if(statusEl&&statusText){
+    statusEl.classList.toggle('online', cloudConnected===true);
+    statusEl.classList.toggle('offline', cloudConnected===false);
+    if(cloudConnected===true) statusText.textContent=t('cloud.online');
+    else if(cloudConnected===false) statusText.textContent=t('cloud.offline');
+    else statusText.textContent=t('cloud.checking');
+  }
+  if(urlRow) urlRow.hidden=!showUrl;
+  if(hint){
+    hint.hidden=!showUrl;
+    if(showUrl) hint.textContent=t('cloud.landingHint');
+  }
+  if(input) input.value=showUrl?landingPageUrl:'';
+  if(copyBtn) copyBtn.disabled=!showUrl;
+}
+
+function copyLandingUrl(){
+  const input=document.getElementById('landing-url');
+  const button=document.getElementById('landing-copy');
+  if(!input||!input.value) return;
+  input.focus();
+  input.select();
+  input.setSelectionRange(0,input.value.length);
+  const done=()=>{
+    button.classList.add('done');
+    button.textContent=t('copied');
+    setTimeout(()=>{button.classList.remove('done');button.textContent=t('copy');},1500);
+  };
+  const fallback=()=>{try{if(document.execCommand('copy')) done();}catch{}};
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(input.value).then(done,fallback);
+  else fallback();
+}
+
 function renderGrants(list){
+  lastGrants=list||[];
   if(!list.length){
-    grantsEl.innerHTML='<p class="empty">No cloud grants. Pair an MCP client from the landing page, then hold BOOT for 3 seconds.</p>';
+    grantsEl.innerHTML='<article class="pin-card" style="grid-column:1 / -1">'+
+      '<div class="pin-head"><h3 class="pin-title">'+escapeHtml(t('cloud.grants'))+'</h3></div>'+
+      '<p class="hint">'+escapeHtml(t('cloud.empty'))+'</p>'+
+    '</article>';
     return;
   }
-  grantsEl.innerHTML='<ul class="grant-list">'+list.map(g=>{
-    const name=escapeHtml(g.name||'Unnamed');
+  grantsEl.innerHTML=list.map(g=>{
+    const name=escapeHtml(g.name||t('cloud.unnamed'));
     const secret=escapeHtml(g.grantSecret||'');
     const created=formatCreatedAt(g.createdAt);
-    return '<li class="grant-item">'+
-      '<div class="grant-meta"><span class="grant-name">'+name+'</span>'+
+    return '<article class="pin-card">'+
+      '<div class="pin-head"><h3 class="pin-title">'+name+'</h3></div>'+
       '<span class="grant-secret">'+secret+'</span>'+
-      (created?'<span class="grant-created">Created '+created+'</span>':'')+
-      '</div>'+
-      '<button class="btn btn-tonal" type="button" data-revoke="'+secret+'">Revoke</button>'+
-      '</li>';
-  }).join('')+'</ul>';
+      (created?'<span class="grant-created">'+escapeHtml(t('cloud.created')+' '+created)+'</span>':'')+
+      '<button class="btn btn-tonal" type="button" data-revoke="'+secret+'">'+escapeHtml(t('cloud.revoke'))+'</button>'+
+    '</article>';
+  }).join('');
   grantsEl.querySelectorAll('[data-revoke]').forEach(btn=>{
     btn.onclick=async()=>{
-      if(!confirm('Revoke grant '+btn.dataset.revoke+'?')) return;
+      if(!confirm(t('cloud.revokeConfirm',{secret:btn.dataset.revoke}))) return;
       try{
         await api('DELETE','/cloud/grant-secrets/'+encodeURIComponent(btn.dataset.revoke));
         await refresh(true);
@@ -1031,42 +1418,50 @@ function renderGrants(list){
 }
 
 function pinOptions(selected){
-  let html='<option value="">None</option>';
+  let html='<option value="">'+t('none')+'</option>';
   for(let i=0;i<=7;i++){
-    html+='<option value="'+i+'"'+(selected===i?' selected':'')+'>Pin '+i+'</option>';
+    html+='<option value="'+i+'"'+(selected===i?' selected':'')+'>'+t('pin.title',{n:i})+'</option>';
   }
   return html;
 }
 
 function renderUarts(uarts){
+  lastUarts=uarts;
   const u=(uarts&&uarts[0])||{
     id:0,enable:false,baudRate:115200,dataBits:8,parity:'none',stopBits:1,encoding:'utf8',pins:{rx:null,tx:null}
   };
   const rx=u.pins&&u.pins.rx!=null?u.pins.rx:'';
   const tx=u.pins&&u.pins.tx!=null?u.pins.tx:'';
+  const on=!!u.enable;
   uartsEl.innerHTML=
-    '<article class="uart-card" data-uart="'+u.id+'">'+
-      '<div class="rail">'+
-        '<div class="rail-text"><span class="rail-name">UART '+u.id+'</span><span class="rail-sub">Serial port</span></div>'+
-        switchHtml('uart-enable',!!u.enable,false)+
+    '<article class="pin-card" data-uart="'+u.id+'">'+
+      '<div class="pin-head">'+
+        '<h3 class="pin-title">UART '+u.id+'</h3>'+
+        switchHtml('uart-enable',on,false)+
       '</div>'+
       '<div class="uart-grid">'+
-        '<div class="field"><input type="number" id="uart-baud" min="1" step="1" placeholder=" " value="'+(u.baudRate||115200)+'"/><label>Baud rate</label></div>'+
-        '<div class="field"><select id="uart-dataBits">'+[5,6,7,8].map(v=>'<option value="'+v+'"'+(u.dataBits===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>Data bits</label></div>'+
-        '<div class="field"><select id="uart-parity">'+['none','even','odd'].map(v=>'<option value="'+v+'"'+(u.parity===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>Parity</label></div>'+
-        '<div class="field"><select id="uart-stopBits">'+[1,2].map(v=>'<option value="'+v+'"'+(u.stopBits===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>Stop bits</label></div>'+
-        '<div class="field"><select id="uart-encoding">'+['utf8','byte'].map(v=>'<option value="'+v+'"'+(u.encoding===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>Encoding</label></div>'+
-        '<div class="field"><select id="uart-rx">'+pinOptions(rx===''?null:Number(rx))+'</select><label>RX pin</label></div>'+
-        '<div class="field"><select id="uart-tx">'+pinOptions(tx===''?null:Number(tx))+'</select><label>TX pin</label></div>'+
+        '<div class="field"><input type="number" id="uart-baud" min="1" step="1" placeholder=" " value="'+(u.baudRate||115200)+'"/><label>'+t('uart.baud')+'</label></div>'+
+        '<div class="field"><select id="uart-dataBits">'+[5,6,7,8].map(v=>'<option value="'+v+'"'+(u.dataBits===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>'+t('uart.dataBits')+'</label></div>'+
+        '<div class="field"><select id="uart-parity">'+['none','even','odd'].map(v=>'<option value="'+v+'"'+(u.parity===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>'+t('uart.parity')+'</label></div>'+
+        '<div class="field"><select id="uart-stopBits">'+[1,2].map(v=>'<option value="'+v+'"'+(u.stopBits===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>'+t('uart.stopBits')+'</label></div>'+
+        '<div class="field"><select id="uart-encoding">'+['utf8','byte'].map(v=>'<option value="'+v+'"'+(u.encoding===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>'+t('uart.encoding')+'</label></div>'+
+        '<div class="field"><select id="uart-rx">'+pinOptions(rx===''?null:Number(rx))+'</select><label>'+t('uart.rx')+'</label></div>'+
+        '<div class="field" style="grid-column:1 / -1"><select id="uart-tx">'+pinOptions(tx===''?null:Number(tx))+'</select><label>'+t('uart.tx')+'</label></div>'+
       '</div>'+
-      '<button type="button" class="btn btn-filled" id="uart-apply">Apply config</button>'+
-      '<div class="field"><textarea id="uart-tx-data" placeholder=" "></textarea><label>Transmit</label></div>'+
+      '<button type="button" class="btn btn-filled" id="uart-apply">'+t('uart.apply')+'</button>'+
+    '</article>'+
+    '<article class="pin-card">'+
+      '<div class="pin-head">'+
+        '<h3 class="pin-title">'+t('uart.rxLog')+'</h3>'+
+        '<span class="level-pill'+(on?' high':'')+'"><span class="dot"></span>'+(on?t('uart.active'):t('uart.off'))+'</span>'+
+      '</div>'+
+      '<div class="rx-log" id="uart-rx-log" data-placeholder="'+escapeHtml(t('uart.emptyLog'))+'"></div>'+
+      '<div class="field"><textarea id="uart-tx-data" placeholder=" "></textarea><label>'+t('transmit')+'</label></div>'+
       '<div class="row-actions">'+
-        '<button type="button" class="btn btn-filled" id="uart-send">Send</button>'+
-        '<button type="button" class="btn btn-tonal" id="uart-flush">Flush RX</button>'+
-        '<button type="button" class="btn btn-tonal" id="uart-clear-log">Clear log</button>'+
+        '<button type="button" class="btn btn-filled" id="uart-send">'+t('send')+'</button>'+
+        '<button type="button" class="btn btn-tonal" id="uart-flush">'+t('uart.flush')+'</button>'+
+        '<button type="button" class="btn btn-tonal" id="uart-clear-log">'+t('uart.clear')+'</button>'+
       '</div>'+
-      '<div><div class="section-label" style="margin-left:0">Receive log</div><div class="rx-log" id="uart-rx-log"></div></div>'+
     '</article>';
   const logEl=document.getElementById('uart-rx-log');
   if(logEl) logEl.textContent=uartLog;
@@ -1096,7 +1491,7 @@ function parseBytePayload(text){
   const out=[];
   for(const p of parts){
     const n=Number(p);
-    if(!Number.isInteger(n)||n<0||n>255) throw new Error('Byte data must be integers from 0 to 255.');
+    if(!Number.isInteger(n)||n<0||n>255) throw new Error(t('uart.bytes'));
     out.push(n);
   }
   return out;
@@ -1177,31 +1572,59 @@ function setTab(name){
   document.querySelectorAll('.panel').forEach(panel=>{
     panel.classList.toggle('active',panel.id==='panel-'+name);
   });
+  if(name==='about') loadAbout(true);
 }
 
 document.querySelectorAll('.tab').forEach(btn=>{
   btn.onclick=()=>setTab(btn.dataset.tab);
 });
 
+document.getElementById('about-upgrade').onclick=async()=>{
+  if(!aboutPending||!aboutPending.url||!aboutPending.sha256) return;
+  const btn=document.getElementById('about-upgrade');
+  const hint=document.getElementById('about-ota-hint');
+  btn.disabled=true;
+  btn.textContent=t('about.starting');
+  try{
+    await api('POST','/system/ota/upgrade',{url:aboutPending.url,sha256:aboutPending.sha256});
+    aboutUpgrading=true;
+    hint.hidden=false;
+    hint.textContent=t('about.progress');
+    btn.hidden=true;
+  }catch(e){
+    showError(e.message);
+    btn.disabled=false;
+    btn.textContent=t('about.upgrade');
+  }
+};
+
 const buzzerSeqEl=document.getElementById('buzzer-sequence');
 const buzzerPlayEl=document.getElementById('buzzer-play');
+const buzzerPillEl=document.getElementById('buzzer-pill');
+const buzzerPillTextEl=document.getElementById('buzzer-pill-text');
 buzzerSeqEl.addEventListener('input',()=>{
   const cleaned=buzzerSeqEl.value.replace(/[^. \-]/g,'');
   if(cleaned!==buzzerSeqEl.value) buzzerSeqEl.value=cleaned;
 });
 document.querySelectorAll('#buzzer-presets [data-seq]').forEach(btn=>{
-  btn.onclick=()=>{buzzerSeqEl.value=btn.dataset.seq;buzzerSeqEl.focus()};
+  btn.onclick=()=>{
+    buzzerSeqEl.value=btn.dataset.seq;
+    document.querySelectorAll('#buzzer-presets .chip').forEach(c=>c.classList.toggle('active',c===btn));
+    buzzerSeqEl.focus();
+  };
 });
 buzzerPlayEl.onclick=async()=>{
   const sequence=buzzerSeqEl.value;
   if(!sequence||!/[.\-]/.test(sequence)){
-    showError('Enter a sequence of . and -.');
+    showError(t('buzzer.needSeq'));
     return;
   }
   if(buzzerPlaying) return;
   buzzerPlaying=true;
   buzzerPlayEl.disabled=true;
-  buzzerPlayEl.textContent='Playing…';
+  buzzerPlayEl.textContent=t('buzzer.playing');
+  if(buzzerPillEl) buzzerPillEl.classList.add('high');
+  if(buzzerPillTextEl) buzzerPillTextEl.textContent=t('buzzer.playing');
   try{
     await api('POST','/buzzer',{sequence});
   }catch(e){
@@ -1209,7 +1632,9 @@ buzzerPlayEl.onclick=async()=>{
   }finally{
     buzzerPlaying=false;
     buzzerPlayEl.disabled=false;
-    buzzerPlayEl.textContent='Play';
+    buzzerPlayEl.textContent=t('buzzer.play');
+    if(buzzerPillEl) buzzerPillEl.classList.remove('high');
+    if(buzzerPillTextEl) buzzerPillTextEl.textContent=t('buzzer.ready');
   }
 };
 
@@ -1225,7 +1650,32 @@ document.getElementById('refresh').onclick=async()=>{
   await refresh(true);
 };
 
+document.getElementById('landing-copy').onclick=copyLandingUrl;
+
+function setLang(next){
+  lang=(next==='zh')?'zh':'en';
+  localStorage.setItem(LANG_KEY,lang);
+  applyStaticI18n();
+  renderCloudStatus();
+  if(lastRails) renderRails(lastRails);
+  if(lastPins&&lastPins.length) renderPins(lastPins);
+  if(lastUarts) renderUarts(lastUarts);
+  renderGrants(lastGrants);
+  if(aboutLoaded){
+    renderAboutVersion(aboutCurrentVersion, aboutPending&&aboutPending.version);
+    const btn=document.getElementById('about-upgrade');
+    if(btn&&!btn.hidden&&!aboutUpgrading) btn.textContent=t('about.upgrade');
+  }
+  if(!buzzerPlaying){
+    buzzerPlayEl.textContent=t('buzzer.play');
+    if(buzzerPillTextEl) buzzerPillTextEl.textContent=t('buzzer.ready');
+  }
+}
+
+document.getElementById('lang').onchange=(e)=>setLang(e.target.value);
+
 (async()=>{
+  applyStaticI18n();
   setTab('pins');
   await refresh(true);
   schedulePoll();

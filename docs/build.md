@@ -14,7 +14,7 @@ idf.py build
 idf.py merge-bin   # merged image for the web flasher (flash at 0x0)
 ```
 
-Separate images, if not using a merged binary: bootloader `0x2000`, partition table `0x8000`, app `0x10000`.
+Separate images, if not using a merged binary: bootloader `0x2000`, partition table `0x8000`, then NVS / otadata / phy / dual OTA app slots (see `partitions.csv`). First flash of an OTA-capable build must use the **merged** image at `0x0` (partition table change); later updates can use OTA.
 
 Board-specific configuration is concentrated in `main/include/config.h`:
 
@@ -26,10 +26,12 @@ Board-specific configuration is concentrated in `main/include/config.h`:
 | `CONFIG_BUZZER_PIN` | Buzzer |
 | `CONFIG_CLOUD_URL` | Relay origin, `ws://` or `wss://` without a path; empty disables the relay. Self-hosting requires changing it and rebuilding |
 | `CONFIG_WIFI_SSID` / `CONFIG_WIFI_PASSWORD` | Wi-Fi seed credentials, used whenever NVS has none saved |
+| `CONFIG_OTA_MANIFEST_URL` | HTTPS URL of the release `manifest.json` used by update check |
+| `CONFIG_OTA_IMAGE_TARGET` | Image `target` string matched in the manifest (must match CI) |
 
 Building for a board other than SAIHub-Mini: [bring your own board](bring-your-own-board.md).
 
-Pushing a git tag runs [`.github/workflows/firmware-release.yml`](../.github/workflows/firmware-release.yml). The tag name is written to `version.txt` (the firmware version string) and the merged image is published as a GitHub Release. If GitHub Environment `cloud` has variable `ADMIN_URL` (admin origin including `/admin`, e.g. `https://example.com/admin`) and secret `ADMIN_TOKEN`, a parallel job runs `bun run upload-file-cache -- <adminUrl> <token> <version>` from `cloud/cloudflare` (POSTs `mcp.json` and `openapi.json` to `{ADMIN_URL}/file-cache`). If either is unset, the upload is skipped.
+Pushing a git tag runs [`.github/workflows/firmware-release.yml`](../.github/workflows/firmware-release.yml). The tag name is written to `version.txt` (the firmware version string). The release uploads the merged flash image, the app image for OTA, `manifest.json` (version, release date, changelog, per-target app `url` / `sha256` / `size`), and `SHA256SUMS`. If GitHub Environment `cloud` has variable `ADMIN_URL` (admin origin including `/admin`, e.g. `https://example.com/admin`) and secret `ADMIN_TOKEN`, a parallel job runs `bun run upload-file-cache -- <adminUrl> <token> <version>` from `cloud/cloudflare` (POSTs `mcp.json` and `openapi.json` to `{ADMIN_URL}/file-cache`). If either is unset, the upload is skipped.
 
 ## Cloudflare Worker
 

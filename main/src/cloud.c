@@ -54,6 +54,7 @@ static const char* tag = "SAIHub-Cloud";
 static psa_key_id_t signingKey = PSA_KEY_ID_NULL;
 static uint8_t publicKey[CLOUD_PUBLIC_KEY_BYTES];
 static char publicKeyDigest[CLOUD_DIGEST_CHARS + 1];
+static char landingPageUrl[576];
 static bool initialized;
 static esp_err_t Cloud_StartRelay(void);
 static bool Cloud_Base64Encode(const uint8_t* data, size_t length, char* out, size_t capacity);
@@ -438,6 +439,25 @@ const char* Cloud_GetPublicKeyDigest(void)
   return publicKeyDigest;
 }
 
+const char* Cloud_GetLandingPageUrl(void)
+{
+  landingPageUrl[0] = '\0';
+  if (CONFIG_CLOUD_URL[0] == '\0' || publicKeyDigest[0] == '\0') return landingPageUrl;
+  const char* scheme;
+  const char* host;
+  if (strncmp(CONFIG_CLOUD_URL, "wss://", 6) == 0) {
+    scheme = "https://";
+    host = CONFIG_CLOUD_URL + 6;
+  } else if (strncmp(CONFIG_CLOUD_URL, "ws://", 5) == 0) {
+    scheme = "http://";
+    host = CONFIG_CLOUD_URL + 5;
+  } else {
+    return landingPageUrl;
+  }
+  snprintf(landingPageUrl, sizeof(landingPageUrl), "%s%s/cloud/landing/%s/page", scheme, host, publicKeyDigest);
+  return landingPageUrl;
+}
+
 esp_err_t Cloud_SignChallenge(const uint8_t* challenge, size_t challengeLen,
                               uint8_t signature[CLOUD_SIGNATURE_BYTES], size_t* signatureLenOut)
 {
@@ -486,11 +506,59 @@ static TimerHandle_t heartbeatTimer;
 static atomic_uint generation;
 static atomic_bool authenticated;
 static atomic_bool restart;
+static bool relayStarted;
+static char lastRestartReason[192];
+
+static void Cloud_ClearRestartReason(void)
+{
+  lastRestartReason[0] = '\0';
+}
 
 static void Cloud_RequestRestart(const char* reason)
 {
   ESP_LOGW(tag, "relay restart requested: %s", reason);
+  if (reason && reason[0]) {
+    snprintf(lastRestartReason, sizeof(lastRestartReason), "%s", reason);
+  }
   atomic_store(&restart, true);
+}
+
+void Cloud_GetStatus(Cloud_Status* out)
+{
+  if (!out) return;
+  out->connected = false;
+  out->landingPageUrl = Cloud_GetLandingPageUrl();
+  out->reason[0] = '\0';
+
+  if (CONFIG_CLOUD_URL[0] == '\0') {
+    snprintf(out->reason, sizeof(out->reason), "Cloud relay disabled.");
+    return;
+  }
+  if (!relayStarted || client == NULL) {
+    snprintf(out->reason, sizeof(out->reason), "Cloud relay is not running.");
+    return;
+  }
+
+  bool auth = atomic_load(&authenticated);
+  bool ws = esp_websocket_client_is_connected(client);
+  if (auth && ws) {
+    out->connected = true;
+    return;
+  }
+
+  if (!Wifi_IsConnected() || Wifi_IsPairing()) {
+    snprintf(out->reason, sizeof(out->reason), "Waiting for network.");
+    return;
+  }
+  if (!Ntp_IsSynced()) {
+    snprintf(out->reason, sizeof(out->reason), "Waiting for clock sync.");
+    return;
+  }
+  if (lastRestartReason[0]) {
+    snprintf(out->reason, sizeof(out->reason), "%s", lastRestartReason);
+    return;
+  }
+  snprintf(out->reason, sizeof(out->reason), "Connecting to cloud.");
 }
 static _Atomic(TaskHandle_t) streamOwner;
 static char* receiveBuffer;
@@ -519,7 +587,7 @@ static esp_err_t Cloud_Write(void* user, HttpServer_CloudWriteKind kind, const v
   TaskHandle_t self = xTaskGetCurrentTaskHandle();
   if (kind == HTTP_CLOUD_ABORT) {
     if (streamOwner == self) {
-      Cloud_RequestRestart("cloud stream aborted");
+      Cloud_RequestRestart("Cloud stream aborted.");
       streamOwner = NULL;
       xSemaphoreGive(sendMutex);
     }
@@ -555,7 +623,7 @@ static void Cloud_SendText(unsigned expected, const char* text, TickType_t wait)
   int len = (int)strlen(text);
   if (Cloud_ConnectionCurrent(expected) &&
       esp_websocket_client_send_text(client, text, len, wait == 0 ? 0 : pdMS_TO_TICKS(10000)) != len)
-    Cloud_RequestRestart("cloud send failed");
+    Cloud_RequestRestart("Cloud send failed.");
   xSemaphoreGive(sendMutex);
 }
 
@@ -783,7 +851,10 @@ esp_err_t Cloud_RevokeGrantSecret(const char* grantSecret)
 static void Cloud_Authenticate(cJSON* message, unsigned expected)
 {
   cJSON* challenge = cJSON_GetObjectItemCaseSensitive(message, "challenge");
-  if (!cJSON_IsString(challenge) || strlen(challenge->valuestring) != 43) { Cloud_RequestRestart("invalid authentication challenge"); return; }
+  if (!cJSON_IsString(challenge) || strlen(challenge->valuestring) != 43) {
+    Cloud_RequestRestart("Invalid cloud authentication challenge.");
+    return;
+  }
   char encoded[45];
   memcpy(encoded, challenge->valuestring, 43);
   for (size_t i = 0; i < 43; i++) {
@@ -796,7 +867,7 @@ static void Cloud_Authenticate(cJSON* message, unsigned expected)
   size_t length = 0;
   if (mbedtls_base64_decode(bytes, sizeof(bytes), &length, (unsigned char*)encoded, 44) != 0 || length != 32 ||
       Cloud_SignChallenge(bytes, length, signature, NULL) != ESP_OK || Cloud_GetPublicKey(publicKey, NULL) != ESP_OK) {
-    Cloud_RequestRestart("authentication challenge signing failed");
+    Cloud_RequestRestart("Cloud authentication signing failed.");
     return;
   }
   char signatureText[89], publicKeyText[89];
@@ -820,7 +891,7 @@ static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* e
     atomic_fetch_add(&generation, 1);
     atomic_store(&authenticated, false);
     Cloud_ResetReceive();
-    if (event == WEBSOCKET_EVENT_CLOSED) Cloud_RequestRestart("cloud socket closed");
+    if (event == WEBSOCKET_EVENT_CLOSED) Cloud_RequestRestart("Cloud connection closed.");
     return;
   }
   if (event != WEBSOCKET_EVENT_DATA) return;
@@ -833,18 +904,25 @@ static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* e
   }
   if (!receiveBuffer || data->data_len < 0 || receiveLength + data->data_len > CONFIG_CLOUD_MAX_MESSAGE_BYTES) {
     Cloud_ResetReceive();
-    Cloud_RequestRestart("cloud message buffer invalid or too large");
+    Cloud_RequestRestart("Cloud message too large.");
     return;
   }
   char* grown = realloc(receiveBuffer, receiveLength + data->data_len + 1);
-  if (!grown) { Cloud_ResetReceive(); Cloud_RequestRestart("cloud message buffer allocation failed"); return; }
+  if (!grown) {
+    Cloud_ResetReceive();
+    Cloud_RequestRestart("Cloud message buffer allocation failed.");
+    return;
+  }
   receiveBuffer = grown;
   memcpy(receiveBuffer + receiveLength, data->data_ptr, data->data_len);
   receiveLength += data->data_len;
   receiveBuffer[receiveLength] = '\0';
   if (!data->fin || data->payload_offset + data->data_len != data->payload_len) return;
   Cloud_Message message = {.text = receiveBuffer, .generation = receiveGeneration};
-  if (xQueueSend(incoming, &message, 0) != pdTRUE) { free(message.text); Cloud_RequestRestart("cloud message queue full"); }
+  if (xQueueSend(incoming, &message, 0) != pdTRUE) {
+    free(message.text);
+    Cloud_RequestRestart("Cloud message queue full.");
+  }
   receiveBuffer = NULL;
   receiveLength = 0;
 }
@@ -894,9 +972,10 @@ static void Cloud_RelayTask(void* arg)
       else if (strcmp(type->valuestring, "authResult") == 0) {
         bool success = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "success"));
         atomic_store(&authenticated, success);
-        if (!success) Cloud_RequestRestart("cloud authentication rejected");
+        if (!success) Cloud_RequestRestart("Cloud authentication rejected.");
         if (success) {
-          ESP_LOGI(tag, "cloud authentication ready, access landing page at http%s/cloud/landing/%s/page", &CONFIG_CLOUD_URL[0] + 2, Cloud_GetPublicKeyDigest());
+          Cloud_ClearRestartReason();
+          ESP_LOGI(tag, "cloud authentication ready, access landing page at %s", Cloud_GetLandingPageUrl());
         } else {
           ESP_LOGW(tag, "cloud authentication rejected");
         }
@@ -909,7 +988,7 @@ static void Cloud_RelayTask(void* arg)
           HttpServer_DispatchCloud(root, Cloud_Write, (void*)(uintptr_t)message.generation);
           dispatched = true;
         }
-        if (!dispatched) Cloud_RequestRestart("cloud request dispatch failed");
+        if (!dispatched) Cloud_RequestRestart("Cloud request dispatch failed.");
       }
     }
     if (!dispatched) cJSON_Delete(root);
@@ -941,6 +1020,7 @@ static esp_err_t Cloud_StartRelay(void)
   heartbeatTimer = xTimerCreate("cloud-heartbeat", pdMS_TO_TICKS(10000), pdTRUE, NULL, Cloud_HeartbeatTimer);
   if (!heartbeatTimer) goto failed;
   if (xTaskCreate(Cloud_RelayTask, "cloud-relay", 6144, NULL, 5, NULL) != pdPASS) goto failed;
+  relayStarted = true;
   return ESP_OK;
 failed:
   if (heartbeatTimer) { xTimerDelete(heartbeatTimer, portMAX_DELAY); heartbeatTimer = NULL; }
