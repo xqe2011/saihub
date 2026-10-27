@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>SAIHUB — Flash</title>
+<style>
+:root{
+  --md-sys-color-primary:#006b54;
+  --md-sys-color-on-primary:#ffffff;
+  --md-sys-color-primary-container:#89f8d2;
+  --md-sys-color-on-primary-container:#002117;
+  --md-sys-color-secondary:#4c635a;
+  --md-sys-color-on-secondary:#ffffff;
+  --md-sys-color-secondary-container:#cee9dc;
+  --md-sys-color-on-secondary-container:#072019;
+  --md-sys-color-surface:#f5fbf7;
+  --md-sys-color-surface-dim:#d5dbd7;
+  --md-sys-color-surface-container:#e9efeb;
+  --md-sys-color-surface-container-high:#e3e9e5;
+  --md-sys-color-surface-container-highest:#dee4e0;
+  --md-sys-color-surface-container-lowest:#ffffff;
+  --md-sys-color-on-surface:#171d1b;
+  --md-sys-color-on-surface-variant:#3f4945;
+  --md-sys-color-outline:#6f7975;
+  --md-sys-color-outline-variant:#bfc9c3;
+  --md-sys-color-error:#ba1a1a;
+  --md-sys-color-on-error:#ffffff;
+  --md-sys-color-error-container:#ffdad6;
+  --md-sys-color-on-error-container:#410002;
+  --md-sys-shape-corner-small:8px;
+  --md-sys-shape-corner-medium:12px;
+  --md-sys-shape-corner-large:16px;
+  --md-sys-shape-corner-extra-large:28px;
+  --md-sys-elevation-1:0 1px 2px rgba(0,0,0,.16),0 1px 3px 1px rgba(0,0,0,.08);
+  --md-sys-elevation-2:0 1px 2px rgba(0,0,0,.16),0 2px 6px 2px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{
+  margin:0;
+  min-height:100%;
+  overflow-x:hidden;
+}
+body{
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  color:var(--md-sys-color-on-surface);
+  background:
+    radial-gradient(900px 480px at 0% -5%, rgba(137,248,210,.55) 0%, transparent 60%),
+    radial-gradient(700px 420px at 100% 0%, rgba(206,233,220,.7) 0%, transparent 55%),
+    var(--md-sys-color-surface);
+  background-attachment:fixed;
+  -webkit-font-smoothing:antialiased;
+}
+.app{
+  width:100%;
+  max-width:42rem;
+  margin:0 auto;
+  padding:max(1.25rem, env(safe-area-inset-top)) 1rem max(2rem, env(safe-area-inset-bottom));
+}
+.top{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+  margin-bottom:1.25rem;
+  animation:enter .45s cubic-bezier(.2,0,0,1) both;
+}
+.brand-block{min-width:0;flex:1}
+.brand{
+  margin:0;
+  font-size:clamp(2rem,8vw,2.5rem);
+  font-weight:700;
+  letter-spacing:-.02em;
+  line-height:1.1;
+  color:var(--md-sys-color-primary);
+}
+.subtitle{
+  margin:.4rem 0 0;
+  font-size:.95rem;
+  line-height:1.4;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.top-actions{display:flex;align-items:center;gap:.5rem;flex:none}
+.lang-select{
+  appearance:none;
+  -webkit-appearance:none;
+  border:0;
+  border-radius:999px;
+  padding:.55rem .9rem;
+  font:inherit;
+  font-size:.82rem;
+  font-weight:650;
+  text-align:center;
+  text-align-last:center;
+  background:var(--md-sys-color-secondary-container);
+  color:var(--md-sys-color-on-secondary-container);
+  cursor:pointer;
+  min-height:2.75rem;
+}
+.lang-select:focus{outline:2px solid var(--md-sys-color-primary);outline-offset:2px}
+.sheet{
+  background:var(--md-sys-color-surface-container-lowest);
+  border-radius:var(--md-sys-shape-corner-extra-large);
+  box-shadow:var(--md-sys-elevation-1);
+  padding:1.25rem 1rem 1.25rem;
+  margin-bottom:1rem;
+  animation:enter .5s .05s cubic-bezier(.2,0,0,1) both;
+  overflow:hidden;
+}
+.sheet.terminal-sheet{animation-delay:.1s}
+.section-label{
+  margin:0 0 .65rem .35rem;
+  font-size:.72rem;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.field{
+  position:relative;
+  width:100%;
+  min-width:0;
+  margin-bottom:.85rem;
+}
+.field select{
+  width:100%;
+  appearance:none;
+  border:1px solid var(--md-sys-color-outline);
+  border-radius:var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-small) 0 0;
+  border-bottom-width:2px;
+  background:var(--md-sys-color-surface-container-highest);
+  color:var(--md-sys-color-on-surface);
+  padding:1.35rem 2.4rem .55rem 1rem;
+  font:inherit;
+  font-size:1rem;
+  outline:none;
+  cursor:pointer;
+  transition:border-color .15s, background .15s;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%233f4945' d='M1.4 0L6 4.6 10.6 0 12 1.4 6 7.4 0 1.4z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 1rem center;
+}
+.field select:focus{
+  border-color:var(--md-sys-color-primary);
+  background-color:var(--md-sys-color-surface-container-high);
+}
+.field label{
+  position:absolute;
+  left:1rem;
+  top:.45rem;
+  font-size:.72rem;
+  font-weight:600;
+  color:var(--md-sys-color-primary);
+  pointer-events:none;
+}
+.toggle-row{
+  display:flex;
+  align-items:flex-start;
+  gap:.75rem;
+  padding:.85rem 1rem;
+  border-radius:var(--md-sys-shape-corner-large);
+  background:var(--md-sys-color-surface-container);
+  margin-bottom:1rem;
+}
+.toggle{
+  display:inline-flex;
+  align-items:flex-start;
+  gap:.65rem;
+  font-size:.92rem;
+  font-weight:600;
+  color:var(--md-sys-color-on-surface);
+  cursor:pointer;
+  user-select:none;
+  line-height:1.35;
+}
+.toggle input{
+  appearance:none;
+  flex:none;
+  width:1.15rem;
+  height:1.15rem;
+  margin:.1rem 0 0;
+  border:2px solid var(--md-sys-color-outline);
+  border-radius:4px;
+  background:var(--md-sys-color-surface-container-lowest);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+  transition:background .12s, border-color .12s;
+}
+.toggle input:checked{
+  background:var(--md-sys-color-primary);
+  border-color:var(--md-sys-color-primary);
+}
+.toggle input:checked::after{
+  content:"";
+  width:.35rem;
+  height:.6rem;
+  border:solid var(--md-sys-color-on-primary);
+  border-width:0 2px 2px 0;
+  transform:rotate(45deg) translate(-1px,-1px);
+}
+.toggle-copy{display:flex;flex-direction:column;gap:.2rem;min-width:0}
+.toggle-hint{
+  font-size:.78rem;
+  font-weight:500;
+  color:var(--md-sys-color-on-surface-variant);
+  line-height:1.4;
+}
+.row-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.55rem;
+}
+.row-actions .btn{width:auto;flex:1;min-width:7.5rem}
+.btn{
+  width:100%;
+  min-height:2.6rem;
+  border:0;
+  border-radius:999px;
+  padding:.7rem 1.25rem;
+  font:inherit;
+  font-size:.92rem;
+  font-weight:650;
+  letter-spacing:.02em;
+  cursor:pointer;
+  transition:box-shadow .15s, opacity .15s, transform .12s, background .15s;
+}
+.btn:active{transform:scale(.985)}
+.btn-filled{
+  background:var(--md-sys-color-primary);
+  color:var(--md-sys-color-on-primary);
+  box-shadow:var(--md-sys-elevation-1);
+}
+.btn-filled:hover{box-shadow:var(--md-sys-elevation-2)}
+.btn-tonal{
+  background:var(--md-sys-color-secondary-container);
+  color:var(--md-sys-color-on-secondary-container);
+}
+.btn-tonal:hover{box-shadow:var(--md-sys-elevation-1)}
+.btn:disabled{
+  opacity:.42;
+  cursor:not-allowed;
+  box-shadow:none;
+  transform:none;
+}
+.hint{
+  margin:.85rem 0 0;
+  font-size:.78rem;
+  line-height:1.45;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.status{
+  display:flex;
+  align-items:center;
+  gap:.55rem;
+  margin-bottom:.85rem;
+  padding:.7rem .9rem;
+  border-radius:var(--md-sys-shape-corner-medium);
+  background:var(--md-sys-color-surface-container);
+  font-size:.85rem;
+  font-weight:600;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.status .dot{
+  width:.55rem;
+  height:.55rem;
+  border-radius:999px;
+  background:var(--md-sys-color-outline);
+  flex:none;
+}
+.status.ok{
+  background:var(--md-sys-color-primary-container);
+  color:var(--md-sys-color-on-primary-container);
+}
+.status.ok .dot{background:var(--md-sys-color-primary)}
+.status.err{
+  background:var(--md-sys-color-error-container);
+  color:var(--md-sys-color-on-error-container);
+}
+.status.err .dot{background:var(--md-sys-color-error)}
+.status.busy .dot{
+  background:var(--md-sys-color-primary);
+  animation:pulse 1s ease-in-out infinite;
+}
+.progress-wrap{
+  margin:.25rem 0 1rem;
+}
+.progress-meta{
+  display:flex;
+  justify-content:space-between;
+  gap:.75rem;
+  margin-bottom:.4rem;
+  font-size:.78rem;
+  font-weight:650;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.progress{
+  width:100%;
+  height:.55rem;
+  border:0;
+  border-radius:999px;
+  overflow:hidden;
+  background:var(--md-sys-color-surface-container-highest);
+  appearance:none;
+}
+.progress::-webkit-progress-bar{background:var(--md-sys-color-surface-container-highest);border-radius:999px}
+.progress::-webkit-progress-value{background:var(--md-sys-color-primary);border-radius:999px;transition:width .15s}
+.progress::-moz-progress-bar{background:var(--md-sys-color-primary);border-radius:999px}
+.term-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+  margin-bottom:.65rem;
+}
+.term-head .section-label{margin:0}
+.term-actions{display:flex;gap:.4rem;flex:none}
+.icon-btn{
+  flex:none;
+  width:2.4rem;
+  height:2.4rem;
+  border:0;
+  border-radius:999px;
+  background:var(--md-sys-color-secondary-container);
+  color:var(--md-sys-color-on-secondary-container);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+  transition:background .15s, box-shadow .15s, transform .15s;
+}
+.icon-btn:active{transform:scale(.96)}
+.icon-btn:hover{box-shadow:var(--md-sys-elevation-1)}
+.icon-btn:disabled{opacity:.42;cursor:not-allowed;box-shadow:none}
+.icon-btn svg{width:1.15rem;height:1.15rem}
+.term{
+  min-height:14rem;
+  max-height:min(48vh, 26rem);
+  overflow:auto;
+  white-space:pre-wrap;
+  word-break:break-word;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:.78rem;
+  line-height:1.5;
+  padding:1rem;
+  border-radius:var(--md-sys-shape-corner-large);
+  background:#0f1714;
+  color:#d7efe4;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+}
+.term:empty::before{
+  content:attr(data-placeholder);
+  color:rgba(215,239,228,.45);
+}
+.gate{
+  text-align:center;
+  padding:1.5rem 1rem 1.25rem;
+}
+.gate-icon{
+  width:3.5rem;
+  height:3.5rem;
+  margin:0 auto 1rem;
+  border-radius:999px;
+  display:grid;
+  place-items:center;
+  background:var(--md-sys-color-error-container);
+  color:var(--md-sys-color-on-error-container);
+}
+.gate-icon svg{width:1.75rem;height:1.75rem}
+.gate h2{
+  margin:0 0 .5rem;
+  font-size:1.25rem;
+  letter-spacing:-.01em;
+}
+.gate p{
+  margin:0;
+  color:var(--md-sys-color-on-surface-variant);
+  line-height:1.5;
+  font-size:.95rem;
+}
+.footer{
+  text-align:center;
+  margin-top:.5rem;
+  font-size:.8rem;
+  color:var(--md-sys-color-on-surface-variant);
+  animation:enter .45s .15s cubic-bezier(.2,0,0,1) both;
+}
+.footer a{
+  color:var(--md-sys-color-primary);
+  font-weight:600;
+  text-decoration:none;
+}
+.footer a:hover{text-decoration:underline}
+@keyframes enter{
+  from{opacity:0;transform:translateY(10px)}
+  to{opacity:1;transform:none}
+}
+@keyframes pulse{
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:.45;transform:scale(.85)}
+}
+@media (max-width:360px){
+  .app{padding-left:.75rem;padding-right:.75rem}
+  .sheet{padding:1rem .75rem 1.1rem}
+}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="top">
+    <div class="brand-block">
+      <h1 class="brand">SAIHUB</h1>
+      <p class="subtitle" data-i18n="subtitle">Flash firmware and open the serial console.</p>
+    </div>
+    <div class="top-actions">
+      <select class="lang-select" id="lang" aria-label="Language" title="Language">
+        <option value="en">English</option>
+        <option value="zh">中文</option>
+      </select>
+    </div>
+  </header>
+
+  <section class="sheet" id="gate" hidden>
+    <div class="gate">
+      <div class="gate-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>
+      </div>
+      <h2 data-i18n="gate.title">Chrome-based browser required</h2>
+      <p data-i18n="gate.body">This flasher needs the Web Serial API. Open this page in Google Chrome, Microsoft Edge, or another Chromium browser.</p>
+    </div>
+  </section>
+
+  <div id="main-ui">
+    <section class="sheet" aria-label="Flash" data-i18n-aria="flash.section">
+      <h2 class="section-label" data-i18n="flash.section">Firmware</h2>
+      <div class="status" id="status"><span class="dot"></span><span id="status-text" data-i18n="status.loading">Loading releases…</span></div>
+
+      <div class="field">
+        <select id="version" disabled></select>
+        <label for="version" data-i18n="flash.version">Version</label>
+      </div>
+
+      <div class="toggle-row">
+        <label class="toggle">
+          <input type="checkbox" id="erase-settings"/>
+          <span class="toggle-copy">
+            <span data-i18n="flash.erase">Erase all settings</span>
+            <span class="toggle-hint" data-i18n="flash.eraseHint">Wipes Wi‑Fi and other saved settings before writing firmware.</span>
+          </span>
+        </label>
+      </div>
+
+      <div class="progress-wrap" id="progress-wrap" hidden>
+        <div class="progress-meta">
+          <span data-i18n="flash.progress">Flashing</span>
+          <span id="progress-pct">0%</span>
+        </div>
+        <progress class="progress" id="progress" max="100" value="0"></progress>
+      </div>
+
+      <div class="row-actions">
+        <button type="button" class="btn btn-filled" id="flash-btn" disabled data-i18n="flash.action">Flash</button>
+        <button type="button" class="btn btn-tonal" id="term-btn" disabled data-i18n="term.start">Start terminal</button>
+        <button type="button" class="btn btn-tonal" id="stop-btn" hidden data-i18n="term.stop">Stop</button>
+      </div>
+      <p class="hint" data-i18n="flash.hint">Hold BOOT while plugging in USB if the board does not enter download mode. Baud rate is fixed at 115200.</p>
+    </section>
+
+    <section class="sheet terminal-sheet" aria-label="Terminal" data-i18n-aria="term.section">
+      <div class="term-head">
+        <h2 class="section-label" data-i18n="term.section">Terminal</h2>
+        <div class="term-actions">
+          <button type="button" class="icon-btn" id="clear-term" aria-label="Clear" title="Clear" data-i18n-aria="term.clear" data-i18n-title="term.clear">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="term" id="term" data-placeholder="Serial output will appear here." data-i18n-placeholder="term.placeholder"></div>
+    </section>
+  </div>
+
+  <p class="footer"><a id="releases-link" href="https://github.com/xqe2011/saihub/releases" target="_blank" rel="noopener">GitHub Releases</a></p>
+</main>
+
+<script type="module">
+import { ESPLoader, Transport } from "https://cdn.jsdelivr.net/npm/esptool-js@0.7.0/+esm";
+
+const GH_REPO = "xqe2011/saihub";
+const BAUD = 115200;
+const MERGED_RE = /^saihub-(.+)-merged\.bin$/i;
+
+const I18N = {
+  en:{
+    subtitle:"Flash firmware and open the serial console.",
+    language:"Language",
+    "gate.title":"Chrome-based browser required",
+    "gate.body":"This flasher needs the Web Serial API. Open this page in Google Chrome, Microsoft Edge, or another Chromium browser.",
+    "flash.section":"Firmware",
+    "flash.version":"Version",
+    "flash.erase":"Erase all settings",
+    "flash.eraseHint":"Wipes Wi‑Fi and other saved settings before writing firmware.",
+    "flash.progress":"Flashing",
+    "flash.action":"Flash",
+    "flash.hint":"Hold BOOT while plugging in USB if the board does not enter download mode. Baud rate is fixed at 115200.",
+    "term.section":"Terminal",
+    "term.start":"Start terminal",
+    "term.stop":"Stop",
+    "term.clear":"Clear",
+    "term.placeholder":"Serial output will appear here.",
+    "status.loading":"Loading releases…",
+    "status.ready":"Ready",
+    "status.noReleases":"No releases found.",
+    "status.loadFailed":"Could not load releases.",
+    "status.connecting":"Connecting…",
+    "status.detecting":"Detecting board…",
+    "status.unsupported":"This board is not supported by the selected release.",
+    "status.downloading":"Downloading firmware…",
+    "status.flashing":"Writing firmware…",
+    "status.done":"Flash complete. Starting terminal…",
+    "status.terminal":"Terminal running",
+    "status.stopped":"Stopped",
+    "status.error":"Something went wrong.",
+    "status.cancelled":"Cancelled",
+  },
+  zh:{
+    subtitle:"烧录固件并打开串口终端。",
+    language:"语言",
+    "gate.title":"需要基于 Chrome 的浏览器",
+    "gate.body":"此烧录页依赖 Web Serial API。请使用 Google Chrome、Microsoft Edge 或其他 Chromium 内核浏览器打开。",
+    "flash.section":"固件",
+    "flash.version":"版本",
+    "flash.erase":"清除全部设置",
+    "flash.eraseHint":"写入固件前清除 Wi‑Fi 等已保存的设置。",
+    "flash.progress":"烧录中",
+    "flash.action":"烧录",
+    "flash.hint":"若板子未进入下载模式，请按住 BOOT 再插入 USB。波特率固定为 115200。",
+    "term.section":"终端",
+    "term.start":"打开终端",
+    "term.stop":"停止",
+    "term.clear":"清空",
+    "term.placeholder":"串口输出将显示在这里。",
+    "status.loading":"正在加载版本…",
+    "status.ready":"就绪",
+    "status.noReleases":"未找到发布版本。",
+    "status.loadFailed":"无法加载发布版本。",
+    "status.connecting":"正在连接…",
+    "status.detecting":"正在识别板子…",
+    "status.unsupported":"所选版本不支持当前板子。",
+    "status.downloading":"正在下载固件…",
+    "status.flashing":"正在写入固件…",
+    "status.done":"烧录完成，正在打开终端…",
+    "status.terminal":"终端运行中",
+    "status.stopped":"已停止",
+    "status.error":"出错了。",
+    "status.cancelled":"已取消",
+  },
+};
+
+const LANG_KEY = "saihub-lang";
+const el = {
+  gate: document.getElementById("gate"),
+  main: document.getElementById("main-ui"),
+  lang: document.getElementById("lang"),
+  status: document.getElementById("status"),
+  statusText: document.getElementById("status-text"),
+  version: document.getElementById("version"),
+  erase: document.getElementById("erase-settings"),
+  progressWrap: document.getElementById("progress-wrap"),
+  progress: document.getElementById("progress"),
+  progressPct: document.getElementById("progress-pct"),
+  flashBtn: document.getElementById("flash-btn"),
+  termBtn: document.getElementById("term-btn"),
+  stopBtn: document.getElementById("stop-btn"),
+  clearTerm: document.getElementById("clear-term"),
+  term: document.getElementById("term"),
+};
+
+let lang = detectLang();
+/** @type {{tag:string, assets:Record<string,string>}[]} */
+let releases = [];
+/** @type {SerialPort|null} */
+let port = null;
+/** @type {Transport|null} */
+let transport = null;
+let consoleClosed = true;
+let busy = false;
+
+function detectLang(){
+  const saved = localStorage.getItem(LANG_KEY);
+  if(saved === "en" || saved === "zh") return saved;
+  const nav = (navigator.language || navigator.userLanguage || "").toLowerCase();
+  return nav.startsWith("zh") ? "zh" : "en";
+}
+
+function t(key){
+  return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
+}
+
+function applyI18n(){
+  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  el.lang.value = lang;
+  el.lang.setAttribute("aria-label", t("language"));
+  el.lang.title = t("language");
+  document.querySelectorAll("[data-i18n]").forEach((node)=>{
+    node.textContent = t(node.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-aria]").forEach((node)=>{
+    node.setAttribute("aria-label", t(node.dataset.i18nAria));
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((node)=>{
+    node.title = t(node.dataset.i18nTitle);
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((node)=>{
+    node.setAttribute("data-placeholder", t(node.dataset.i18nPlaceholder));
+  });
+}
+
+function isChromeBased(){
+  if(!("serial" in navigator) || typeof navigator.serial?.requestPort !== "function") return false;
+  const ua = navigator.userAgent || "";
+  if(/Firefox|FxiOS/i.test(ua)) return false;
+  if(/Safari/i.test(ua) && !/Chrome|Chromium|Edg|OPR|Brave/i.test(ua)) return false;
+  return true;
+}
+
+function setStatus(key, kind){
+  el.status.className = "status" + (kind ? " " + kind : "");
+  el.statusText.textContent = t(key);
+  el.statusText.dataset.i18n = key;
+}
+
+function setProgress(pct){
+  const value = Math.max(0, Math.min(100, Math.round(pct)));
+  el.progress.value = value;
+  el.progressPct.textContent = value + "%";
+}
+
+function setBusy(next){
+  busy = next;
+  el.flashBtn.disabled = next || !releases.length;
+  el.termBtn.disabled = next;
+  el.version.disabled = next || !releases.length;
+  el.erase.disabled = next;
+}
+
+function appendTerm(text){
+  el.term.textContent += text;
+  el.term.scrollTop = el.term.scrollHeight;
+}
+
+function writeln(text){
+  appendTerm(text + "\n");
+}
+
+function chipTargetId(chipName){
+  return String(chipName || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function findMergedUrl(release, chipName){
+  const target = chipTargetId(chipName);
+  if(!target) return null;
+  const exact = release.assets["saihub-" + target + "-merged.bin"];
+  if(exact) return exact;
+  for(const [name, url] of Object.entries(release.assets)){
+    const m = name.match(MERGED_RE);
+    if(m && chipTargetId(m[1]) === target) return url;
+  }
+  return null;
+}
+
+const loaderTerminal = {
+  clean(){ el.term.textContent = ""; },
+  writeLine(data){ writeln(String(data)); },
+  write(data){ appendTerm(String(data)); },
+};
+
+async function disconnectAll(){
+  consoleClosed = true;
+  try{
+    if(transport) await transport.disconnect();
+  }catch(_){ /* ignore */ }
+  transport = null;
+  if(port){
+    try{
+      if(port.readable || port.writable) await port.close();
+    }catch(_){ /* ignore */ }
+  }
+  port = null;
+  el.stopBtn.hidden = true;
+  el.termBtn.hidden = false;
+  el.flashBtn.hidden = false;
+}
+
+async function requestSerialPort(){
+  return navigator.serial.requestPort();
+}
+
+async function ensurePort(){
+  if(port) return port;
+  port = await requestSerialPort();
+  return port;
+}
+
+async function loadReleases(){
+  setStatus("status.loading", "busy");
+  try{
+    const res = await fetch(`https://api.github.com/repos/${GH_REPO}/releases?per_page=50`, {
+      headers: { Accept: "application/vnd.github+json" },
+    });
+    if(!res.ok) throw new Error("releases " + res.status);
+    const data = await res.json();
+    releases = (Array.isArray(data) ? data : [])
+      .filter((r)=>!r.draft)
+      .map((r)=>{
+        /** @type {Record<string,string>} */
+        const assets = {};
+        for(const a of r.assets || []){
+          if(typeof a.name === "string" && typeof a.browser_download_url === "string"){
+            assets[a.name] = a.browser_download_url;
+          }
+        }
+        return { tag: r.tag_name, assets };
+      })
+      .filter((r)=>Object.keys(r.assets).some((n)=>MERGED_RE.test(n)));
+
+    el.version.innerHTML = "";
+    if(!releases.length){
+      setStatus("status.noReleases", "err");
+      setBusy(false);
+      el.flashBtn.disabled = true;
+      el.termBtn.disabled = false;
+      return;
+    }
+    for(const r of releases){
+      const opt = document.createElement("option");
+      opt.value = r.tag;
+      opt.textContent = r.tag;
+      el.version.appendChild(opt);
+    }
+    setStatus("status.ready", "ok");
+    setBusy(false);
+  }catch(err){
+    console.error(err);
+    setStatus("status.loadFailed", "err");
+    el.termBtn.disabled = false;
+  }
+}
+
+async function startConsoleReading(){
+  if(!transport || consoleClosed) return;
+  const decoder = new TextDecoder();
+  try{
+    await transport.rawRead((chunk)=>{
+      appendTerm(decoder.decode(chunk, { stream: true }));
+    }, ()=>consoleClosed);
+  }catch(err){
+    if(!consoleClosed){
+      writeln("\n" + (err && err.message ? err.message : String(err)));
+    }
+  }
+}
+
+async function beginTerminal(){
+  await ensurePort();
+  transport = new Transport(port, true);
+  await transport.connect(BAUD);
+  consoleClosed = false;
+  el.termBtn.hidden = true;
+  el.flashBtn.hidden = true;
+  el.stopBtn.hidden = false;
+  setStatus("status.terminal", "ok");
+  startConsoleReading();
+}
+
+async function flashFirmware(){
+  const tag = el.version.value;
+  const release = releases.find((r)=>r.tag === tag);
+  if(!release) return;
+
+  setBusy(true);
+  el.progressWrap.hidden = false;
+  setProgress(0);
+  setStatus("status.connecting", "busy");
+
+  try{
+    await disconnectAll();
+    await ensurePort();
+    transport = new Transport(port, true);
+    const loader = new ESPLoader({
+      transport,
+      baudrate: BAUD,
+      romBaudrate: BAUD,
+      terminal: loaderTerminal,
+    });
+
+    setStatus("status.detecting", "busy");
+    const chipName = await loader.main();
+    const url = findMergedUrl(release, chipName);
+    if(!url){
+      setStatus("status.unsupported", "err");
+      writeln(t("status.unsupported"));
+      await disconnectAll();
+      setBusy(false);
+      el.progressWrap.hidden = true;
+      return;
+    }
+
+    setStatus("status.downloading", "busy");
+    const binRes = await fetch(url);
+    if(!binRes.ok) throw new Error("download " + binRes.status);
+    const data = new Uint8Array(await binRes.arrayBuffer());
+
+    setStatus("status.flashing", "busy");
+    await loader.writeFlash({
+      fileArray: [{ data, address: 0x0 }],
+      flashMode: "dio",
+      flashFreq: "80m",
+      flashSize: "4MB",
+      eraseAll: !!el.erase.checked,
+      compress: true,
+      reportProgress: (_fileIndex, written, total)=>{
+        setProgress(total ? (written / total) * 100 : 0);
+      },
+    });
+    await loader.after("hard_reset");
+    setProgress(100);
+    setStatus("status.done", "ok");
+
+    // Drop loader session, then open a plain serial console on the same port.
+    try{ await transport.disconnect(); }catch(_){ /* ignore */ }
+    transport = new Transport(port, true);
+    await transport.connect(BAUD);
+    consoleClosed = false;
+    el.termBtn.hidden = true;
+    el.flashBtn.hidden = true;
+    el.stopBtn.hidden = false;
+    setStatus("status.terminal", "ok");
+    startConsoleReading();
+  }catch(err){
+    console.error(err);
+    const name = err && err.name;
+    if(name === "NotFoundError"){
+      setStatus("status.cancelled", "err");
+    }else{
+      setStatus("status.error", "err");
+      writeln((err && err.message) ? err.message : t("status.error"));
+    }
+    try{ await disconnectAll(); }catch(_){ /* ignore */ }
+  }finally{
+    setBusy(false);
+    if(consoleClosed) el.progressWrap.hidden = true;
+  }
+}
+
+el.lang.onchange = (e)=>{
+  lang = e.target.value === "zh" ? "zh" : "en";
+  localStorage.setItem(LANG_KEY, lang);
+  applyI18n();
+};
+
+el.flashBtn.onclick = ()=>{ flashFirmware(); };
+el.termBtn.onclick = async ()=>{
+  setBusy(true);
+  setStatus("status.connecting", "busy");
+  try{
+    await disconnectAll();
+    await beginTerminal();
+  }catch(err){
+    console.error(err);
+    if(err && err.name === "NotFoundError") setStatus("status.cancelled", "err");
+    else{
+      setStatus("status.error", "err");
+      writeln((err && err.message) ? err.message : t("status.error"));
+    }
+    await disconnectAll();
+  }finally{
+    setBusy(false);
+  }
+};
+el.stopBtn.onclick = async ()=>{
+  await disconnectAll();
+  setStatus("status.stopped", "");
+  setBusy(false);
+};
+el.clearTerm.onclick = ()=>{ el.term.textContent = ""; };
+
+applyI18n();
+
+if(!isChromeBased()){
+  el.gate.hidden = false;
+  el.main.hidden = true;
+}else{
+  el.gate.hidden = true;
+  el.main.hidden = false;
+  loadReleases();
+}
+</script>
+</body>
+</html>
