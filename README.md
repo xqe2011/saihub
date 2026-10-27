@@ -57,7 +57,7 @@ You do not have to use our board — the firmware runs on any ESP32-C5. See [bri
 
 The [cookbook](docs/cookbook.md) walks through every step:
 
-1. Download the firmware `.bin` from [Releases](https://github.com/xqe2011/saihub/releases) and flash it with the [ESP web flasher](https://espressif.github.io/esptool-js/).
+1. Open the [SAIHub web flasher](https://xqe2011.github.io/saihub) in Chrome or Edge, pick a release, and flash the board.
 2. Click **BOOT** to open Wi-Fi pairing, join the `SAIHUB-xxxxxx` AP, and pick your network.
 3. Point Cursor / Claude Code / Codex CLI at `http://<device-ip>/mcp`. The agent now has a hand on your bench.
 

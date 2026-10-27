@@ -53,7 +53,7 @@ SAIHub 是给编程智能体用的口袋 IO 板。烧好固件、连上 Wi-Fi、
 
 完整步骤见[使用手册](docs/cookbook.zh.md)：
 
-1. 从 [Releases](https://github.com/xqe2011/saihub/releases) 下载固件 `.bin`，用 [ESP 网页烧录器](https://espressif.github.io/esptool-js/) 烧录。
+1. 用 Chrome 或 Edge 打开 [SAIHub 网页烧录器](https://xqe2011.github.io/saihub)，选择版本并烧录。
 2. 按一下 **BOOT** 键进入 Wi-Fi 配对，连接 `SAIHUB-xxxxxx` 热点，选好你的 Wi-Fi。
 3. 在 Cursor / Claude Code / Codex CLI 里填入 `http://<设备IP>/mcp`。至此，智能体就有了一只放在你工位上的"手"。
 

@@ -33,6 +33,8 @@ idf.py merge-bin   # 生成网页烧录器使用的合并镜像（烧到 0x0）
 
 推送 git tag 会跑 [`.github/workflows/firmware-release.yml`](../.github/workflows/firmware-release.yml)。tag 名写入 `version.txt`（固件 version 字符串）。Release 会上传合并烧录镜像、供 OTA 使用的应用镜像、`manifest.json`（版本、发布日期、changelog、各 target 的应用 `url` / `sha256` / `size`）以及 `SHA256SUMS`。若 GitHub Environment `cloud` 配有变量 `ADMIN_URL`（含 `/admin` 的管理地址，例如 `https://example.com/admin`）和密钥 `ADMIN_TOKEN`，会在 `cloud/cloudflare` 下执行 `bun run upload-file-cache -- <adminUrl> <token> <version>`（把 `mcp.json` 和 `openapi.json` POST 到 `{ADMIN_URL}/file-cache`）。缺任一配置则跳过上传。
 
+推送到 `main` 且改动 `page/` 时会跑 [`.github/workflows/pages.yml`](../.github/workflows/pages.yml)，通过 GitHub Pages 发布[网页烧录器](https://xqe2011.github.io/saihub)。改完 `main/assets/*.html` 后用 `gzip -9 -n -c main/assets/control.html > main/embed/control.html.gz` 更新 embed（`portal.html` 同理）。
+
 ## Cloudflare Worker
 
 需要 [Bun](https://bun.sh)（或 Node）和 [Wrangler](https://developers.cloudflare.com/workers/wrangler/)。生产环境部署步骤见[使用手册第 5 节](cookbook.zh.md#5-自行部署-cloudflare-中继)。
