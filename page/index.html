@@ -352,6 +352,19 @@ body{
   content:attr(data-placeholder);
   color:rgba(215,239,228,.45);
 }
+.term .log-e{color:#ff6b6b;font-weight:650}
+.term .log-w{color:#f0c14a}
+.term .log-i{color:#5dde9a}
+.term .log-d{color:#6ec6ff}
+.term .log-v{color:#8fa39a}
+.term .log-dim,.term .ansi-dim{color:rgba(215,239,228,.55)}
+.term .ansi-red{color:#ff6b6b}
+.term .ansi-green{color:#5dde9a}
+.term .ansi-yellow{color:#f0c14a}
+.term .ansi-blue{color:#6ec6ff}
+.term .ansi-magenta{color:#d89dff}
+.term .ansi-cyan{color:#5fd3d3}
+.term .ansi-bold{font-weight:650}
 .gate{
   text-align:center;
   padding:1.5rem 1rem 1.25rem;
@@ -442,7 +455,7 @@ body{
 
       <div class="toggle-row">
         <label class="toggle">
-          <input type="checkbox" id="erase-settings"/>
+          <input type="checkbox" id="erase-settings" checked/>
           <span class="toggle-copy">
             <span data-i18n="flash.erase">Erase all settings</span>
             <span class="toggle-hint" data-i18n="flash.eraseHint">Wipes Wi‑Fi and other saved settings before writing firmware.</span>
@@ -463,7 +476,7 @@ body{
         <button type="button" class="btn btn-tonal" id="term-btn" disabled data-i18n="term.start">Start terminal</button>
         <button type="button" class="btn btn-tonal" id="stop-btn" hidden data-i18n="term.stop">Stop</button>
       </div>
-      <p class="hint" data-i18n="flash.hint">Hold BOOT while plugging in USB if the board does not enter download mode. Baud rate is fixed at 115200.</p>
+      <p class="hint" data-i18n="flash.hint">Hold BOOT while plugging in USB.</p>
     </section>
 
     <section class="sheet terminal-sheet" aria-label="Terminal" data-i18n-aria="term.section">
@@ -501,7 +514,7 @@ const I18N = {
     "flash.eraseHint":"Wipes Wi‑Fi and other saved settings before writing firmware.",
     "flash.progress":"Flashing",
     "flash.action":"Flash",
-    "flash.hint":"Hold BOOT while plugging in USB if the board does not enter download mode. Baud rate is fixed at 115200.",
+    "flash.hint":"Hold BOOT while plugging in USB.",
     "term.section":"Terminal",
     "term.start":"Start terminal",
     "term.stop":"Stop",
@@ -533,7 +546,7 @@ const I18N = {
     "flash.eraseHint":"写入固件前清除 Wi‑Fi 等已保存的设置。",
     "flash.progress":"烧录中",
     "flash.action":"烧录",
-    "flash.hint":"若板子未进入下载模式，请按住 BOOT 再插入 USB。波特率固定为 115200。",
+    "flash.hint":"按住 BOOT 再插入 USB。",
     "term.section":"终端",
     "term.start":"打开终端",
     "term.stop":"停止",
@@ -643,13 +656,102 @@ function setBusy(next){
   el.erase.disabled = next;
 }
 
-function appendTerm(text){
-  el.term.textContent += text;
+const IDF_LEVEL_RE = /^([EWIDV]) \(([\d.: -]+)\) (.*)$/;
+const ANSI_RE = /\x1b\[([0-9;]*)m/g;
+const LEVEL_CLASS = { E:"log-e", W:"log-w", I:"log-i", D:"log-d", V:"log-v" };
+const ANSI_FG = {
+  "30":"ansi-dim", "31":"ansi-red", "32":"ansi-green", "33":"ansi-yellow",
+  "34":"ansi-blue", "35":"ansi-magenta", "36":"ansi-cyan", "37":"ansi-dim",
+  "90":"ansi-dim", "91":"ansi-red", "92":"ansi-green", "93":"ansi-yellow",
+  "94":"ansi-blue", "95":"ansi-magenta", "96":"ansi-cyan", "97":"",
+};
+let termLineBuf = "";
+let flashLogMs = 0;
+
+function escapeHtml(s){
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function clearTerm(){
+  termLineBuf = "";
+  el.term.replaceChildren();
+}
+
+function scrollTerm(){
   el.term.scrollTop = el.term.scrollHeight;
 }
 
+function appendHtml(html){
+  el.term.insertAdjacentHTML("beforeend", html);
+  scrollTerm();
+}
+
+function ansiToHtml(text){
+  let html = "";
+  let classes = [];
+  let last = 0;
+  ANSI_RE.lastIndex = 0;
+  let m;
+  while((m = ANSI_RE.exec(text))){
+    if(m.index > last){
+      const chunk = escapeHtml(text.slice(last, m.index));
+      html += classes.length ? `<span class="${classes.join(" ")}">${chunk}</span>` : chunk;
+    }
+    last = m.index + m[0].length;
+    const codes = (m[1] || "0").split(";").filter(Boolean);
+    if(!codes.length || codes.includes("0")){
+      classes = [];
+    }else{
+      for(const code of codes){
+        if(code === "1"){
+          if(!classes.includes("ansi-bold")) classes.push("ansi-bold");
+        }else if(ANSI_FG[code] !== undefined){
+          classes = classes.filter((c)=>c === "ansi-bold");
+          if(ANSI_FG[code]) classes.push(ANSI_FG[code]);
+        }
+      }
+    }
+  }
+  if(last < text.length){
+    const chunk = escapeHtml(text.slice(last));
+    html += classes.length ? `<span class="${classes.join(" ")}">${chunk}</span>` : chunk;
+  }
+  return html || escapeHtml(text);
+}
+
+function colorizeIdfLine(line){
+  if(line.includes("\x1b[")) return ansiToHtml(line);
+  const match = IDF_LEVEL_RE.exec(line);
+  if(!match) return escapeHtml(line);
+  const cls = LEVEL_CLASS[match[1]] || "";
+  return cls ? `<span class="${cls}">${escapeHtml(line)}</span>` : escapeHtml(line);
+}
+
+function writeTermLine(line){
+  appendHtml(colorizeIdfLine(line) + "\n");
+}
+
+function appendTerm(text){
+  termLineBuf += text;
+  let idx;
+  while((idx = termLineBuf.search(/\r?\n/)) !== -1){
+    const line = termLineBuf.slice(0, idx).replace(/\r$/, "");
+    termLineBuf = termLineBuf.slice(idx).replace(/^\r?\n/, "");
+    writeTermLine(line);
+  }
+}
+
 function writeln(text){
-  appendTerm(text + "\n");
+  appendTerm(String(text) + "\n");
+}
+
+function logEsp(level, tag, message){
+  const ms = Math.max(0, Math.round((performance.now() - flashLogMs) || 0));
+  writeTermLine(`${level} (${ms}) ${tag}: ${message}`);
 }
 
 function chipTargetId(chipName){
@@ -668,8 +770,54 @@ function findMergedUrl(release, chipName){
   return null;
 }
 
+function formatBytes(n){
+  if(n < 1024) return n + " B";
+  if(n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / (1024 * 1024)).toFixed(2) + " MB";
+}
+
+async function downloadFirmware(url){
+  const name = url.split("/").pop() || "firmware.bin";
+  logEsp("I", "download", `Fetching ${name}`);
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("download " + res.status);
+  const total = Number(res.headers.get("content-length") || 0);
+  if(!res.body || !res.body.getReader){
+    const data = new Uint8Array(await res.arrayBuffer());
+    logEsp("I", "download", `Downloaded ${formatBytes(data.byteLength)}`);
+    return data;
+  }
+  const reader = res.body.getReader();
+  const chunks = [];
+  let received = 0;
+  let lastPct = -1;
+  while(true){
+    const { done, value } = await reader.read();
+    if(done) break;
+    chunks.push(value);
+    received += value.byteLength;
+    if(total > 0){
+      const pct = Math.floor((received / total) * 100);
+      if(pct !== lastPct && (pct % 10 === 0 || pct === 100)){
+        lastPct = pct;
+        logEsp("I", "download", `${pct}% (${formatBytes(received)} / ${formatBytes(total)})`);
+      }
+    }else if(received === value.byteLength || received % (256 * 1024) < value.byteLength){
+      logEsp("D", "download", `Received ${formatBytes(received)}`);
+    }
+  }
+  const data = new Uint8Array(received);
+  let offset = 0;
+  for(const chunk of chunks){
+    data.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  logEsp("I", "download", `Downloaded ${formatBytes(data.byteLength)}`);
+  return data;
+}
+
 const loaderTerminal = {
-  clean(){ el.term.textContent = ""; },
+  clean(){ clearTerm(); },
   writeLine(data){ writeln(String(data)); },
   write(data){ appendTerm(String(data)); },
 };
@@ -753,9 +901,13 @@ async function startConsoleReading(){
     await transport.rawRead((chunk)=>{
       appendTerm(decoder.decode(chunk, { stream: true }));
     }, ()=>consoleClosed);
+    if(termLineBuf){
+      writeTermLine(termLineBuf);
+      termLineBuf = "";
+    }
   }catch(err){
     if(!consoleClosed){
-      writeln("\n" + (err && err.message ? err.message : String(err)));
+      logEsp("E", "console", (err && err.message) ? err.message : String(err));
     }
   }
 }
@@ -769,6 +921,7 @@ async function beginTerminal(){
   el.flashBtn.hidden = true;
   el.stopBtn.hidden = false;
   setStatus("status.terminal", "ok");
+  logEsp("I", "console", "Serial terminal started");
   startConsoleReading();
 }
 
@@ -780,7 +933,10 @@ async function flashFirmware(){
   setBusy(true);
   el.progressWrap.hidden = false;
   setProgress(0);
+  flashLogMs = performance.now();
+  clearTerm();
   setStatus("status.connecting", "busy");
+  logEsp("I", "flash", `Selected version ${tag}`);
 
   try{
     await disconnectAll();
@@ -794,11 +950,12 @@ async function flashFirmware(){
     });
 
     setStatus("status.detecting", "busy");
+    logEsp("I", "flash", "Connecting and detecting board");
     const chipName = await loader.main();
     const url = findMergedUrl(release, chipName);
     if(!url){
       setStatus("status.unsupported", "err");
-      writeln(t("status.unsupported"));
+      logEsp("E", "flash", t("status.unsupported"));
       await disconnectAll();
       setBusy(false);
       el.progressWrap.hidden = true;
@@ -806,25 +963,33 @@ async function flashFirmware(){
     }
 
     setStatus("status.downloading", "busy");
-    const binRes = await fetch(url);
-    if(!binRes.ok) throw new Error("download " + binRes.status);
-    const data = new Uint8Array(await binRes.arrayBuffer());
+    const data = await downloadFirmware(url);
 
     setStatus("status.flashing", "busy");
+    const eraseAll = !!el.erase.checked;
+    if(eraseAll) logEsp("I", "flash", "Erasing settings, then writing firmware");
+    else logEsp("I", "flash", "Writing firmware");
+    let lastFlashPct = -1;
     await loader.writeFlash({
       fileArray: [{ data, address: 0x0 }],
       flashMode: "dio",
       flashFreq: "80m",
       flashSize: "4MB",
-      eraseAll: !!el.erase.checked,
+      eraseAll,
       compress: true,
       reportProgress: (_fileIndex, written, total)=>{
-        setProgress(total ? (written / total) * 100 : 0);
+        const pct = total ? Math.floor((written / total) * 100) : 0;
+        setProgress(pct);
+        if(pct !== lastFlashPct && (pct % 10 === 0 || pct === 100)){
+          lastFlashPct = pct;
+          logEsp("I", "flash", `Write progress ${pct}%`);
+        }
       },
     });
     await loader.after("hard_reset");
     setProgress(100);
     setStatus("status.done", "ok");
+    logEsp("I", "flash", "Flash complete");
 
     // Drop loader session, then open a plain serial console on the same port.
     try{ await transport.disconnect(); }catch(_){ /* ignore */ }
@@ -835,15 +1000,17 @@ async function flashFirmware(){
     el.flashBtn.hidden = true;
     el.stopBtn.hidden = false;
     setStatus("status.terminal", "ok");
+    logEsp("I", "console", "Serial terminal started");
     startConsoleReading();
   }catch(err){
     console.error(err);
     const name = err && err.name;
     if(name === "NotFoundError"){
       setStatus("status.cancelled", "err");
+      logEsp("W", "flash", t("status.cancelled"));
     }else{
       setStatus("status.error", "err");
-      writeln((err && err.message) ? err.message : t("status.error"));
+      logEsp("E", "flash", (err && err.message) ? err.message : t("status.error"));
     }
     try{ await disconnectAll(); }catch(_){ /* ignore */ }
   }finally{
@@ -861,16 +1028,19 @@ el.lang.onchange = (e)=>{
 el.flashBtn.onclick = ()=>{ flashFirmware(); };
 el.termBtn.onclick = async ()=>{
   setBusy(true);
+  flashLogMs = performance.now();
   setStatus("status.connecting", "busy");
   try{
     await disconnectAll();
     await beginTerminal();
   }catch(err){
     console.error(err);
-    if(err && err.name === "NotFoundError") setStatus("status.cancelled", "err");
-    else{
+    if(err && err.name === "NotFoundError"){
+      setStatus("status.cancelled", "err");
+      logEsp("W", "console", t("status.cancelled"));
+    }else{
       setStatus("status.error", "err");
-      writeln((err && err.message) ? err.message : t("status.error"));
+      logEsp("E", "console", (err && err.message) ? err.message : t("status.error"));
     }
     await disconnectAll();
   }finally{
@@ -880,9 +1050,10 @@ el.termBtn.onclick = async ()=>{
 el.stopBtn.onclick = async ()=>{
   await disconnectAll();
   setStatus("status.stopped", "");
+  logEsp("I", "console", "Serial terminal stopped");
   setBusy(false);
 };
-el.clearTerm.onclick = ()=>{ el.term.textContent = ""; };
+el.clearTerm.onclick = ()=>{ clearTerm(); };
 
 applyI18n();
 
