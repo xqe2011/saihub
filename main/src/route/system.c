@@ -12,6 +12,8 @@
 #include <cJSON.h>
 #include <string.h>
 
+static const char* tag = "SAIHub-System";
+
 static const char* Route_SystemOtaStateName(System_OtaState state)
 {
   switch (state) {

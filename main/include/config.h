@@ -67,6 +67,6 @@
 #define CONFIG_OTA_MANIFEST_URL "https://github.com/xqe2011/saihub/releases/latest/download/manifest.json"
 #define CONFIG_OTA_IMAGE_TARGET "esp32c5"
 #define CONFIG_OTA_HTTP_TIMEOUT_MS 30000
-#define CONFIG_OTA_MANIFEST_MAX_BYTES (64 * 1024)
+#define CONFIG_OTA_MANIFEST_MAX_BYTES (8 * 1024)
 
 #endif

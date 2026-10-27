@@ -40,6 +40,7 @@
   --md-sys-elevation-2:0 1px 2px rgba(0,0,0,.16),0 2px 6px 2px rgba(0,0,0,.08);
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{
   margin:0;
   min-height:100%;
@@ -103,44 +104,28 @@ body{
 .top-actions{display:flex;align-items:center;gap:.5rem;flex:none}
 .lang-select{
   appearance:none;
+  -webkit-appearance:none;
   border:0;
   border-radius:999px;
   padding:.55rem .9rem;
   font:inherit;
   font-size:.82rem;
   font-weight:650;
+  text-align:center;
+  text-align-last:center;
   background:var(--md-sys-color-secondary-container);
   color:var(--md-sys-color-on-secondary-container);
   cursor:pointer;
   min-height:2.75rem;
 }
 .lang-select:focus{outline:2px solid var(--md-sys-color-primary);outline-offset:2px}
-.url-row{display:flex;align-items:flex-end;gap:.65rem;margin-bottom:.35rem}
+.url-row{display:flex;align-items:flex-end;gap:.65rem}
 .url-row .field{flex:1;min-width:0}
 .url-row .field input{
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-size:.82rem;
 }
-.url-row .btn{width:auto;flex:none;min-width:4.5rem;min-height:2.75rem;margin:0}
-#landing-card{margin-bottom:1.1rem}
-#landing-card .hint{margin:.35rem 0 0 .35rem}
-.cloud-status{
-  display:inline-flex;
-  align-items:center;
-  gap:.4rem;
-  margin:0 0 .75rem .35rem;
-  padding:.35rem .75rem;
-  border-radius:999px;
-  font-size:.72rem;
-  font-weight:700;
-  letter-spacing:.04em;
-  text-transform:uppercase;
-  background:var(--md-sys-color-surface-container);
-  color:var(--md-sys-color-on-surface-variant);
-}
-.cloud-status .dot{width:.5rem;height:.5rem;border-radius:999px;background:currentColor}
-.cloud-status.online{background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}
-.cloud-status.offline{background:var(--md-sys-color-error-container);color:var(--md-sys-color-on-error-container)}
+.url-row .btn{width:auto;flex:none;min-width:5.5rem;margin:0}
 .url-row .btn.done{background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-on-secondary-container);box-shadow:none}
 .sheet{
   background:var(--md-sys-color-surface-container-lowest);
@@ -202,6 +187,23 @@ body{
 }
 @media (min-width:1200px){
   .card-grid{grid-template-columns:repeat(4, minmax(0, 1fr))}
+}
+.two-col-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:.65rem;
+  align-items:start;
+}
+@media (min-width:760px){
+  .two-col-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}
+}
+.three-col-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:.65rem;
+}
+@media (min-width:640px){
+  .three-col-grid{grid-template-columns:repeat(3, minmax(0, 1fr))}
 }
 .rail{
   display:flex;
@@ -305,9 +307,13 @@ body{
   background:var(--md-sys-color-surface-container-highest);
   color:var(--md-sys-color-on-surface-variant);
 }
-.level-pill.high{
+.level-pill.high,.level-pill.online{
   background:var(--md-sys-color-primary-container);
   color:var(--md-sys-color-on-primary-container);
+}
+.level-pill.offline{
+  background:var(--md-sys-color-error-container);
+  color:var(--md-sys-color-on-error-container);
 }
 .level-pill .dot{
   width:.45rem;
@@ -404,7 +410,9 @@ body{
   min-width:0;
 }
 .field input[type=number],
-.field input[type=text]{
+.field input[type=text],
+.field select,
+.field textarea{
   width:100%;
   appearance:none;
   border:1px solid var(--md-sys-color-outline);
@@ -418,8 +426,15 @@ body{
   outline:none;
   transition:border-color .15s, background .15s;
 }
+.field textarea{
+  min-height:5.25rem;
+  resize:vertical;
+  line-height:1.4;
+}
 .field input[type=number]:focus,
-.field input[type=text]:focus{
+.field input[type=text]:focus,
+.field select:focus,
+.field textarea:focus{
   border-color:var(--md-sys-color-primary);
   background:var(--md-sys-color-surface-container-high);
 }
@@ -433,9 +448,17 @@ body{
   pointer-events:none;
   transition:top .15s, font-size .15s, color .15s;
 }
+.field textarea + label{
+  top:1.1rem;
+  transform:none;
+}
 .field input:focus + label,
-.field input:not(:placeholder-shown) + label{
-  top:.55rem;
+.field input:not(:placeholder-shown) + label,
+.field select + label,
+.field select:focus + label,
+.field textarea:focus + label,
+.field textarea:not(:placeholder-shown) + label{
+  top:.45rem;
   transform:none;
   font-size:.72rem;
   font-weight:600;
@@ -469,7 +492,7 @@ body{
   font-weight:650;
   letter-spacing:.02em;
   cursor:pointer;
-  transition:box-shadow .15s, opacity .15s, transform .12s;
+  transition:box-shadow .15s, opacity .15s, transform .12s, background .15s;
 }
 .btn:active{transform:scale(.985)}
 .btn-filled{
@@ -488,73 +511,40 @@ body{
   background:var(--md-sys-color-secondary-container);
   color:var(--md-sys-color-on-secondary-container);
 }
-.uart-card{
-  padding:1rem;
-  border-radius:var(--md-sys-shape-corner-large);
-  background:var(--md-sys-color-surface-container);
-  display:flex;
-  flex-direction:column;
-  gap:.85rem;
-}
+.btn-tonal:hover{box-shadow:var(--md-sys-elevation-1)}
 .uart-grid{
   display:grid;
   grid-template-columns:1fr;
-  gap:.75rem;
+  gap:.65rem;
 }
-@media (min-width:560px){
+@media (min-width:480px){
   .uart-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
-.field select,
-.field textarea{
-  width:100%;
-  border:0;
-  border-radius:var(--md-sys-shape-corner-medium);
-  background:var(--md-sys-color-surface-container-highest);
-  color:var(--md-sys-color-on-surface);
-  font:inherit;
-  padding:1.15rem .95rem .45rem;
-  outline:none;
-}
-.field textarea{
-  min-height:5.5rem;
-  resize:vertical;
-  line-height:1.4;
-}
-.field select:focus,
-.field textarea:focus{
-  background:var(--md-sys-color-surface-container-high);
-}
-.field select + label,
-.field textarea + label,
-.field select:focus + label,
-.field textarea:focus + label,
-.field textarea:not(:placeholder-shown) + label{
-  top:.55rem;
-  transform:none;
-  font-size:.72rem;
-  font-weight:600;
-  color:var(--md-sys-color-primary);
-}
 .rx-log{
-  min-height:10rem;
-  max-height:18rem;
+  min-height:9.5rem;
+  max-height:16rem;
   overflow:auto;
   white-space:pre-wrap;
   word-break:break-word;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-size:.82rem;
   line-height:1.45;
-  padding:.9rem 1rem;
+  padding:.85rem 1rem;
   border-radius:var(--md-sys-shape-corner-medium);
   background:var(--md-sys-color-surface-container-highest);
   color:var(--md-sys-color-on-surface);
+}
+.rx-log:empty::before{
+  content:attr(data-placeholder);
+  color:var(--md-sys-color-on-surface-variant);
+  opacity:.7;
 }
 .row-actions{
   display:flex;
   flex-wrap:wrap;
   gap:.55rem;
 }
-.row-actions .btn{width:auto;flex:1;min-width:7rem}
+.row-actions .btn{width:auto;flex:1;min-width:6.5rem}
 .hint{
   margin:0;
   font-size:.78rem;
@@ -571,7 +561,7 @@ body{
   align-items:baseline;
   justify-content:space-between;
   gap:.5rem 1rem;
-  padding:.55rem 0;
+  padding:.5rem 0;
   border-bottom:1px solid var(--md-sys-color-outline-variant);
 }
 .about-row:last-of-type{border-bottom:0}
@@ -583,49 +573,45 @@ body{
   color:var(--md-sys-color-on-surface-variant);
 }
 .about-value{
-  font-size:1rem;
+  font-size:.95rem;
   font-weight:600;
   text-align:right;
   word-break:break-word;
 }
 .about-mono{
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  font-size:.85rem;
+  font-size:.82rem;
   font-weight:500;
 }
+.about-value a{
+  color:var(--md-sys-color-primary);
+  text-decoration:none;
+}
+.about-value a:hover{text-decoration:underline}
 .about-update{
   font-weight:600;
   color:var(--md-sys-color-primary);
   margin-left:.35rem;
 }
-#about-upgrade{margin-top:.85rem}
-@media (max-width:560px){
-  .tab{font-size:.78rem;padding:.65rem .25rem}
-}
-.grant-list{
-  list-style:none;
-  margin:0;
-  padding:0;
-}
-.grant-item{
+.resource-item{
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:1rem;
-  padding:.9rem .15rem .9rem .35rem;
-  border-bottom:1px solid var(--md-sys-color-outline-variant);
-  min-width:0;
-}
-.grant-item:last-child{border-bottom:0}
-.grant-meta{min-width:0;flex:1}
-.grant-name{
-  display:block;
+  padding:.95rem 1.1rem;
+  border-radius:var(--md-sys-shape-corner-large);
+  background:var(--md-sys-color-surface-container);
+  text-decoration:none;
+  color:var(--md-sys-color-on-surface);
   font-weight:650;
-  font-size:1rem;
+  font-size:.95rem;
+  transition:background .15s, box-shadow .15s;
+}
+.resource-item:hover{
+  background:var(--md-sys-color-secondary-container);
+  color:var(--md-sys-color-on-secondary-container);
+  box-shadow:var(--md-sys-elevation-1);
 }
 .grant-secret{
-  display:block;
-  margin-top:.2rem;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-size:.78rem;
   line-height:1.4;
@@ -633,15 +619,7 @@ body{
   color:var(--md-sys-color-on-surface-variant);
 }
 .grant-created{
-  display:block;
-  margin-top:.15rem;
   font-size:.72rem;
-  color:var(--md-sys-color-on-surface-variant);
-}
-.grant-item .btn{width:auto;flex:none;min-width:6.5rem}
-.empty{
-  margin:0;
-  padding:1rem;
   color:var(--md-sys-color-on-surface-variant);
 }
 .snack{
@@ -684,6 +662,9 @@ body{
 @keyframes enter{
   from{opacity:0;transform:translateY(10px)}
   to{opacity:1;transform:none}
+}
+@media (max-width:560px){
+  .tab{font-size:.78rem;padding:.65rem .25rem}
 }
 @media (max-width:360px){
   .app{padding-left:.75rem;padding-right:.75rem}
@@ -730,46 +711,57 @@ body{
 
   <section class="sheet panel" id="panel-uart" aria-label="UART" role="tabpanel" data-i18n-aria="tab.uart">
     <h2 class="section-label" data-i18n="tab.uart">UART</h2>
-    <div id="uarts"></div>
+    <div class="two-col-grid" id="uarts"></div>
   </section>
 
   <section class="sheet panel" id="panel-buzzer" aria-label="Buzzer" role="tabpanel" data-i18n-aria="tab.buzzer">
     <h2 class="section-label" data-i18n="tab.buzzer">Buzzer</h2>
-    <article class="uart-card">
+    <article class="pin-card">
+      <div class="pin-head">
+        <h3 class="pin-title" data-i18n="tab.buzzer">Buzzer</h3>
+        <span class="level-pill" id="buzzer-pill"><span class="dot"></span><span id="buzzer-pill-text" data-i18n="buzzer.ready">Idle</span></span>
+      </div>
+      <div class="modes" id="buzzer-presets">
+        <button type="button" class="chip" data-seq="." data-i18n="buzzer.short">Short</button>
+        <button type="button" class="chip" data-seq=".." data-i18n="buzzer.double">Double</button>
+        <button type="button" class="chip" data-seq="-" data-i18n="buzzer.long">Long</button>
+        <button type="button" class="chip" data-seq="...---...">SOS</button>
+      </div>
       <div class="field">
         <input type="text" id="buzzer-sequence" maxlength="64" placeholder=" " value="" autocomplete="off" spellcheck="false"/>
         <label data-i18n="buzzer.sequence">Sequence</label>
       </div>
       <p class="hint" data-i18n-html="buzzer.hint">Morse-style pattern. <code>.</code> is a short beep, <code>-</code> is a long beep, space is an extra gap. Play waits until the sequence finishes.</p>
-      <div class="modes" id="buzzer-presets">
-        <button type="button" class="chip" data-seq="." data-i18n="buzzer.short">Short</button>
-        <button type="button" class="chip" data-seq="-" data-i18n="buzzer.long">Long</button>
-        <button type="button" class="chip" data-seq="...---...">SOS</button>
-      </div>
       <button type="button" class="btn btn-filled" id="buzzer-play" data-i18n="buzzer.play">Play</button>
     </article>
   </section>
 
   <section class="sheet panel" id="panel-cloud" aria-label="Cloud" role="tabpanel" data-i18n-aria="tab.cloud">
-    <h2 class="section-label" data-i18n="cloud.landing">Landing page</h2>
-    <article class="uart-card" id="landing-card">
-      <div class="cloud-status" id="cloud-status" role="status" aria-live="polite"><span class="dot"></span><span id="cloud-status-text">—</span></div>
-      <div class="url-row">
+    <h2 class="section-label" data-i18n="tab.cloud">Cloud</h2>
+    <article class="pin-card" id="landing-card" style="margin-bottom:1rem">
+      <div class="pin-head">
+        <h3 class="pin-title" data-i18n="cloud.landing">Landing page</h3>
+        <span class="level-pill" id="cloud-status" role="status" aria-live="polite"><span class="dot"></span><span id="cloud-status-text">—</span></span>
+      </div>
+      <div class="url-row" id="landing-url-row" hidden>
         <div class="field">
-          <input id="landing-url" type="text" readonly spellcheck="false" value=""/>
+          <input id="landing-url" type="text" readonly spellcheck="false" placeholder=" " value=""/>
           <label for="landing-url" data-i18n="cloud.landingUrl">Landing URL</label>
         </div>
         <button class="btn btn-filled" type="button" id="landing-copy" data-i18n="copy">Copy</button>
       </div>
-      <p class="hint" id="landing-hint" data-i18n="cloud.landingHint">Open this page to pair MCP clients or copy REST URLs. The device must be online on the cloud relay.</p>
+      <p class="hint" id="landing-hint" data-i18n="cloud.landingHint" hidden>Open this page to pair MCP clients or copy REST URLs.</p>
     </article>
     <h2 class="section-label" data-i18n="cloud.grants">Cloud grants</h2>
-    <div id="grants"></div>
+    <div class="card-grid" id="grants"></div>
   </section>
 
   <section class="sheet panel" id="panel-about" aria-label="About" role="tabpanel" data-i18n-aria="tab.about">
     <h2 class="section-label" data-i18n="tab.about">About</h2>
-    <article class="uart-card" id="about-card">
+    <article class="pin-card" id="about-card" style="margin-bottom:.65rem">
+      <div class="pin-head">
+        <h3 class="pin-title" data-i18n="about.system">System</h3>
+      </div>
       <div class="about-row">
         <span class="about-label" data-i18n="about.version">Version</span>
         <span class="about-value" id="about-version">—</span>
@@ -785,6 +777,20 @@ body{
       <p class="hint" id="about-ota-hint" hidden></p>
       <button type="button" class="btn btn-filled" id="about-upgrade" hidden data-i18n="about.upgrade">Upgrade</button>
     </article>
+    <div class="three-col-grid">
+      <a class="resource-item" href="/mcp" target="_blank" rel="noopener">
+        <span data-i18n="about.mcpEndpoint">MCP Protocol Endpoint</span>
+        <span>↗</span>
+      </a>
+      <a class="resource-item" href="/openapi.json" target="_blank" rel="noopener">
+        <span data-i18n="about.openApiSpec">OpenAPI 3.1 Specification</span>
+        <span>↗</span>
+      </a>
+      <a class="resource-item" href="https://github.com/xqe2011/saihub" target="_blank" rel="noopener">
+        <span data-i18n="about.github">Source Repository</span>
+        <span>↗</span>
+      </a>
+    </div>
   </section>
 
   <p class="footer"><span data-i18n="footer.api">API for agents:</span> <a href="/openapi.json">/openapi.json</a></p>
@@ -796,17 +802,18 @@ const I18N={
     subtitle:'Control pins, power, UART, buzzer, cloud grants, and updates.',
     refresh:'Refresh', sections:'Sections', language:'Language',
     'tab.power':'Power','tab.pins':'Pins','tab.uart':'UART','tab.buzzer':'Buzzer','tab.cloud':'Cloud','tab.about':'About',
-    'buzzer.sequence':'Sequence',
+    'buzzer.ready':'Idle','buzzer.sequence':'Sequence',
     'buzzer.hint':'Morse-style pattern. <code>.</code> is a short beep, <code>-</code> is a long beep, space is an extra gap. Play waits until the sequence finishes.',
-    'buzzer.short':'Short','buzzer.long':'Long','buzzer.play':'Play','buzzer.playing':'Playing…','buzzer.needSeq':'Enter a sequence of . and -.',
+    'buzzer.short':'Short','buzzer.double':'Double','buzzer.long':'Long','buzzer.play':'Play','buzzer.playing':'Playing…','buzzer.needSeq':'Enter a sequence of . and -.',
     'cloud.landing':'Landing page','cloud.landingUrl':'Landing URL',
-    'cloud.landingHint':'Open this page to pair MCP clients or copy REST URLs. The device must be online on the cloud relay.',
+    'cloud.landingHint':'Open this page to pair MCP clients or copy REST URLs.',
     'cloud.landingMissing':'Landing page URL is unavailable. Cloud relay may be disabled on this firmware.',
     'cloud.online':'Online','cloud.offline':'Offline','cloud.checking':'Checking',
     'cloud.grants':'Cloud grants',
     'cloud.empty':'No cloud grants. Pair an MCP client from the landing page, then hold BOOT for 3 seconds.',
     'cloud.unnamed':'Unnamed','cloud.created':'Created','cloud.revoke':'Revoke','cloud.revokeConfirm':'Revoke grant {secret}?',
-    'about.version':'Version','about.compiled':'Compiled','about.digest':'Authentication Digest','about.upgrade':'Upgrade',
+    'about.system':'System','about.version':'Version','about.compiled':'Compiled','about.digest':'Authentication Digest','about.upgrade':'Upgrade',
+    'about.openApiSpec':'OpenAPI 3.1 Specification','about.mcpEndpoint':'MCP Protocol Endpoint','about.github':'Source Repository',
     'about.available':'{version} available','about.newer':'A newer firmware image is available.',
     'about.progress':'Firmware update in progress…','about.progressPct':'Firmware update in progress… {pct}%',
     'about.failed':'Firmware update failed.','about.finished':'Update finished. The device may reboot shortly.',
@@ -821,7 +828,8 @@ const I18N={
     'uart.serial':'Serial port','uart.baud':'Baud rate','uart.dataBits':'Data bits','uart.parity':'Parity',
     'uart.stopBits':'Stop bits','uart.encoding':'Encoding','uart.rx':'RX pin','uart.tx':'TX pin',
     'uart.apply':'Apply config',transmit:'Transmit',send:'Send','uart.flush':'Flush RX','uart.clear':'Clear log',
-    'uart.rxLog':'Receive log','uart.bytes':'Byte data must be integers from 0 to 255.',
+    'uart.rxLog':'Receive log','uart.emptyLog':'No data received yet.','uart.active':'Active','uart.off':'Off',
+    'uart.bytes':'Byte data must be integers from 0 to 255.',
     copy:'Copy',copied:'Copied',
     'err.generic':'Something went wrong.','err.load':'Could not load device state.','err.request':'Request failed ({status})'
   },
@@ -829,17 +837,18 @@ const I18N={
     subtitle:'控制引脚、电源、UART、蜂鸣器、云授权与更新。',
     refresh:'刷新', sections:'分区', language:'语言',
     'tab.power':'电源','tab.pins':'引脚','tab.uart':'UART','tab.buzzer':'蜂鸣器','tab.cloud':'云','tab.about':'关于',
-    'buzzer.sequence':'序列',
+    'buzzer.ready':'空闲','buzzer.sequence':'序列',
     'buzzer.hint':'摩尔斯风格图案。<code>.</code> 为短响，<code>-</code> 为长响，空格为额外间隔。播放会等到序列结束。',
-    'buzzer.short':'短','buzzer.long':'长','buzzer.play':'播放','buzzer.playing':'播放中…','buzzer.needSeq':'请输入由 . 和 - 组成的序列。',
+    'buzzer.short':'短响','buzzer.double':'双短响','buzzer.long':'长响','buzzer.play':'播放','buzzer.playing':'播放中…','buzzer.needSeq':'请输入由 . 和 - 组成的序列。',
     'cloud.landing':'落地页','cloud.landingUrl':'落地页链接',
-    'cloud.landingHint':'打开此页面可为 MCP 客户端配对，或复制 REST 地址。设备需已在云中继上线。',
+    'cloud.landingHint':'打开此页面可为 MCP 客户端配对，或复制 REST 地址。',
     'cloud.landingMissing':'无法获取落地页链接。此固件可能未启用云中继。',
     'cloud.online':'在线','cloud.offline':'离线','cloud.checking':'检查中',
     'cloud.grants':'云授权',
     'cloud.empty':'暂无云授权。请先在落地页配对 MCP 客户端，然后按住 BOOT 三秒。',
     'cloud.unnamed':'未命名','cloud.created':'创建于','cloud.revoke':'撤销','cloud.revokeConfirm':'撤销授权 {secret}？',
-    'about.version':'版本','about.compiled':'编译时间','about.digest':'认证摘要','about.upgrade':'升级',
+    'about.system':'系统信息','about.version':'版本','about.compiled':'编译时间','about.digest':'认证摘要','about.upgrade':'升级',
+    'about.openApiSpec':'OpenAPI 3.1 规范','about.mcpEndpoint':'MCP 协议端点','about.github':'开源仓库',
     'about.available':'{version} 可用','about.newer':'有可用的新固件镜像。',
     'about.progress':'固件更新进行中…','about.progressPct':'固件更新进行中… {pct}%',
     'about.failed':'固件更新失败。','about.finished':'更新完成。设备可能即将重启。',
@@ -853,7 +862,8 @@ const I18N={
     'pin.title':'引脚 {n}',none:'无',
     'uart.serial':'串口','uart.baud':'波特率','uart.dataBits':'数据位','uart.parity':'校验','uart.stopBits':'停止位',
     'uart.encoding':'编码','uart.rx':'RX 引脚','uart.tx':'TX 引脚','uart.apply':'应用配置',transmit:'发送数据',
-    send:'发送','uart.flush':'清空 RX','uart.clear':'清空日志','uart.rxLog':'接收日志',
+    send:'发送','uart.flush':'清空 RX','uart.clear':'清空日志','uart.rxLog':'接收日志','uart.emptyLog':'暂无接收数据。',
+    'uart.active':'已启用','uart.off':'关闭',
     'uart.bytes':'字节数据必须是 0 到 255 的整数。',
     copy:'复制',copied:'已复制',
     'err.generic':'出错了。','err.load':'无法加载设备状态。','err.request':'请求失败（{status}）'
@@ -1227,8 +1237,10 @@ async function loadAbout(forceCheck){
       btn.hidden=true;
       return;
     }
-    hint.hidden=false;
-    hint.textContent=e.message||t('about.checkFail');
+    /* Check failed (network, OOM, bad manifest): treat as no update available. */
+    aboutPending=null;
+    renderAboutVersion(currentVersion, null);
+    hint.hidden=true;
     btn.hidden=true;
   }
 }
@@ -1339,6 +1351,8 @@ function renderCloudStatus(){
   const input=document.getElementById('landing-url');
   const hint=document.getElementById('landing-hint');
   const copyBtn=document.getElementById('landing-copy');
+  const urlRow=document.getElementById('landing-url-row');
+  const showUrl=cloudConnected===true&&!!landingPageUrl;
   if(statusEl&&statusText){
     statusEl.classList.toggle('online', cloudConnected===true);
     statusEl.classList.toggle('offline', cloudConnected===false);
@@ -1346,16 +1360,15 @@ function renderCloudStatus(){
     else if(cloudConnected===false) statusText.textContent=t('cloud.offline');
     else statusText.textContent=t('cloud.checking');
   }
-  if(!input) return;
-  input.value=landingPageUrl||'';
-  input.placeholder=landingPageUrl?'':t('cloud.landingMissing');
+  if(urlRow) urlRow.hidden=!showUrl;
   if(hint){
-    if(!landingPageUrl) hint.textContent=t('cloud.landingMissing');
-    else if(cloudConnected===false&&cloudReason) hint.textContent=cloudReason;
-    else hint.textContent=t('cloud.landingHint');
+    hint.hidden=!showUrl;
+    if(showUrl) hint.textContent=t('cloud.landingHint');
   }
-  if(copyBtn) copyBtn.disabled=!landingPageUrl;
+  if(input) input.value=showUrl?landingPageUrl:'';
+  if(copyBtn) copyBtn.disabled=!showUrl;
 }
+
 function copyLandingUrl(){
   const input=document.getElementById('landing-url');
   const button=document.getElementById('landing-copy');
@@ -1372,24 +1385,27 @@ function copyLandingUrl(){
   if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(input.value).then(done,fallback);
   else fallback();
 }
+
 function renderGrants(list){
   lastGrants=list||[];
   if(!list.length){
-    grantsEl.innerHTML='<p class="empty">'+escapeHtml(t('cloud.empty'))+'</p>';
+    grantsEl.innerHTML='<article class="pin-card" style="grid-column:1 / -1">'+
+      '<div class="pin-head"><h3 class="pin-title">'+escapeHtml(t('cloud.grants'))+'</h3></div>'+
+      '<p class="hint">'+escapeHtml(t('cloud.empty'))+'</p>'+
+    '</article>';
     return;
   }
-  grantsEl.innerHTML='<ul class="grant-list">'+list.map(g=>{
+  grantsEl.innerHTML=list.map(g=>{
     const name=escapeHtml(g.name||t('cloud.unnamed'));
     const secret=escapeHtml(g.grantSecret||'');
     const created=formatCreatedAt(g.createdAt);
-    return '<li class="grant-item">'+
-      '<div class="grant-meta"><span class="grant-name">'+name+'</span>'+
+    return '<article class="pin-card">'+
+      '<div class="pin-head"><h3 class="pin-title">'+name+'</h3></div>'+
       '<span class="grant-secret">'+secret+'</span>'+
       (created?'<span class="grant-created">'+escapeHtml(t('cloud.created')+' '+created)+'</span>':'')+
-      '</div>'+
       '<button class="btn btn-tonal" type="button" data-revoke="'+secret+'">'+escapeHtml(t('cloud.revoke'))+'</button>'+
-      '</li>';
-  }).join('')+'</ul>';
+    '</article>';
+  }).join('');
   grantsEl.querySelectorAll('[data-revoke]').forEach(btn=>{
     btn.onclick=async()=>{
       if(!confirm(t('cloud.revokeConfirm',{secret:btn.dataset.revoke}))) return;
@@ -1416,11 +1432,12 @@ function renderUarts(uarts){
   };
   const rx=u.pins&&u.pins.rx!=null?u.pins.rx:'';
   const tx=u.pins&&u.pins.tx!=null?u.pins.tx:'';
+  const on=!!u.enable;
   uartsEl.innerHTML=
-    '<article class="uart-card" data-uart="'+u.id+'">'+
-      '<div class="rail">'+
-        '<div class="rail-text"><span class="rail-name">UART '+u.id+'</span><span class="rail-sub">'+t('uart.serial')+'</span></div>'+
-        switchHtml('uart-enable',!!u.enable,false)+
+    '<article class="pin-card" data-uart="'+u.id+'">'+
+      '<div class="pin-head">'+
+        '<h3 class="pin-title">UART '+u.id+'</h3>'+
+        switchHtml('uart-enable',on,false)+
       '</div>'+
       '<div class="uart-grid">'+
         '<div class="field"><input type="number" id="uart-baud" min="1" step="1" placeholder=" " value="'+(u.baudRate||115200)+'"/><label>'+t('uart.baud')+'</label></div>'+
@@ -1429,16 +1446,22 @@ function renderUarts(uarts){
         '<div class="field"><select id="uart-stopBits">'+[1,2].map(v=>'<option value="'+v+'"'+(u.stopBits===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>'+t('uart.stopBits')+'</label></div>'+
         '<div class="field"><select id="uart-encoding">'+['utf8','byte'].map(v=>'<option value="'+v+'"'+(u.encoding===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>'+t('uart.encoding')+'</label></div>'+
         '<div class="field"><select id="uart-rx">'+pinOptions(rx===''?null:Number(rx))+'</select><label>'+t('uart.rx')+'</label></div>'+
-        '<div class="field"><select id="uart-tx">'+pinOptions(tx===''?null:Number(tx))+'</select><label>'+t('uart.tx')+'</label></div>'+
+        '<div class="field" style="grid-column:1 / -1"><select id="uart-tx">'+pinOptions(tx===''?null:Number(tx))+'</select><label>'+t('uart.tx')+'</label></div>'+
       '</div>'+
       '<button type="button" class="btn btn-filled" id="uart-apply">'+t('uart.apply')+'</button>'+
+    '</article>'+
+    '<article class="pin-card">'+
+      '<div class="pin-head">'+
+        '<h3 class="pin-title">'+t('uart.rxLog')+'</h3>'+
+        '<span class="level-pill'+(on?' high':'')+'"><span class="dot"></span>'+(on?t('uart.active'):t('uart.off'))+'</span>'+
+      '</div>'+
+      '<div class="rx-log" id="uart-rx-log" data-placeholder="'+escapeHtml(t('uart.emptyLog'))+'"></div>'+
       '<div class="field"><textarea id="uart-tx-data" placeholder=" "></textarea><label>'+t('transmit')+'</label></div>'+
       '<div class="row-actions">'+
         '<button type="button" class="btn btn-filled" id="uart-send">'+t('send')+'</button>'+
         '<button type="button" class="btn btn-tonal" id="uart-flush">'+t('uart.flush')+'</button>'+
         '<button type="button" class="btn btn-tonal" id="uart-clear-log">'+t('uart.clear')+'</button>'+
       '</div>'+
-      '<div><div class="section-label" style="margin-left:0">'+t('uart.rxLog')+'</div><div class="rx-log" id="uart-rx-log"></div></div>'+
     '</article>';
   const logEl=document.getElementById('uart-rx-log');
   if(logEl) logEl.textContent=uartLog;
@@ -1577,12 +1600,18 @@ document.getElementById('about-upgrade').onclick=async()=>{
 
 const buzzerSeqEl=document.getElementById('buzzer-sequence');
 const buzzerPlayEl=document.getElementById('buzzer-play');
+const buzzerPillEl=document.getElementById('buzzer-pill');
+const buzzerPillTextEl=document.getElementById('buzzer-pill-text');
 buzzerSeqEl.addEventListener('input',()=>{
   const cleaned=buzzerSeqEl.value.replace(/[^. \-]/g,'');
   if(cleaned!==buzzerSeqEl.value) buzzerSeqEl.value=cleaned;
 });
 document.querySelectorAll('#buzzer-presets [data-seq]').forEach(btn=>{
-  btn.onclick=()=>{buzzerSeqEl.value=btn.dataset.seq;buzzerSeqEl.focus()};
+  btn.onclick=()=>{
+    buzzerSeqEl.value=btn.dataset.seq;
+    document.querySelectorAll('#buzzer-presets .chip').forEach(c=>c.classList.toggle('active',c===btn));
+    buzzerSeqEl.focus();
+  };
 });
 buzzerPlayEl.onclick=async()=>{
   const sequence=buzzerSeqEl.value;
@@ -1594,6 +1623,8 @@ buzzerPlayEl.onclick=async()=>{
   buzzerPlaying=true;
   buzzerPlayEl.disabled=true;
   buzzerPlayEl.textContent=t('buzzer.playing');
+  if(buzzerPillEl) buzzerPillEl.classList.add('high');
+  if(buzzerPillTextEl) buzzerPillTextEl.textContent=t('buzzer.playing');
   try{
     await api('POST','/buzzer',{sequence});
   }catch(e){
@@ -1602,6 +1633,8 @@ buzzerPlayEl.onclick=async()=>{
     buzzerPlaying=false;
     buzzerPlayEl.disabled=false;
     buzzerPlayEl.textContent=t('buzzer.play');
+    if(buzzerPillEl) buzzerPillEl.classList.remove('high');
+    if(buzzerPillTextEl) buzzerPillTextEl.textContent=t('buzzer.ready');
   }
 };
 
@@ -1633,7 +1666,10 @@ function setLang(next){
     const btn=document.getElementById('about-upgrade');
     if(btn&&!btn.hidden&&!aboutUpgrading) btn.textContent=t('about.upgrade');
   }
-  if(!buzzerPlaying) document.getElementById('buzzer-play').textContent=t('buzzer.play');
+  if(!buzzerPlaying){
+    buzzerPlayEl.textContent=t('buzzer.play');
+    if(buzzerPillTextEl) buzzerPillTextEl.textContent=t('buzzer.ready');
+  }
 }
 
 document.getElementById('lang').onchange=(e)=>setLang(e.target.value);
