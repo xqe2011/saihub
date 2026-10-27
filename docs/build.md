@@ -33,6 +33,8 @@ Building for a board other than SAIHub-Mini: [bring your own board](bring-your-o
 
 Pushing a git tag runs [`.github/workflows/firmware-release.yml`](../.github/workflows/firmware-release.yml). The tag name is written to `version.txt` (the firmware version string). The release uploads the merged flash image, the app image for OTA, `manifest.json` (version, release date, changelog, per-target app `url` / `sha256` / `size`), and `SHA256SUMS`. If GitHub Environment `cloud` has variable `ADMIN_URL` (admin origin including `/admin`, e.g. `https://example.com/admin`) and secret `ADMIN_TOKEN`, a parallel job runs `bun run upload-file-cache -- <adminUrl> <token> <version>` from `cloud/cloudflare` (POSTs `mcp.json` and `openapi.json` to `{ADMIN_URL}/file-cache`). If either is unset, the upload is skipped.
 
+Pushes to `main` that touch `page/` run [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) and publish the [web flasher](https://xqe2011.github.io/saihub) via GitHub Pages. After editing `main/assets/*.html`, refresh embeds with `gzip -9 -n -c main/assets/control.html > main/embed/control.html.gz` (same for `portal.html`).
+
 ## Cloudflare Worker
 
 Requires [Bun](https://bun.sh) (or Node) and [Wrangler](https://developers.cloudflare.com/workers/wrangler/). Production deploy steps: [cookbook §5](cookbook.md#5-self-host-the-cloudflare-relay).
