@@ -167,6 +167,12 @@ static bool System_OtaProxyUrl(const char* url, char* out, size_t outLen)
   return true;
 }
 
+/** Timeout or connection reset/closed — retry via gh-proxy for github.com URLs. */
+static bool System_OtaShouldRetryProxy(esp_err_t err)
+{
+  return err == ESP_ERR_TIMEOUT || err == ESP_ERR_HTTP_CONNECTION_CLOSED;
+}
+
 cJSON* System_OtaCheck(char* reason, size_t reasonLen)
 {
   if (reason && reasonLen) reason[0] = '\0';
@@ -183,16 +189,13 @@ cJSON* System_OtaCheck(char* reason, size_t reasonLen)
   size_t len = 0;
   bool usedProxy = false;
   esp_err_t err = System_HttpGet(CONFIG_OTA_MANIFEST_URL, buf, CONFIG_OTA_MANIFEST_MAX_BYTES, &len, reason, reasonLen);
-  if (err == ESP_ERR_TIMEOUT) {
+  if (System_OtaShouldRetryProxy(err)) {
     char proxyUrl[CONFIG_OTA_URL_MAX_BYTES];
-    if (!System_OtaProxyUrl(CONFIG_OTA_MANIFEST_URL, proxyUrl, sizeof(proxyUrl))) {
-      free(buf);
-      snprintf(reason, reasonLen, "Update manifest URL is too long for proxy retry.");
-      return NULL;
+    if (System_OtaProxyUrl(CONFIG_OTA_MANIFEST_URL, proxyUrl, sizeof(proxyUrl))) {
+      ESP_LOGW(tag, "OTA manifest failed (%s); retrying via gh-proxy", esp_err_to_name(err));
+      err = System_HttpGet(proxyUrl, buf, CONFIG_OTA_MANIFEST_MAX_BYTES, &len, reason, reasonLen);
+      usedProxy = (err == ESP_OK);
     }
-    ESP_LOGW(tag, "OTA manifest timed out; retrying via gh-proxy");
-    err = System_HttpGet(proxyUrl, buf, CONFIG_OTA_MANIFEST_MAX_BYTES, &len, reason, reasonLen);
-    usedProxy = (err == ESP_OK);
   }
   if (err != ESP_OK) {
     free(buf);
@@ -312,8 +315,8 @@ retry_download:
     handle = NULL;
     err = esp_https_ota_begin(&otaCfg, &handle);
     if (err != ESP_OK || !handle) {
-      if (!triedProxy && err == ESP_ERR_TIMEOUT && System_OtaProxyUrl(job->url, proxyUrl, sizeof(proxyUrl))) {
-        ESP_LOGW(tag, "OTA download timed out; retrying via gh-proxy");
+      if (!triedProxy && System_OtaShouldRetryProxy(err) && System_OtaProxyUrl(job->url, proxyUrl, sizeof(proxyUrl))) {
+        ESP_LOGW(tag, "OTA download failed (%s); retrying via gh-proxy", esp_err_to_name(err));
         url = proxyUrl;
         triedProxy = true;
         goto retry_download;
@@ -327,8 +330,8 @@ retry_download:
     if (err != ESP_OK) {
       esp_https_ota_abort(handle);
       handle = NULL;
-      if (!triedProxy && err == ESP_ERR_TIMEOUT && System_OtaProxyUrl(job->url, proxyUrl, sizeof(proxyUrl))) {
-        ESP_LOGW(tag, "OTA download timed out; retrying via gh-proxy");
+      if (!triedProxy && System_OtaShouldRetryProxy(err) && System_OtaProxyUrl(job->url, proxyUrl, sizeof(proxyUrl))) {
+        ESP_LOGW(tag, "OTA download failed (%s); retrying via gh-proxy", esp_err_to_name(err));
         url = proxyUrl;
         triedProxy = true;
         goto retry_download;
@@ -355,8 +358,8 @@ retry_download:
     if (err != ESP_OK) {
       esp_https_ota_abort(handle);
       handle = NULL;
-      if (!triedProxy && err == ESP_ERR_TIMEOUT && System_OtaProxyUrl(job->url, proxyUrl, sizeof(proxyUrl))) {
-        ESP_LOGW(tag, "OTA download timed out; retrying via gh-proxy");
+      if (!triedProxy && System_OtaShouldRetryProxy(err) && System_OtaProxyUrl(job->url, proxyUrl, sizeof(proxyUrl))) {
+        ESP_LOGW(tag, "OTA download failed (%s); retrying via gh-proxy", esp_err_to_name(err));
         url = proxyUrl;
         triedProxy = true;
         goto retry_download;
