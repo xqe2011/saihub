@@ -27,7 +27,7 @@ Board-specific configuration is concentrated in `main/include/config.h`:
 | `CONFIG_CLOUD_URL` | Relay origin, `ws://` or `wss://` without a path; empty disables the relay. Self-hosting requires changing it and rebuilding |
 | `CONFIG_WIFI_SSID` / `CONFIG_WIFI_PASSWORD` | Wi-Fi seed credentials, used whenever NVS has none saved |
 | `CONFIG_OTA_MANIFEST_URL` | HTTPS URL of the release `manifest.json` used by update check (direct GitHub by default) |
-| `CONFIG_OTA_GH_PROXY_PREFIX` | On timeout or connection reset, OTA check and github.com image download retry with this prefix before the URL (same as the flash page) |
+| `CONFIG_OTA_GH_PROXY_PREFIX` | On timeout, connection reset, or TLS/CA failure (DNS name mismatch), OTA check and github.com image download retry with this prefix before the URL (same as the flash page) |
 | `CONFIG_OTA_IMAGE_TARGET` | Image `target` string matched in the manifest (must match CI) |
 
 Building for a board other than SAIHub-Mini: [bring your own board](bring-your-own-board.md).

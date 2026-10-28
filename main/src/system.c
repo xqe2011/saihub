@@ -16,6 +16,7 @@
 #include <esp_https_ota.h>
 #include <esp_log.h>
 #include <esp_system.h>
+#include <esp_tls_errors.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <stdio.h>
@@ -167,10 +168,15 @@ static bool System_OtaProxyUrl(const char* url, char* out, size_t outLen)
   return true;
 }
 
-/** Timeout or connection reset/closed — retry via gh-proxy for github.com URLs. */
+/**
+ * Network/TLS failures that warrant a gh-proxy retry for github.com URLs:
+ * timeout, connection reset/closed, connect failure (includes CA / DNS-name mismatch
+ * during the TLS handshake), and explicit mbedtls handshake failure.
+ */
 static bool System_OtaShouldRetryProxy(esp_err_t err)
 {
-  return err == ESP_ERR_TIMEOUT || err == ESP_ERR_HTTP_CONNECTION_CLOSED;
+  return err == ESP_ERR_TIMEOUT || err == ESP_ERR_HTTP_CONNECTION_CLOSED || err == ESP_ERR_HTTP_CONNECT ||
+         err == ESP_ERR_MBEDTLS_SSL_HANDSHAKE_FAILED;
 }
 
 cJSON* System_OtaCheck(char* reason, size_t reasonLen)
