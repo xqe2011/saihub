@@ -40,6 +40,11 @@ void System_OtaGetStatus(System_OtaStatus* out);
 
 /**
  * Side-effect-free update check: fetch manifest, pick matching target image.
+ * Tries the direct GitHub manifest URL first; on HTTP timeout, connection
+ * reset, or TLS/CA failure (including DNS name mismatch) retries via
+ * CONFIG_OTA_GH_PROXY_PREFIX (same as the flash page). When the proxy path is
+ * used and the image url is github.com, a successful updateAvailable response
+ * prefixes url the same way.
  * On success returns an owned JSON object:
  * { updateAvailable, currentVersion, version?, releaseDate?, changelog?, url?, sha256? }
  * Caller must cJSON_Delete. On failure returns NULL and writes reason.
@@ -48,6 +53,9 @@ cJSON* System_OtaCheck(char* reason, size_t reasonLen);
 
 /**
  * Start background upgrade. url and sha256 (64 hex chars of app ELF digest) are required.
+ * On download timeout, connection reset, or TLS/CA failure (including DNS name
+ * mismatch), if url is a direct github.com link, retries once via
+ * CONFIG_OTA_GH_PROXY_PREFIX.
  * Returns ESP_OK when the task started, ESP_ERR_INVALID_ARG / ESP_ERR_INVALID_STATE / ESP_ERR_NO_MEM otherwise.
  */
 esp_err_t System_OtaUpgrade(const char* url, const char* sha256, char* reason, size_t reasonLen);

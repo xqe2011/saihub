@@ -16,6 +16,7 @@
 #include <esp_https_ota.h>
 #include <esp_log.h>
 #include <esp_system.h>
+#include <esp_tls_errors.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <stdio.h>
@@ -151,6 +152,33 @@ static esp_err_t System_HttpGet(const char* url, char* buf, size_t cap, size_t* 
   return ESP_OK;
 }
 
+/** True when url is a direct github.com link (not already proxied). */
+static bool System_OtaUrlIsGithub(const char* url)
+{
+  if (!url) return false;
+  return strncmp(url, "https://github.com/", 19) == 0 || strncmp(url, "http://github.com/", 18) == 0;
+}
+
+/** Prefix a github.com url with gh-proxy. Returns false if not github or result would not fit. */
+static bool System_OtaProxyUrl(const char* url, char* out, size_t outLen)
+{
+  if (!url || !out || outLen < 2 || !System_OtaUrlIsGithub(url)) return false;
+  if (strlen(CONFIG_OTA_GH_PROXY_PREFIX) + strlen(url) + 1 > outLen) return false;
+  snprintf(out, outLen, "%s%s", CONFIG_OTA_GH_PROXY_PREFIX, url);
+  return true;
+}
+
+/**
+ * Network/TLS failures that warrant a gh-proxy retry for github.com URLs:
+ * timeout, connection reset/closed, connect failure (includes CA / DNS-name mismatch
+ * during the TLS handshake), and explicit mbedtls handshake failure.
+ */
+static bool System_OtaShouldRetryProxy(esp_err_t err)
+{
+  return err == ESP_ERR_TIMEOUT || err == ESP_ERR_HTTP_CONNECTION_CLOSED || err == ESP_ERR_HTTP_CONNECT ||
+         err == ESP_ERR_MBEDTLS_SSL_HANDSHAKE_FAILED;
+}
+
 cJSON* System_OtaCheck(char* reason, size_t reasonLen)
 {
   if (reason && reasonLen) reason[0] = '\0';
@@ -165,7 +193,16 @@ cJSON* System_OtaCheck(char* reason, size_t reasonLen)
     return NULL;
   }
   size_t len = 0;
+  bool usedProxy = false;
   esp_err_t err = System_HttpGet(CONFIG_OTA_MANIFEST_URL, buf, CONFIG_OTA_MANIFEST_MAX_BYTES, &len, reason, reasonLen);
+  if (System_OtaShouldRetryProxy(err)) {
+    char proxyUrl[CONFIG_OTA_URL_MAX_BYTES];
+    if (System_OtaProxyUrl(CONFIG_OTA_MANIFEST_URL, proxyUrl, sizeof(proxyUrl))) {
+      ESP_LOGW(tag, "OTA manifest failed (%s); retrying via gh-proxy", esp_err_to_name(err));
+      err = System_HttpGet(proxyUrl, buf, CONFIG_OTA_MANIFEST_MAX_BYTES, &len, reason, reasonLen);
+      usedProxy = (err == ESP_OK);
+    }
+  }
   if (err != ESP_OK) {
     free(buf);
     return NULL;
@@ -237,7 +274,19 @@ cJSON* System_OtaCheck(char* reason, size_t reasonLen)
     if (cJSON_IsString(changelog) && changelog->valuestring) {
       cJSON_AddStringToObject(out, "changelog", changelog->valuestring);
     }
-    cJSON_AddStringToObject(out, "url", url->valuestring);
+    /* If the check needed gh-proxy, return a proxied image URL so upgrade can fetch it too. */
+    if (usedProxy && System_OtaUrlIsGithub(url->valuestring)) {
+      char proxiedUrl[CONFIG_OTA_URL_MAX_BYTES];
+      if (!System_OtaProxyUrl(url->valuestring, proxiedUrl, sizeof(proxiedUrl))) {
+        cJSON_Delete(root);
+        cJSON_Delete(out);
+        snprintf(reason, reasonLen, "Image URL is too long for proxy.");
+        return NULL;
+      }
+      cJSON_AddStringToObject(out, "url", proxiedUrl);
+    } else {
+      cJSON_AddStringToObject(out, "url", url->valuestring);
+    }
     cJSON_AddStringToObject(out, "sha256", sha->valuestring);
   }
 
@@ -250,61 +299,93 @@ static void System_OtaTask(void* arg)
   System_OtaJob* job = arg;
   System_OtaSetState(SYSTEM_OTA_UPGRADING, 0, NULL);
 
-  esp_http_client_config_t http = {
-      .url = job->url,
-      .timeout_ms = CONFIG_OTA_HTTP_TIMEOUT_MS,
-      .crt_bundle_attach = esp_crt_bundle_attach,
-      .keep_alive_enable = true,
-      .user_agent = "saihub-ota/1.0",
-  };
-  esp_https_ota_config_t otaCfg = {
-      .http_config = &http,
-  };
-
+  const char* url = job->url;
+  char proxyUrl[CONFIG_OTA_URL_MAX_BYTES];
+  bool triedProxy = false;
   esp_https_ota_handle_t handle = NULL;
-  esp_err_t err = esp_https_ota_begin(&otaCfg, &handle);
-  if (err != ESP_OK || !handle) {
-    System_OtaSetState(SYSTEM_OTA_FAILED, -1, "Could not start firmware download.");
-    goto done;
-  }
+  esp_err_t err = ESP_FAIL;
 
-  esp_app_desc_t newDesc;
-  err = esp_https_ota_get_img_desc(handle, &newDesc);
-  if (err != ESP_OK) {
-    esp_https_ota_abort(handle);
-    System_OtaSetState(SYSTEM_OTA_FAILED, -1, "Could not read firmware image header.");
-    goto done;
-  }
-  if (memcmp(newDesc.app_elf_sha256, job->expectSha, 32) != 0) {
-    esp_https_ota_abort(handle);
-    System_OtaSetState(SYSTEM_OTA_FAILED, -1, "Firmware image digest does not match sha256.");
-    goto done;
-  }
+retry_download:
+  {
+    esp_http_client_config_t http = {
+        .url = url,
+        .timeout_ms = CONFIG_OTA_HTTP_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .keep_alive_enable = true,
+        .user_agent = "saihub-ota/1.0",
+    };
+    esp_https_ota_config_t otaCfg = {
+        .http_config = &http,
+    };
 
-  while (true) {
-    err = esp_https_ota_perform(handle);
-    if (err != ESP_ERR_HTTPS_OTA_IN_PROGRESS) break;
-    int total = esp_https_ota_get_image_size(handle);
-    int read = esp_https_ota_get_image_len_read(handle);
-    int pct = (total > 0) ? (int)((read * 100LL) / total) : -1;
-    System_OtaSetState(SYSTEM_OTA_UPGRADING, pct, NULL);
-  }
+    handle = NULL;
+    err = esp_https_ota_begin(&otaCfg, &handle);
+    if (err != ESP_OK || !handle) {
+      if (!triedProxy && System_OtaShouldRetryProxy(err) && System_OtaProxyUrl(job->url, proxyUrl, sizeof(proxyUrl))) {
+        ESP_LOGW(tag, "OTA download failed (%s); retrying via gh-proxy", esp_err_to_name(err));
+        url = proxyUrl;
+        triedProxy = true;
+        goto retry_download;
+      }
+      System_OtaSetState(SYSTEM_OTA_FAILED, -1, "Could not start firmware download.");
+      goto done;
+    }
 
-  if (err != ESP_OK) {
-    esp_https_ota_abort(handle);
-    System_OtaSetState(SYSTEM_OTA_FAILED, -1, "Firmware download failed.");
-    goto done;
-  }
-  if (!esp_https_ota_is_complete_data_received(handle)) {
-    esp_https_ota_abort(handle);
-    System_OtaSetState(SYSTEM_OTA_FAILED, -1, "Firmware download incomplete.");
-    goto done;
-  }
+    esp_app_desc_t newDesc;
+    err = esp_https_ota_get_img_desc(handle, &newDesc);
+    if (err != ESP_OK) {
+      esp_https_ota_abort(handle);
+      handle = NULL;
+      if (!triedProxy && System_OtaShouldRetryProxy(err) && System_OtaProxyUrl(job->url, proxyUrl, sizeof(proxyUrl))) {
+        ESP_LOGW(tag, "OTA download failed (%s); retrying via gh-proxy", esp_err_to_name(err));
+        url = proxyUrl;
+        triedProxy = true;
+        goto retry_download;
+      }
+      System_OtaSetState(SYSTEM_OTA_FAILED, -1, "Could not read firmware image header.");
+      goto done;
+    }
+    if (memcmp(newDesc.app_elf_sha256, job->expectSha, 32) != 0) {
+      esp_https_ota_abort(handle);
+      handle = NULL;
+      System_OtaSetState(SYSTEM_OTA_FAILED, -1, "Firmware image digest does not match sha256.");
+      goto done;
+    }
 
-  err = esp_https_ota_finish(handle);
-  if (err != ESP_OK) {
-    System_OtaSetState(SYSTEM_OTA_FAILED, -1, "Could not finalize firmware update.");
-    goto done;
+    while (true) {
+      err = esp_https_ota_perform(handle);
+      if (err != ESP_ERR_HTTPS_OTA_IN_PROGRESS) break;
+      int total = esp_https_ota_get_image_size(handle);
+      int read = esp_https_ota_get_image_len_read(handle);
+      int pct = (total > 0) ? (int)((read * 100LL) / total) : -1;
+      System_OtaSetState(SYSTEM_OTA_UPGRADING, pct, NULL);
+    }
+
+    if (err != ESP_OK) {
+      esp_https_ota_abort(handle);
+      handle = NULL;
+      if (!triedProxy && System_OtaShouldRetryProxy(err) && System_OtaProxyUrl(job->url, proxyUrl, sizeof(proxyUrl))) {
+        ESP_LOGW(tag, "OTA download failed (%s); retrying via gh-proxy", esp_err_to_name(err));
+        url = proxyUrl;
+        triedProxy = true;
+        goto retry_download;
+      }
+      System_OtaSetState(SYSTEM_OTA_FAILED, -1, "Firmware download failed.");
+      goto done;
+    }
+    if (!esp_https_ota_is_complete_data_received(handle)) {
+      esp_https_ota_abort(handle);
+      handle = NULL;
+      System_OtaSetState(SYSTEM_OTA_FAILED, -1, "Firmware download incomplete.");
+      goto done;
+    }
+
+    err = esp_https_ota_finish(handle);
+    handle = NULL;
+    if (err != ESP_OK) {
+      System_OtaSetState(SYSTEM_OTA_FAILED, -1, "Could not finalize firmware update.");
+      goto done;
+    }
   }
 
   ESP_LOGI(tag, "OTA success, rebooting");
