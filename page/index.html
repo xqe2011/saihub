@@ -499,8 +499,16 @@ body{
 import { ESPLoader, Transport } from "https://cdn.jsdelivr.net/npm/esptool-js@0.7.0/+esm";
 
 const GH_REPO = "xqe2011/saihub";
+const GH_PROXY = "https://gh-proxy.com/";
 const BAUD = 115200;
 const MERGED_RE = /^saihub-(.+)-merged\.bin$/i;
+
+/** When UI language is Chinese, route GitHub URLs through gh-proxy.com. */
+function githubUrl(url){
+  if(lang !== "zh") return url;
+  if(url.startsWith(GH_PROXY)) return url;
+  return GH_PROXY + url;
+}
 
 const I18N = {
   en:{
@@ -856,7 +864,8 @@ async function ensurePort(){
 async function loadReleases(){
   setStatus("status.loading", "busy");
   try{
-    const res = await fetch(`https://api.github.com/repos/${GH_REPO}/releases?per_page=50`, {
+    const apiUrl = githubUrl(`https://api.github.com/repos/${GH_REPO}/releases?per_page=50`);
+    const res = await fetch(apiUrl, {
       headers: { Accept: "application/vnd.github+json" },
     });
     if(!res.ok) throw new Error("releases " + res.status);
@@ -868,7 +877,7 @@ async function loadReleases(){
         const assets = {};
         for(const a of r.assets || []){
           if(typeof a.name === "string" && typeof a.browser_download_url === "string"){
-            assets[a.name] = a.browser_download_url;
+            assets[a.name] = githubUrl(a.browser_download_url);
           }
         }
         return { tag: r.tag_name, assets };
@@ -1025,9 +1034,12 @@ async function flashFirmware(){
 }
 
 el.lang.onchange = (e)=>{
-  lang = e.target.value === "zh" ? "zh" : "en";
+  const next = e.target.value === "zh" ? "zh" : "en";
+  const prev = lang;
+  lang = next;
   localStorage.setItem(LANG_KEY, lang);
   applyI18n();
+  if(prev !== next && isChromeBased() && !busy) loadReleases();
 };
 
 el.flashBtn.onclick = ()=>{ flashFirmware(); };
