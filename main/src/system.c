@@ -151,6 +151,20 @@ static esp_err_t System_HttpGet(const char* url, char* buf, size_t cap, size_t* 
   return ESP_OK;
 }
 
+/** Prefix url with gh-proxy when needed. Returns false if the result would not fit. */
+static bool System_OtaProxyUrl(const char* url, char* out, size_t outLen)
+{
+  if (!url || !out || outLen < 2) return false;
+  if (strncmp(url, CONFIG_OTA_GH_PROXY_PREFIX, sizeof(CONFIG_OTA_GH_PROXY_PREFIX) - 1) == 0) {
+    if (strlen(url) + 1 > outLen) return false;
+    memcpy(out, url, strlen(url) + 1);
+    return true;
+  }
+  if (strlen(CONFIG_OTA_GH_PROXY_PREFIX) + strlen(url) + 1 > outLen) return false;
+  snprintf(out, outLen, "%s%s", CONFIG_OTA_GH_PROXY_PREFIX, url);
+  return true;
+}
+
 cJSON* System_OtaCheck(char* reason, size_t reasonLen)
 {
   if (reason && reasonLen) reason[0] = '\0';
@@ -165,7 +179,19 @@ cJSON* System_OtaCheck(char* reason, size_t reasonLen)
     return NULL;
   }
   size_t len = 0;
+  bool usedProxy = false;
   esp_err_t err = System_HttpGet(CONFIG_OTA_MANIFEST_URL, buf, CONFIG_OTA_MANIFEST_MAX_BYTES, &len, reason, reasonLen);
+  if (err == ESP_ERR_TIMEOUT) {
+    char proxyUrl[CONFIG_OTA_URL_MAX_BYTES];
+    if (!System_OtaProxyUrl(CONFIG_OTA_MANIFEST_URL, proxyUrl, sizeof(proxyUrl))) {
+      free(buf);
+      snprintf(reason, reasonLen, "Update manifest URL is too long for proxy retry.");
+      return NULL;
+    }
+    ESP_LOGW(tag, "OTA manifest timed out; retrying via gh-proxy");
+    err = System_HttpGet(proxyUrl, buf, CONFIG_OTA_MANIFEST_MAX_BYTES, &len, reason, reasonLen);
+    usedProxy = (err == ESP_OK);
+  }
   if (err != ESP_OK) {
     free(buf);
     return NULL;
@@ -237,7 +263,19 @@ cJSON* System_OtaCheck(char* reason, size_t reasonLen)
     if (cJSON_IsString(changelog) && changelog->valuestring) {
       cJSON_AddStringToObject(out, "changelog", changelog->valuestring);
     }
-    cJSON_AddStringToObject(out, "url", url->valuestring);
+    /* If the check needed gh-proxy, return a proxied image URL so upgrade can fetch it too. */
+    if (usedProxy) {
+      char proxiedUrl[CONFIG_OTA_URL_MAX_BYTES];
+      if (!System_OtaProxyUrl(url->valuestring, proxiedUrl, sizeof(proxiedUrl))) {
+        cJSON_Delete(root);
+        cJSON_Delete(out);
+        snprintf(reason, reasonLen, "Image URL is too long for proxy.");
+        return NULL;
+      }
+      cJSON_AddStringToObject(out, "url", proxiedUrl);
+    } else {
+      cJSON_AddStringToObject(out, "url", url->valuestring);
+    }
     cJSON_AddStringToObject(out, "sha256", sha->valuestring);
   }
 

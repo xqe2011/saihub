@@ -40,6 +40,9 @@ void System_OtaGetStatus(System_OtaStatus* out);
 
 /**
  * Side-effect-free update check: fetch manifest, pick matching target image.
+ * Tries the direct GitHub manifest URL first; on HTTP timeout retries via
+ * CONFIG_OTA_GH_PROXY_PREFIX (same as the flash page). When the proxy path is
+ * used, a successful updateAvailable response prefixes url the same way.
  * On success returns an owned JSON object:
  * { updateAvailable, currentVersion, version?, releaseDate?, changelog?, url?, sha256? }
  * Caller must cJSON_Delete. On failure returns NULL and writes reason.

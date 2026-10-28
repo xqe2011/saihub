@@ -65,8 +65,11 @@
 
 /* OTA: latest-release manifest (app images only). Target must match CI image target. */
 #define CONFIG_OTA_MANIFEST_URL "https://github.com/xqe2011/saihub/releases/latest/download/manifest.json"
+/* On manifest fetch timeout, retry with this prefix (same as the flash page gh-proxy). */
+#define CONFIG_OTA_GH_PROXY_PREFIX "https://gh-proxy.com/"
 #define CONFIG_OTA_IMAGE_TARGET "esp32c5"
 #define CONFIG_OTA_HTTP_TIMEOUT_MS 30000
 #define CONFIG_OTA_MANIFEST_MAX_BYTES (8 * 1024)
+#define CONFIG_OTA_URL_MAX_BYTES 512
 
 #endif
