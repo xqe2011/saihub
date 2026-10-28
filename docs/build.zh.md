@@ -27,7 +27,7 @@ idf.py merge-bin   # 生成网页烧录器使用的合并镜像（烧到 0x0）
 | `CONFIG_CLOUD_URL` | 中继源站，`ws://` 或 `wss://` 开头、不带路径；留空则禁用中继。自行部署时必须修改并重新编译 |
 | `CONFIG_WIFI_SSID` / `CONFIG_WIFI_PASSWORD` | Wi-Fi 凭据种子，仅在 NVS 中没有已保存凭据时使用 |
 | `CONFIG_OTA_MANIFEST_URL` | 更新检查用的 `manifest.json` HTTPS 地址（默认直连 GitHub） |
-| `CONFIG_OTA_GH_PROXY_PREFIX` | 拉取 manifest 超时时，在 URL 前加上此前缀重试（与刷写页相同） |
+| `CONFIG_OTA_GH_PROXY_PREFIX` | 超时时，OTA 检查与 github.com 镜像下载会在 URL 前加上此前缀重试（与刷写页相同） |
 | `CONFIG_OTA_IMAGE_TARGET` | 与 manifest 中 `target` 匹配的镜像目标字符串（需与 CI 一致） |
 
 为 SAIHub-Mini 以外的板子编译：见[自备开发板](bring-your-own-board.zh.md)。
