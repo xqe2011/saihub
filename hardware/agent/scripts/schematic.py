@@ -63,10 +63,27 @@ positions={
  'TP5':(297,238,0),'TP6':(393,238,0),'J2':(187,243,0),
  'BZ1':(45,232,0),'Q1':(83,250,0),'D3':(60,221,0),'R11':(47,250,0),'R12':(66,260,270),'C13':(122,237,270),
 }
-positions.update({'U6': (470, 50, 0), 'U7': (470, 110, 0), 'U10': (458, 180, 0), 'C21': (544, 180, 270)})
+positions.update({'U6': (470, 50, 0), 'U7': (470, 110, 0), 'U10': (458, 180, 0)})
 for i in range(4):
     positions[f'R{19+i}'] = (445, 294+17*i, 0)
     positions[f'D{4+i}'] = (535, 294+17*i, 0)
+# Keep each local circuit physically connected; reserve the lower row for auxiliaries.
+positions.update({
+    'R15': (188, 213.36, 270), 'R16': (188, 241.3, 270),
+    'R17': (124.46, 241.3, 270), 'C16': (124.46, 213.36, 270),
+    'C15': (73.66, 171.45, 270),
+    'R18': (149.86, 147.32, 0), 'C14': (190.5, 147.32, 0),
+    'C9': (242.57, 147.32, 270), 'C10': (337.82, 147.32, 270),
+    'TP5': (306.07, 210.82, 0), 'TP6': (402.59, 210.82, 0),
+    'C13': (30.48, 237.49, 270),
+    'J2': (444.5, 104.14, 0), 'U6': (520.7, 63.5, 0), 'U7': (520.7, 119.38, 0),
+    'U10': (490.22, 185.42, 0),
+})
+for ref in ['BZ1', 'Q1', 'D3', 'R11', 'R12', 'C13']:
+    x, y, angle = positions[ref]
+    positions[ref] = (x, y + 70, angle)
+for i in range(4):
+    positions[f'D{4+i}'] = (510.54, 294+17*i, 180)
 for a in parts.values():a['sch']=[grid(v) for v in positions[a['ref']][:2]];a['angle']=positions[a['ref']][2]
 for i,net in enumerate(['VBUS','V5','V3V3','GND']):
     ref='#FLG0'+str(i+1)
@@ -95,25 +112,34 @@ def label(net,point,angle=0):
 def stub(ref,num,net=None,length=3.81):
     a=parts[ref];net=net or a['nets'][str(num)];x,y,ang=pin(ref,num);theta=math.radians(ang);end=(round(x-length*math.cos(theta),4),round(y+length*math.sin(theta),4))
     mark(ref,num);wire([(x,y),end]);label(net,end,0 if ang==0 else 180)
+def connect(a, b, via=()):
+    """Wire matching pins, refusing accidental changes to the circuit."""
+    ar, an = a; br, bn = b
+    assert parts[ar]['nets'][str(an)] == parts[br]['nets'][str(bn)], (a, b)
+    wire([mark(ar, an), *via, mark(br, bn)])
+
+def join(ref, num, point, via=()):
+    wire([mark(ref, num), *via, point])
+    junction(*point)
+
 def txt(s,x,y,size=1.27):items.append(f'(text {q(s)} (at {x} {y} 0) {effects(size,"(justify left)")} (uuid "{serial(s)}"))')
 def box(x1,y1,x2,y2,title):
     items.append(f'(polyline (pts (xy {x1} {y1}) (xy {x2} {y1}) (xy {x2} {y2}) (xy {x1} {y2}) (xy {x1} {y1})) (stroke (width .254) (type default)) (fill (type none)) (uuid "{serial(title)}"))')
     txt(title,x1+3,y1+4,1.5)
 box(12,12,208,130,'01  CONTROLLER / BOOT / RESET')
 box(212,12,408,130,'02  USB-C / INPUT PROTECTION')
-box(12,134,232,210,'03  SGM6232 / ALWAYS-ON 3.3 V')
+box(12,134,232,275,'03  SGM6232 / ALWAYS-ON 3.3 V')
 box(236,134,408,249,'04  SWITCHED OUTPUTS / 1 A NOMINAL LIMIT')
-box(12,214,144,275,'05  PASSIVE 5020 BUZZER')
-box(148,214,232,275,'06  12-PIN MALE HEADER')
-box(412,12,580,275,'07  HEADER ESD / SHUNT PROTECTION')
+box(12,284,144,345,'05  PASSIVE 5020 BUZZER')
+box(412,12,580,275,'06  HEADER / ESD / SHUNT PROTECTION')
 txt('U6/U7: four channels each; no supply or bypass needed.',418,225,1.05)
 txt('IO0-IO7: 3.3 V only; final-board ESD test required.',418,242,1.05)
 txt('U10: switched rails. Power current bypasses the array.',418,249,1.05)
-txt('Place arrays and bypass capacitors directly beside J2.',418,256,1.05)
+txt('Place protection arrays directly beside J2.',418,256,1.05)
 txt('Short, wide ground returns; qualify ESD on final PCB.',418,263,1.05)
-box(412,279,580,369,'08  GROUPED STATUS INDICATORS')
+box(412,279,580,369,'07  GROUPED STATUS INDICATORS')
 txt('Blue: control pin 26, HIGH = on. 3V3/5V: switched rails.',418,363,1.0)
-txt('48 x 28 mm PCB - LEDs top; eight resistors bottom.',17,290,1.5)
+txt('48 x 28 mm PCB - all components on front surface.',17,357,1.5)
 
 # MCU bypass capacitors share actual supply / return buses.
 for num,net,yy in [(1,'V3V3',grid(25)),(2,'GND',grid(46))]:
@@ -159,7 +185,7 @@ gpts=[mark(r,2) for r in ['C2','C3','D1','C4','C5']]
 for x,y in gpts:wire([(x,y),(x,ground_y)])
 wire([(gpts[0][0],ground_y),(gpts[-1][0],ground_y)]);label('GND',(gpts[0][0],ground_y))
 for x,y in gpts[1:-1]:junction(x,ground_y)
-txt('EN open: auto-start. EP to GND. FB divider 33k / 10.5k = 3.314 V.',17,205,1.05)
+txt('EN open: auto-start. EP to GND. FB divider 33k / 10.5k = 3.314 V.',17,268,1.05)
 
 # Rail switches: visible output capacitor and enable pulldown connections.
 for u,ce,rpd in [('U4','C11','R9'),('U5','C12','R10')]:
@@ -170,12 +196,117 @@ txt('FAULT4 -> input 15; FAULT5 -> input 3. Active LOW.',240,251,1.02)
 txt('26.1k ILIM: nominal 0.989 A; bounds 0.908-1.081 A.',240,244,1.02)
 
 # Buzzer: low-side MOSFET and flyback diode, independent of switched outputs.
-a=mark('BZ1',1);d=mark('D3',1);sx=grid(30);sy=d[1]
+a=mark('BZ1',1);d=mark('D3',1);sx=grid(23);sy=d[1]
 wire([a,(sx,a[1]),(sx,sy),d]);label('V3V3',(sx,sy))
 b=mark('BZ1',2);d=mark('D3',2);dr=mark('Q1',3);bx=dr[0]
 wire([d,(bx,d[1]),dr]);wire([b,(bx,b[1])]);junction(bx,b[1]);label('BUZZ_LOW',(bx,b[1]),180)
 g=mark('Q1',1);r=mark('R11',2);pd=mark('R12',1);wire([r,g]);wire([pd,(pd[0],g[1])]);junction(pd[0],g[1]);label('BUZZ_GATE',(pd[0],g[1]),180);stub('R11',1);stub('R12',2);stub('Q1',2)
-txt('4 kHz / 50% duty. GPIO12 reserved.',17,272,1.02)
+txt('4 kHz / 50% duty. GPIO12 reserved.',17,342,1.02)
+
+# Complete the local subgraphs with wires; labels remain at section interfaces
+# and ground returns. These routes do not change any design nets.
+# Controller supply, reset, boot and service pads.
+join('U3', 8, (grid(43), grid(25)), [(grid(53.34), pt('U3', 8)[1]), (grid(53.34), grid(25))])
+join('R5', 1, (grid(29), grid(25)), [(pt('R5', 1)[0], grid(25))])
+join('U3', 3, (pt('C8', 1)[0], pt('R5', 2)[1]),
+     [(grid(58.42), pt('U3', 3)[1]), (grid(58.42), pt('R5', 2)[1])])
+join('U3', 18, (pt('R6', 2)[0], pt('SW1', 1)[1]),
+     [(grid(121.92), pt('U3', 18)[1]), (grid(121.92), pt('SW1', 1)[1])])
+connect(('TP1', 1), ('U3', 3), [(grid(54.61), pt('TP1', 1)[1]),
+        (grid(54.61), pt('U3', 3)[1])])
+junction(*pt('U3', 3))
+connect(('TP3', 1), ('U3', 22), [(grid(115.57), pt('TP3', 1)[1]),
+        (grid(115.57), pt('U3', 22)[1])])
+connect(('TP2', 1), ('U3', 23), [(grid(169), pt('TP2', 1)[1]), (grid(169), grid(104)),
+        (grid(109.22), grid(104)), (grid(109.22), pt('U3', 23)[1])])
+label('GND', (grid(109.22), grid(104)))
+connect(('TP4', 1), ('R6', 1), [(grid(198.12), pt('TP4', 1)[1]),
+        (grid(198.12), grid(26.67)), (pt('R6', 1)[0], grid(26.67))])
+
+# USB signal protection and the complete fused-input branch.
+for num, bus_y, lane in [(1, pt('J1', 'A7')[1], grid(294.64)),
+                         (3, pt('J1', 'A6')[1], grid(298.45))]:
+    join('U1', num, (grid(261), bus_y), [(lane, pt('U1', num)[1]), (lane, bus_y)])
+connect(('F1', 1), ('J1', 'B9'), [(grid(217.17), pt('F1', 1)[1]),
+        (grid(217.17), pt('J1', 'B9')[1])])
+junction(*pt('J1', 'B9'))
+connect(('C1', 1), ('U1', 5), [(grid(345.44), pt('C1', 1)[1]),
+        (grid(345.44), pt('U1', 5)[1])])
+label('VBUS', (grid(345.44), pt('U1', 5)[1]), 180)
+
+# Regulator bootstrap, soft-start, compensation and feedback are wired to U2.
+connect(('R18', 2), ('C14', 1))
+join('R18', 1, (pt('D1', 1)[0], pt('U2', 3)[1]),
+     [(pt('D1', 1)[0], pt('R18', 1)[1])])
+connect(('C14', 2), ('U2', 1), [(grid(224.79), pt('C14', 2)[1]),
+        (grid(224.79), grid(138.43)), (grid(120.65), grid(138.43)),
+        (grid(120.65), pt('U2', 1)[1])])
+connect(('C15', 1), ('U2', 8), [(pt('C15', 1)[0], pt('U2', 8)[1])])
+stub('C15', 2)
+connect(('C16', 1), ('U2', 6), [(pt('C16', 1)[0], pt('U2', 6)[1])])
+connect(('C16', 2), ('R17', 1))
+stub('R17', 2)
+connect(('R15', 2), ('R16', 1))
+fb = (pt('R15', 2)[0], grid(227.33))
+join('U2', 5, fb, [(grid(143.51), pt('U2', 5)[1]), (grid(143.51), fb[1])])
+join('R15', 1, (grid(226.06), pt('L1', 2)[1]),
+     [(grid(226.06), pt('R15', 1)[1])])
+wire([(pt('C5', 1)[0], pt('L1', 2)[1]), (grid(226.06), pt('L1', 2)[1])])
+junction(pt('C5', 1)[0], pt('L1', 2)[1])
+stub('R16', 2)
+
+# Each switched rail includes its input bypass, current-setting resistor and fault pad.
+for u, ci, ri, tp in [('U4', 'C9', 'R7', 'TP5'), ('U5', 'C10', 'R8', 'TP6')]:
+    connect((u, 1), (ci, 1), [(pt(u, 1)[0], grid(140.97)), (pt(ci, 1)[0], grid(140.97))])
+    label(parts[u]['nets']['1'], (pt(ci, 1)[0], grid(140.97)))
+    stub(ci, 2)
+    connect((u, 5), (ri, 1), [(pt(ri, 1)[0], pt(u, 5)[1])])
+    stub(ri, 2)
+    lane = grid(parts[u]['sch'][0] + 20.32)
+    connect((u, 4), (tp, 1), [(lane, pt(u, 4)[1]), (lane, pt(tp, 1)[1])])
+    label(parts[u]['nets']['4'], (lane, pt(tp, 1)[1]))
+
+# Buzzer bypass joins the coil supply directly.
+join('C13', 1, (grid(23), pt('BZ1', 1)[1]), [(pt('C13', 1)[0], pt('BZ1', 1)[1])])
+stub('C13', 2)
+
+# Independent ESD shunts require only a short ground return.
+for u in ['U6', 'U7', 'U10']:
+    x = grid(parts[u]['sch'][0] + 20.32)
+    connect((u, 3), (u, 8), [(x, pt(u, 3)[1]), (x, pt(u, 8)[1])])
+    label('GND', (x, pt(u, 3)[1]), 180)
+
+# Place the header with its protection so each protected signal is traceable.
+for i, (u, nums) in enumerate([('U6', [1, 2, 4, 5]), ('U7', [1, 2, 4, 5])]):
+    for j, num in enumerate(nums):
+        lane = grid(480.06 + (j if i == 0 else 3-j) * 3.81)
+        hp = 5 + i*4 + j
+        connect(('J2', hp), (u, num), [(lane, pt('J2', hp)[1]), (lane, pt(u, num)[1])])
+        label(parts[u]['nets'][str(num)], (lane, pt(u, num)[1]))
+for hp, num, lane in [(1, 1, grid(420.37)), (3, 5, grid(425.45))]:
+    connect(('J2', hp), ('U10', num), [(lane, pt('J2', hp)[1]), (lane, pt('U10', num)[1])])
+    label(parts['J2']['nets'][str(hp)], (lane, pt('J2', hp)[1]))
+connect(('J2', 2), ('J2', 4), [(grid(429.26), pt('J2', 2)[1]),
+        (grid(429.26), pt('J2', 4)[1])])
+label('GND', (grid(429.26), pt('J2', 4)[1]))
+# Every indicator is a continuous source -> resistor -> LED -> ground chain.
+for i in range(4):
+    r, d = f'R{19+i}', f'D{4+i}'
+    connect((r, 2), (d, 1))
+    stub(r, 1)
+    stub(d, 2)
+
+# Retain the original net names for board parity, with one label per internal net.
+for net, point in [
+    ('UART_TX', (grid(115.57), pt('TP3', 1)[1])),
+    ('BOOT_R', (grid(177.8), pt('R18', 2)[1])), ('BS', (grid(120.65), grid(138.43))),
+    ('SS', (pt('C15', 1)[0], pt('U2', 8)[1])),
+    ('COMP', (pt('C16', 1)[0], grid(198.12))),
+    ('COMP_RC', (pt('C16', 2)[0], grid(227.33))), ('FB', fb),
+    ('ILIM4', pt('R7', 1)), ('ILIM5', pt('R8', 1)),
+    *[(f'D{4+i}_A', (grid(480.06), pt(f'R{19+i}', 2)[1])) for i in range(4)],
+]:
+    label(net, point)
 
 # Place symbols and automatically label only remaining inter-block connections.
 for ref,a in parts.items():
@@ -186,7 +317,7 @@ for ref,a in parts.items():
     val=a['value']
     for name,v,xx,yy,hide in [('Reference',ref,x+3.81 if vertical else x,y-1.27 if vertical else y-h-2.54,isflag),('Value',val,x+3.81 if vertical else x,y+1.27 if vertical else y+h+2.54,isflag),('Footprint',a['foot'],x,y,True),('Datasheet',a['url'],x,y,True),('MPN',a['mpn'],x,y,True)]:
         extra='(hide yes)' if hide else '(justify left)' if vertical else ''
-        if ref=='Q1' and name in ['Reference','Value']:xx,yy=96,246 if name=='Reference' else 249
+        if ref=='Q1' and name in ['Reference','Value']:xx,yy=96,316 if name=='Reference' else 319
         inst+=f'(property {q(name)} {q(v)} (at {xx} {yy} {90 if vertical else 0}) {effects(.95,extra)})'
     for un in children(sym,'symbol'):
         for pinobj in children(un,'pin'):
@@ -211,4 +342,4 @@ text+='\n'.join(items)+')\n'
 for name in ['usb','power','mcu','outputs','buzzer']:
     old=ROOT/(name+'.kicad_sch')
     if old.exists():old.unlink()
-print('Created one-page A2 schematic with eight wired functional sections.')
+print('Created one-page A2 schematic with seven wired functional sections.')

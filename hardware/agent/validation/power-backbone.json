@@ -1,0 +1,32 @@
+{
+  "board_sha256": "3dc1394879f61277a4e52349fca5bc77ab97ce85757a362c23e9ea1e69204853",
+  "method": "Check critical supply pads remain connected after excluding supply tracks narrower than 0.5 mm. Pull-up, indicator, test-pad and protection branches are excluded from the critical-pad set.",
+  "nets": {
+    "V3V3": {
+      "critical_pads": 11,
+      "minimum_backbone_width_mm": 0.5,
+      "missing": []
+    },
+    "V3_SW": {
+      "critical_pads": 3,
+      "minimum_backbone_width_mm": 0.5,
+      "missing": []
+    },
+    "V5": {
+      "critical_pads": 7,
+      "minimum_backbone_width_mm": 0.5,
+      "missing": []
+    },
+    "V5_SW": {
+      "critical_pads": 3,
+      "minimum_backbone_width_mm": 0.5,
+      "missing": []
+    },
+    "VBUS": {
+      "critical_pads": 5,
+      "minimum_backbone_width_mm": 0.5,
+      "missing": []
+    }
+  },
+  "routing_status": "Complete. This is a connectivity and width check, not a measured current rating."
+}

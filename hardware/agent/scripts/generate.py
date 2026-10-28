@@ -148,83 +148,88 @@ r('R11','100','BUZZ_PWM','BUZZ_GATE',(20,43),'buzzer',(265,40))
 r('R12','10k','BUZZ_GATE','GND',(20,46),'buzzer',(265,75))
 c('C13','100n','V3V3','GND',(2.1,44.2),'buzzer',(175,105),rot=90)
 
-# Low-current indicators, in one column with matching enclosure legends.
-for ref, resistor, color, source, resistance, mpn, yy in [
-    ('D4', 'R19', 'GREEN', 'V3_SW', '330', 'KT-0603G', 5.2),
-    ('D5', 'R20', 'GREEN', 'V5_SW', '1.2k', 'KT-0603G', 8.4),
-    ('D6', 'R21', 'RED', 'V5', '1.5k', 'KT-0603R', 11.6),
-    ('D7', 'R22', 'BLUE', 'STATUS_LED', '330', 'KT-0603B', 14.8),
+# Indicators share one 660 ohm resistor type, in one column with matching enclosure legends.
+LED_RESISTANCE = '660'
+for ref, resistor, color, source, mpn, yy in [
+    ('D4', 'R19', 'GREEN', 'V3_SW', 'KT-0603G', 5.2),
+    ('D5', 'R20', 'GREEN', 'V5_SW', 'KT-0603G', 8.4),
+    ('D6', 'R21', 'RED', 'V5', 'KT-0603R', 11.6),
+    ('D7', 'R22', 'BLUE', 'STATUS_LED', 'KT-0603B', 14.8),
 ]:
     net = ref + '_A'
     url = '${KIPRJMOD}/agent/docs/led-' + mpn.lower() + '.pdf'
     add(ref, color, 'LED', 'Saihub:LED_0603_1608Metric', {1:net, 2:'GND'}, (30.3, yy), 'indicators',
         (450, 300), mpn=mpn, desc='0603 indicator; 1.6 x 0.8 x 0.6 mm; anode pad 1, cathode pad 2', url=url, rot=90)
-    r(resistor, resistance, source, net, (34.0, yy), 'indicators', (480, 300), 90)
+    r(resistor, LED_RESISTANCE, source, net, (34.0, yy), 'indicators', (480, 300), 90)
 
 # Compact placement: header, small side-push BOOT, USB-C left to right.
 # Coordinates are board-local; the switch actuator points toward y=0.
 # Antenna reaches y=28; notch extends 5 mm beyond its right edge.
-placement = {'J2': (1.8, 1.5, 90),
- 'SW1': (34.5, 1.55, 0),
- 'J1': [42.8, 3.5, 180.0],
- 'U3': (8.85, 16, 180),
- 'C6': [18.68, 11.12, 90.0],
- 'C7': [21.15, 11.32, 90.0],
- 'R5': [18.67, 14.41, 90.0],
- 'C8': [21.74, 15.09, 90.0],
+# Single-surface assembly: all components and test pads are on the front.
+placement = {'J1': [42.8, 3.5, 180.0],
+ 'R1': [36.5, 6.46, 90.0],
+ 'R2': [35.66, 9.07, 180.0],
+ 'U1': [33.63, 6.13, 180.0],
+ 'C1': [32.59, 8.9, 0.0],
  'R3': [19.04, 16.89, 180.0],
  'R4': [20.2, 14.53, 90.0],
- 'U4': (27.65, 5.7, 90),
- 'C9': (24.95, 5.6, 90),
- 'R7': (28.0, 4.3, 90),
- 'R9': (34.1, 9.5, 90),
- 'C11': (27.3, 8.6, 0),
- 'U5': (27.65, 12.2, 90),
- 'C10': (24.95, 12.1, 90),
- 'R8': (26.0, 11.25, 0),
- 'R10': (34.25, 14.2, 90),
- 'C12': (27.3, 15.2, 0),
- 'TP1': [18.54, 19.32, 0.0],
+ 'F1': [39.7, 9.6, 0],
+ 'D2': [44.8, 9.6, 0],
+ 'U2': [37.7, 14.0, 180.0],
+ 'L1': [44.1, 24.4, 180],
+ 'D1': [45.5, 14.5, -90],
+ 'C2': [38.3, 19.4, 180],
+ 'C3': [42.0, 19.4, 90.0],
+ 'C4': [35.8, 24.7, 180],
+ 'C5': [36.78, 22.2, 0.0],
+ 'R15': [32.4, 14.26, 90.0],
+ 'R16': [32.4, 11.2, 90.0],
+ 'R17': [32.86, 20.2, 0],
+ 'R18': [45.7, 19.2, 0.0],
+ 'C14': [39.1, 25.7, 90.0],
+ 'C15': [32.4, 23.32, 90.0],
+ 'C16': [32.86, 18.64, 0],
+ 'U3': [8.85, 16, 180],
+ 'C6': [18.68, 11.12, 90.0],
+ 'C7': [20.52, 11.32, 90.0],
+ 'R5': [18.64, 14.41, 90.0],
+ 'C8': [21.76, 14.75, 90.0],
+ 'R6': [22.4, 8.2, 270.0],
+ 'SW1': [34.5, 1.55, 0],
+ 'TP1': [18.54, 19.32, 90],
  'TP2': [20.79, 19.39, 0.0],
- 'TP3': [2.6, 19.5, 0.0],
- 'TP4': [23.05, 12.55, 0.0],
- 'TP5': [22.87, 19.37, 0.0],
- 'TP6': [34.48, 20.28, 0.0],
- 'R6': [24.14, 15.24, 180.0],
- 'U1': [33.63, 6.13, 180.0],
- 'R1': [36.49, 6.46, 90.0],
- 'R2': [35.66, 9.07, 180.0],
- 'C1': [32.59, 8.9, 0.0],
- 'F1': (39.7, 9.6, 0),
- 'D2': (44.8, 9.6, 0),
- 'U2': (38.3, 14, 180),
- 'D1': (45.5, 14.5, -90),
- 'L1': (44.1, 24.4, 180),
- 'C2': (38.3, 19.4, 180),
- 'C3': (42, 19.4, 90),
- 'C4': (35.8, 24.7, 180),
- 'C5': (35.8, 22.2, 0),
- 'R15': (32.4, 14.4, 90),
- 'R16': (32.4, 11.2, 90),
- 'C16': (32.4, 17.6, -90),
- 'R17': (32.4, 20.8, -90),
- 'C15': (32.4, 24, 90),
- 'R18': (45.7, 19.2, 0),
- 'C14': (39.1, 25.7, 90),
+ 'TP3': [32.32, 16.82, 0.0],
+ 'TP4': [21.66, 17.31, 0.0],
+ 'J2': [1.8, 1.5, 90],
+ 'U4': [27.65, 5.7, 90],
+ 'R7': [24.38, 13.65, 0],
+ 'R9': [25.0, 8.23, 90.0],
+ 'C9': [24.95, 5.19, 90.0],
+ 'C11': [27.3, 8.6, 0.0],
+ 'TP5': [22.92, 20.07, 0.0],
+ 'U5': [27.65, 12.2, 90],
+ 'R8': [22.08, 11.27, 90],
+ 'R10': [35.16, 18.72, 90.0],
+ 'C10': [24.38, 12.09, 0],
+ 'C12': [27.3, 15.21, 0.0],
+ 'TP6': [34.22, 22.02, 0.0],
  'BZ1': [28.49, 24.82, 0.0],
- 'D3': (27.8, 18.2, 0),
  'Q1': [23.61, 25.93, 90.0],
- 'R11': [22.73, 17.5, 180.0],
- 'C13': [33.12, 27.08, 0.0],
- 'R12': [23.71, 22.55, 180.0],
+ 'D3': [27.8, 18.2, 0],
+ 'R11': [23.6, 22.55, 0.0],
+ 'R12': [29.82, 20.78, 0.0],
+ 'C13': [32.68, 26.36, 90],
+ 'D4': [30.3, 5.2, 270],
+ 'R19': [42.9, 12.6, 90.0],
+ 'D5': [30.3, 8.4, 270],
+ 'R20': [26.78, 20.78, 0.0],
+ 'D6': [30.3, 11.600000000000001, 270],
+ 'R21': [39.08, 22.56, 90.0],
+ 'D7': [30.3, 14.8, 90],
+ 'R22': [42.9, 15.8, 90.0],
  'U6': [19.39, 4.32, -90.0],
  'U7': [22.92, 5.15, 0.0],
- 'U10': [19.74, 7.71, 180.0],
- 'C21': [22.67, 8.23, 90.0]}
-placement.update({f'D{4+i}': (30.3, 5.2+3.2*i, 270) for i in range(4)})
-placement.update({'D7': (30.3, 14.8, 90),
-                  'R19': (32.1, 5.2, 90), 'R20': (29.2, 8.05, 0),
-                  'R21': (32.0, 10.75, 90), 'R22': (30.45, 16.55, 90)})
+ 'U10': [19.74, 7.71, 90.0]}
 apply_header_protection(parts)
 unplaced = [a['ref'] for a in parts if a['ref'] not in placement]
 if unplaced:
@@ -232,7 +237,8 @@ if unplaced:
 for a in parts:
     a['pos']=placement[a['ref']][:2]
     a['rot']=placement[a['ref']][2]
-    a['side']='bottom' if a['ref'] in {'TP3', 'R7', 'R8', 'R9', 'R10', 'R19', 'R20', 'R21', 'R22'} else 'top'
+    a['side']='top'
+    a['locked']=a['ref'] in {'J1','J2','SW1','U3','D4','D5','D6','D7'}
     if a['ref'].startswith('TP'):
         a['foot']='TestPoint:TestPoint_Pad_D1.0mm'
 
@@ -368,6 +374,7 @@ for a in parts:
     fp.SetPath(p.KIID_PATH('/'+rootid+'/'+a['uuid']))
     board.Add(fp)
     fp.SetPosition(xy(*a['pos']))
+    fp.SetLocked(a.get('locked', False))
     if a['side']=='bottom': fp.Flip(fp.GetPosition(),False)
     fp.SetOrientationDegrees(a['rot']);fp.Value().SetVisible(False)
     # Keep assembly labels centered and readable in the compact placement.
@@ -382,6 +389,7 @@ for a in parts:
     for pad in fp.Pads():
         net=a['nets'].get(pad.GetNumber())
         if net: pad.SetNet(nets[net])
+        if a['ref']=='U10' and net=='GND': pad.SetLocalZoneConnection(p.ZONE_CONNECTION_FULL)
     footprints[a['ref']]=fp
 outline=[(0,0),(W,0),(W,H),(21.85,H),(21.85,20.5),(0,20.5)]
 for start,end in zip(outline,outline[1:]+outline[:1]):
@@ -407,7 +415,7 @@ else:
 (ROOT/'agent/routing/saihub-unrouted.kicad_pro').write_text(json.dumps(project,indent=2)+'\n')
 p.SaveBoard(str(ROOT/'agent/routing/saihub-unrouted.kicad_pcb'),board)
 (ROOT/'agent/routing/saihub-unrouted.kicad_pro').write_text(json.dumps(project,indent=2)+'\n')
-(ROOT/'agent/design.json').write_text(json.dumps({**identity(),'status':'placement-only-unrouted','board_mm':[W,H],'input':{'voltage_v':5,'source_current_a':3},'channel_limit_nominal_a':1,'assembly':'LEDs and main components top; eight resistors and TP3 on bottom','parts':parts},indent=2)+'\n')
+(ROOT/'agent/design.json').write_text(json.dumps({**identity(),'status':'placement-only-unrouted','board_mm':[W,H],'input':{'voltage_v':5,'source_current_a':3},'channel_limit_nominal_a':1,'assembly':'All components and test pads on the front (top) surface','parts':parts},indent=2)+'\n')
 print(f'Generated {len(parts)} components, {len(nets)} nets, one schematic sheet, {W} x {H} mm placement.')
 
 import runpy

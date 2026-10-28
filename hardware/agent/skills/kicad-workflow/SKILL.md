@@ -7,6 +7,10 @@ description: Modify, regenerate, route and validate the Saihub KiCad hardware us
 
 Paths below are relative to `hardware/`. Read `README.md` and [design notes](../../docs/design-notes.md) before changes; use [prototype tests](../../docs/prototype-test.md) for bench work. Read `docs/version-log.md` and `agent/identity.json`. Change the revision or date version only when the user explicitly permits it, and log each approved version change in `docs/version-log.md`. Regeneration, routing, export and ordinary edits must preserve the approved identity.
 
+## Single-surface assembly
+
+All components, including resistors and test pads, must be placed on the front (top, `F.Cu`). No back-side footprints are allowed. Back-layer routing and through-hole pads are allowed. Keep the generator, design metadata and review documents consistent.
+
 ## Preserve the editable design
 
 The main `saihub.kicad_pcb` is the routed board. Keep the project, schematic, library tables and `libraries/` together at the hardware root. `agent/design.json` records parts, placement and connectivity; the generator's source contains the placement definitions that produce it. Reconcile direct KiCad edits with that metadata before exporting a BOM or running the metadata synchronizer.
@@ -19,7 +23,7 @@ Use KiCad's bundled Python for `pcbnew` scripts. On macOS it is normally `/Appli
 
 For the four-indicator layout, run `agent/scripts/replay_routing.py replay` with KiCad Python after regeneration. It restores `agent/routing/copper.json` only when every footprint, pad position and net matches the captured placement. For a new placement, route the edited main board, then capture its copper with `replay_routing.py capture` and run the full routed checks before accepting the snapshot. The legacy `route.py`/Specctra inputs predate the indicator placement and are guarded against reuse with it.
 
-From the repository root, run `python3 hardware/agent/scripts/export_placement.py --routed`. Set `KICAD_CLI` and `KICAD_PYTHON` if needed. The host Python needs `reportlab`, and ImageMagick must be on PATH. Set `INTERACTIVE_HTML_BOM` to the upstream `InteractiveHtmlBom/generate_interactive_bom.py` script; document exports also compile the offline `docs/bom.html`. The export first writes a netlist, synchronizes symbol UUIDs and explicit NC nets, fills zones, then runs ERC and DRC with schematic parity. Routed acceptance requires zero violations, parity findings and unconnected items. Without `--routed`, unconnected items are allowed for placement review only.
+From the repository root, run `python3 hardware/agent/scripts/export_placement.py --routed`. Set `KICAD_CLI` and `KICAD_PYTHON` if needed. The host Python needs `reportlab`, and ImageMagick must be on PATH. Set `INTERACTIVE_HTML_BOM` to the upstream `InteractiveHtmlBom/generate_interactive_bom.py` script; document exports also compile the offline `docs/bom.html`. The export first writes a netlist, synchronizes symbol UUIDs and explicit NC nets, fills zones, then runs ERC and DRC with schematic parity. Routed acceptance requires zero violations, parity findings and unconnected items. Without `--routed`, unconnected items and dangling trace/via findings are allowed for placement review only, and retained in the reports and summary. Other DRC findings and parity errors still block export. Preserve useful existing traces for rerouting; never describe placement-only acceptance as a routed pass.
 
 Inspect the top and mirrored bottom pages of `docs/pcb.pdf` and the schematic PDF after exporting. KiCad SVG contains invisible searchable text; strip those text nodes before ImageMagick rasterization to avoid duplicated labels. `export_docs.py` performs that conversion and refreshes the procurement BOM, excluding test pads; the current antenna is built into the module. `agent/validation/parts-placement.csv` retains all footprints for placement review.
 
@@ -39,4 +43,4 @@ Render the resulting PDF to page images and inspect every page for clipping, lab
 
 Only run `agent/scripts/export.py` when fabrication exports are needed. CAD checks do not establish measured power, thermal or USB performance; use the prototype test procedure for those claims.
 
-`silkscreen.py` places references on the same side as each footprint, including the eight back-side resistors and test pad, avoiding exposed pads and other labels. Generation and board synchronization both apply it. Keep the approved date in PCB title metadata for the interactive BOM.
+`silkscreen.py` places references on the same side as each footprint, with all components and test pads required on the front surface, avoiding exposed pads and other labels. Generation and board synchronization both apply it. Keep the approved date in PCB title metadata for the interactive BOM.

@@ -122,7 +122,8 @@ def apply_reference_labels(board):
         x, y = p.ToMM(center.x), p.ToMM(center.y)
         if fp.GetReference() == 'J2':
             x += 13.97  # Header origin is pin 1; search around the body center.
-        candidates = [(dx*.2, dy*.2, angle) for dx in range(-25, 26) for dy in range(-25, 26) for angle in (0, 90)]
+        # Dense front-only assembly needs a wider search; nearest clear positions still win.
+        candidates = [(dx*.2, dy*.2, angle) for dx in range(-40, 41) for dy in range(-40, 41) for angle in (0, 90)]
         candidates.sort(key=lambda offset: (offset[0]**2 + offset[1]**2, offset[2], abs(offset[0]), offset[1]))
         for dx, dy, angle in candidates:
             text.SetTextAngle(p.EDA_ANGLE(angle, p.DEGREES_T))

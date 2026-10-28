@@ -35,6 +35,27 @@ def placement(board):
     ], key=lambda f: f['ref'])
 
 
+def zone_snapshot(board):
+    result = []
+    for zone in board.Zones():
+        assert not zone.GetIsRuleArea() and zone.GetFillMode() == 0, 'Only solid copper pours are supported'
+        shape = zone.Outline()
+        def contour(line):
+            return [point(line.CPoint(i)) for i in range(line.PointCount())]
+        result.append({
+            'net': zone.GetNetname(), 'layer': board.GetLayerName(zone.GetLayer()),
+            'clearance': p.ToMM(zone.GetLocalClearance()), 'minimum_thickness': p.ToMM(zone.GetMinThickness()),
+            'thermal_gap': p.ToMM(zone.GetThermalReliefGap()),
+            'thermal_spoke_width': p.ToMM(zone.GetThermalReliefSpokeWidth()),
+            'pad_connection': int(zone.GetPadConnection()), 'priority': zone.GetAssignedPriority(),
+            'island_removal': int(zone.GetIslandRemovalMode()), 'minimum_island_area_internal': zone.GetMinIslandArea(),
+            'polygons': [{'outline': contour(shape.COutline(i)),
+                          'holes': [contour(shape.CHole(i, j)) for j in range(shape.HoleCount(i))]}
+                         for i in range(shape.OutlineCount())],
+        })
+    return result
+
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('mode', choices=['capture', 'replay'])
 args = parser.parse_args()
@@ -52,7 +73,10 @@ try:
                 item.update(kind='track', start=point(t.GetStart()), end=point(t.GetEnd()),
                             width=p.ToMM(t.GetWidth()), layer=board.GetLayerName(t.GetLayer()))
             copper.append(item)
-        DATA.write_text(json.dumps({'placement': placement(board), 'copper': copper}, indent=2) + '\n')
+        overrides = [{'reference': f.GetReference(), 'number': d.GetNumber(), 'position': point(d.GetPosition()),
+                      'connection': int(d.GetLocalZoneConnection())} for f in board.GetFootprints() for d in f.Pads()]
+        DATA.write_text(json.dumps({'placement': placement(board), 'copper': copper, 'zones': zone_snapshot(board),
+                                    'pad_zone_connections': overrides}, indent=2) + '\n')
         print(f'Captured {len(copper)} copper items; run routed validation before accepting this snapshot.')
     else:
         board = p.LoadBoard(str(ROOT / 'agent/routing/saihub-unrouted.kicad_pcb'))
@@ -77,25 +101,37 @@ try:
             board.Add(t)
             t.SetNet(board.FindNet(item['net']))
             t.SetLocked(item['locked'])
-        # The placement board has no pours. Restore the two ground planes.
-        for layer in (p.F_Cu, p.B_Cu):
+        if 'zones' not in data or 'pad_zone_connections' not in data:
+            raise SystemExit('Copper snapshot lacks pour settings. Recapture the validated routed board.')
+        for zone in list(board.Zones()):
+            board.RemoveNative(zone)
+        for item in data['zones']:
             zone = p.ZONE(board)
-            zone.SetLayer(layer)
-            zone.SetNet(board.FindNet('GND'))
-            zone.SetLocalClearance(p.FromMM(.2))
-            zone.SetThermalReliefGap(p.FromMM(.25))
-            zone.SetThermalReliefSpokeWidth(p.FromMM(.3))
-            zone.SetPadConnection(p.ZONE_CONNECTION_THERMAL)
-            zone.SetMinThickness(p.FromMM(.2))
+            zone.SetLayer(board.GetLayerID(item['layer']))
+            zone.SetNet(board.FindNet(item['net']))
+            zone.SetLocalClearance(p.FromMM(item['clearance']))
+            zone.SetThermalReliefGap(p.FromMM(item['thermal_gap']))
+            zone.SetThermalReliefSpokeWidth(p.FromMM(item['thermal_spoke_width']))
+            zone.SetPadConnection(item['pad_connection'])
+            zone.SetMinThickness(p.FromMM(item['minimum_thickness']))
+            zone.SetAssignedPriority(item['priority'])
+            zone.SetIslandRemovalMode(item['island_removal'])
+            zone.SetMinIslandArea(item['minimum_island_area_internal'])
             outline = zone.Outline()
-            outline.NewOutline()
-            for x, y in ((.3, .3), (47.7, .3), (47.7, 27.7), (.3, 27.7)):
-                outline.Append(p.FromMM(x), p.FromMM(y))
+            for polygon in item['polygons']:
+                index = outline.NewOutline()
+                for xy in polygon['outline']:
+                    outline.Append(vector(xy), index, -1)
+                for hole in polygon['holes']:
+                    hole_index = outline.NewHole(index)
+                    for xy in hole:
+                        outline.Append(vector(xy), index, hole_index)
             board.Add(zone)
+        overrides = {(a['reference'], a['number'], tuple(a['position'])): a['connection']
+                     for a in data['pad_zone_connections']}
         for f in board.GetFootprints():
             for d in f.Pads():
-                if d.GetNetname() == 'GND':
-                    d.SetLocalZoneConnection(p.ZONE_CONNECTION_FULL)
+                d.SetLocalZoneConnection(overrides[(f.GetReference(), d.GetNumber(), tuple(point(d.GetPosition())))])
         apply_reference_labels(board)
         board.BuildConnectivity()
         p.ZONE_FILLER(board).Fill(board.Zones())

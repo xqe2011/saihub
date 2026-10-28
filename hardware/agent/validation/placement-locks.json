@@ -1,0 +1,68 @@
+{
+  "locked_references": [
+    "D4",
+    "D5",
+    "D6",
+    "D7",
+    "J1",
+    "J2",
+    "SW1",
+    "U3"
+  ],
+  "positions_and_orientations_unchanged": true,
+  "outline_and_thickness_unchanged": true,
+  "layers": 2,
+  "front_components": 64,
+  "relocated": {
+    "R22": [
+      42.9,
+      15.8,
+      90.0
+    ],
+    "U2": [
+      37.7,
+      14.0,
+      180.0
+    ],
+    "R9": [
+      25.0,
+      8.23,
+      90.0
+    ],
+    "R11": [
+      23.6,
+      22.55,
+      0.0
+    ],
+    "R19": [
+      42.9,
+      12.6,
+      90.0
+    ],
+    "R12": [
+      29.82,
+      20.78,
+      0.0
+    ],
+    "TP3": [
+      32.32,
+      16.82,
+      0.0
+    ],
+    "U10": [
+      19.74,
+      7.71,
+      90
+    ],
+    "R6": [
+      22.4,
+      8.2,
+      270
+    ]
+  },
+  "routing_complete": true,
+  "removed_references": [
+    "C21"
+  ],
+  "board_sha256": "3dc1394879f61277a4e52349fca5bc77ab97ce85757a362c23e9ea1e69204853"
+}
