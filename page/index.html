@@ -754,8 +754,12 @@ function logEsp(level, tag, message){
   writeTermLine(`${level} (${ms}) ${tag}: ${message}`);
 }
 
+/** Lowercase and drop "-" so "ESP32-C5" / "… (revision …)" match asset ids like "esp32c5". */
 function chipTargetId(chipName){
-  return String(chipName || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const s = String(chipName || "").trim();
+  const m = s.match(/[a-z]*\d+[a-z0-9-]*/i);
+  const base = (m && m[0]) || s.split(/[\s(]/)[0] || "";
+  return base.toLowerCase().replace(/-/g, "");
 }
 
 function findMergedUrl(release, chipName){
@@ -951,7 +955,8 @@ async function flashFirmware(){
 
     setStatus("status.detecting", "busy");
     logEsp("I", "flash", "Connecting and detecting board");
-    const chipName = await loader.main();
+    const chipDesc = await loader.main();
+    const chipName = (loader.chip && loader.chip.CHIP_NAME) || chipDesc;
     const url = findMergedUrl(release, chipName);
     if(!url){
       setStatus("status.unsupported", "err");
