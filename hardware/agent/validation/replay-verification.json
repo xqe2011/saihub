@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "board_sha256": "3dc1394879f61277a4e52349fca5bc77ab97ce85757a362c23e9ea1e69204853",
+  "copper_snapshot_sha256": "a8dc87f31d01155f4055dffc99aa4d99a7ee694e5f365485bd9634d7820ea507",
+  "method": "Rebuilt a separate board from the placement board, captured copper, pour settings and pad zone connections; refilled and ran DRC with schematic parity.",
+  "drc_violations": 0,
+  "schematic_parity_issues": 0,
+  "unconnected_items": 0,
+  "checked_at": "2026-10-28T21:24:31"
+}

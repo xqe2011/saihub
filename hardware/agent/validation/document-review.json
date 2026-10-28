@@ -1,0 +1,20 @@
+{
+  "status": "reviewed",
+  "board_sha256": "3dc1394879f61277a4e52349fca5bc77ab97ce85757a362c23e9ea1e69204853",
+  "documents": {
+    "pcb.pdf": {
+      "sha256": "c916fa93d2d11169be8dc04f23185305d0d09c654e362cee296227a16b9ff356",
+      "pages_reviewed": 2
+    },
+    "schematic.pdf": {
+      "sha256": "cf8a15b9acf8a3be60fa024fe63601f45c44a6b860723f9f6627e5a69410dcd8",
+      "pages_reviewed": 1
+    },
+    "shell.pdf": {
+      "sha256": "2011798b975dc6c107342fd1af4219fdf9d2dadda6eb9c4f785922216eb21431",
+      "pages_reviewed": 3
+    }
+  },
+  "checks": "Rendered and inspected every page for clipping, labels, drawing consistency and unchanged shell interfaces.",
+  "limitations": "Available models only; U6/U7/U10 models are missing. Physical enclosure fit and electrical/load performance require prototype tests."
+}
