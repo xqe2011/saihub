@@ -114,3 +114,40 @@ bool Tool_RingRead(Tool_Ring* ring, void* dst, size_t len)
   if (!Tool_RingPeek(ring, dst, len)) return false;
   return Tool_RingDrop(ring, len);
 }
+
+static int Tool_HexNibble(char c)
+{
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+bool Tool_HexDecode(const char* hex, uint8_t* out, size_t cap, size_t* lenOut)
+{
+  if (hex == NULL || lenOut == NULL) return false;
+  size_t chars = strlen(hex);
+  if ((chars & 1U) != 0) return false;
+  size_t len = chars / 2;
+  if (len > cap || (len > 0 && out == NULL)) return false;
+  for (size_t i = 0; i < len; i++) {
+    int hi = Tool_HexNibble(hex[i * 2]);
+    int lo = Tool_HexNibble(hex[i * 2 + 1]);
+    if (hi < 0 || lo < 0) return false;
+    out[i] = (uint8_t)((hi << 4) | lo);
+  }
+  *lenOut = len;
+  return true;
+}
+
+void Tool_HexEncode(const uint8_t* data, size_t len, char* out)
+{
+  static const char digits[] = "0123456789abcdef";
+  if (out == NULL) return;
+  if (data == NULL) len = 0;
+  for (size_t i = 0; i < len; i++) {
+    out[i * 2] = digits[data[i] >> 4];
+    out[i * 2 + 1] = digits[data[i] & 0x0f];
+  }
+  out[len * 2] = '\0';
+}

@@ -627,7 +627,7 @@
     },
     {
       "name": "uart_transmit",
-      "description": "Transmit data on a UART. data is a UTF-8 string when encoding is utf8, or an array of 0-255 bytes when encoding is byte.",
+      "description": "Transmit data on a UART. data is a UTF-8 string when encoding is utf8, or an even-length hex string when encoding is byte.",
       "annotations": {
         "readOnlyHint": false,
         "idempotentHint": false,
@@ -645,19 +645,8 @@
             "$ref": "#/$defs/uartId"
           },
           "data": {
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 255
-                }
-              }
-            ]
+            "type": "string",
+            "description": "UTF-8 text when encoding is utf8; even-length hex when encoding is byte."
           },
           "lockId": {
             "$ref": "#/$defs/lockId"
@@ -921,7 +910,7 @@
     },
     {
       "name": "spi_master_transceive",
-      "description": "Clock bytes on an enabled master. data length is 0-256. Non-empty data requires pins.mosi. When pins.miso is unset, data in the result is [].",
+      "description": "Clock bytes on an enabled master. data is an even-length hex string of 0-255 bytes. Non-empty data requires pins.mosi. When pins.miso is unset, data in the result is \"\".",
       "annotations": {
         "readOnlyHint": false,
         "idempotentHint": false,
@@ -939,13 +928,10 @@
             "$ref": "#/$defs/spiId"
           },
           "data": {
-            "type": "array",
-            "maxItems": 255,
-            "items": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 255
-            }
+            "type": "string",
+            "pattern": "^([0-9a-fA-F]{2})*$",
+            "maxLength": 510,
+            "description": "Even-length hexadecimal bytes. An empty string is zero bytes."
           },
           "lockId": {
             "$ref": "#/$defs/lockId"
@@ -1039,22 +1025,16 @@
                   ]
                 },
                 "mosi": {
-                  "type": "array",
-                  "maxItems": 255,
-                  "items": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 255
-                  }
+                  "type": "string",
+                  "pattern": "^([0-9a-fA-F]{2})*$",
+                  "maxLength": 510,
+                  "description": "Even-length hexadecimal bytes. An empty string is zero bytes."
                 },
                 "miso": {
-                  "type": "array",
-                  "maxItems": 255,
-                  "items": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 255
-                  }
+                  "type": "string",
+                  "pattern": "^([0-9a-fA-F]{2})*$",
+                  "maxLength": 510,
+                  "description": "Even-length hexadecimal bytes. An empty string is zero bytes."
                 }
               }
             }

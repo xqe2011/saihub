@@ -77,4 +77,12 @@ bool Tool_RingPeek(const Tool_Ring* ring, void* dst, size_t len);
 /** Discard bytes from the read head. */
 bool Tool_RingDrop(Tool_Ring* ring, size_t len);
 
+/**
+ * Decode an even-length hex string into `out`. `""` yields length 0.
+ * Returns false on NULL, an odd length, a non-hex digit, or a decoded length above `cap`.
+ */
+bool Tool_HexDecode(const char* hex, uint8_t* out, size_t cap, size_t* lenOut);
+/** Write lowercase hex and a trailing NUL. `out` must hold `2 * len + 1` bytes. */
+void Tool_HexEncode(const uint8_t* data, size_t len, char* out);
+
 #endif

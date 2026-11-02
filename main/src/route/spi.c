@@ -149,25 +149,24 @@ static esp_err_t Route_ParseSpiConfigBody(cJSON* body, SpiCtrl_Config* cfg, char
 static esp_err_t Route_ParseByteArray(cJSON* item, const char* field, int index, uint8_t* out, size_t* lenOut, char* reason,
                                       size_t reasonLen)
 {
-  if (!cJSON_IsArray(item)) {
-    snprintf(reason, reasonLen, "mapping[%d].%s must be an array of integers 0-255.", index, field);
+  if (!cJSON_IsString(item) || item->valuestring == NULL) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
     return ESP_ERR_INVALID_ARG;
   }
-  int n = cJSON_GetArraySize(item);
-  if (n > CONFIG_SPI_MAX_TRANSFER_BYTES) {
+  size_t chars = strlen(item->valuestring);
+  if ((chars & 1U) != 0) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (chars / 2 > CONFIG_SPI_MAX_TRANSFER_BYTES) {
     snprintf(reason, reasonLen, "mapping[%d].%s must contain at most %u bytes.", index, field,
              (unsigned)CONFIG_SPI_MAX_TRANSFER_BYTES);
     return ESP_ERR_INVALID_ARG;
   }
-  for (int i = 0; i < n; i++) {
-    cJSON* v = cJSON_GetArrayItem(item, i);
-    if (!cJSON_IsNumber(v) || v->valueint < 0 || v->valueint > 255) {
-      snprintf(reason, reasonLen, "mapping[%d].%s[%d] must be an integer from 0 to 255.", index, field, i);
-      return ESP_ERR_INVALID_ARG;
-    }
-    out[i] = (uint8_t)v->valueint;
+  if (!Tool_HexDecode(item->valuestring, out, CONFIG_SPI_MAX_TRANSFER_BYTES, lenOut)) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
   }
-  *lenOut = (size_t)n;
   return ESP_OK;
 }
 
@@ -264,14 +263,11 @@ static void Route_SpiOutWrite(Route_SpiOut* out, const char* text)
 
 static void Route_SpiOutBytes(Route_SpiOut* out, const uint8_t* data, size_t len)
 {
-  char item[8];
   for (size_t i = 0; out->err == ESP_OK && i < len; i++) {
-    int n = snprintf(item, sizeof(item), "%s%u", i == 0 ? "" : ",", (unsigned)data[i]);
-    if (n < 0 || (size_t)n >= sizeof(item)) {
-      out->err = ESP_ERR_INVALID_SIZE;
-      return;
-    }
-    for (int c = 0; c < n; c++) Route_SpiOutAdd(out, item[c]);
+    char pair[3];
+    Tool_HexEncode(data + i, 1, pair);
+    Route_SpiOutAdd(out, pair[0]);
+    Route_SpiOutAdd(out, pair[1]);
   }
 }
 
@@ -292,9 +288,9 @@ static void Route_SpiOutMaster(Route_SpiOut* out, const uint8_t* data, size_t le
     out->err = ESP_ERR_INVALID_ARG;
     return;
   }
-  Route_SpiOutWrite(out, "{\"data\":[");
+  Route_SpiOutWrite(out, "{\"data\":\"");
   Route_SpiOutBytes(out, data, len);
-  Route_SpiOutTime(out, "],\"time\":");
+  Route_SpiOutTime(out, "\",\"time\":");
 }
 
 static void Route_SpiOutSlave(Route_SpiOut* out, const uint8_t* storage, size_t len)
@@ -311,7 +307,7 @@ static void Route_SpiOutSlave(Route_SpiOut* out, const uint8_t* storage, size_t 
     if (!first) Route_SpiOutWrite(out, ",");
     first = false;
     char head[96];
-    int n = snprintf(head, sizeof(head), "{\"startTime\":%lld,\"endTime\":%lld,\"receive\":[", (long long)ev.startUs,
+    int n = snprintf(head, sizeof(head), "{\"startTime\":%lld,\"endTime\":%lld,\"receive\":\"", (long long)ev.startUs,
                      (long long)ev.endUs);
     if (n < 0 || (size_t)n >= sizeof(head)) {
       out->err = ESP_ERR_INVALID_SIZE;
@@ -319,9 +315,9 @@ static void Route_SpiOutSlave(Route_SpiOut* out, const uint8_t* storage, size_t 
     }
     Route_SpiOutWrite(out, head);
     Route_SpiOutBytes(out, ev.recv, ev.recvLen);
-    Route_SpiOutWrite(out, "],\"send\":[");
+    Route_SpiOutWrite(out, "\",\"send\":\"");
     Route_SpiOutBytes(out, ev.send, ev.sendLen);
-    Route_SpiOutWrite(out, "]}");
+    Route_SpiOutWrite(out, "\"}");
   }
   Route_SpiOutTime(out, "],\"time\":");
 }
@@ -435,11 +431,11 @@ static esp_err_t Route_SpiPostTransceiveHandler(HttpServer_Context* ctx)
   cJSON* body = HttpServer_ParseBody(ctx, &perr);
   if (body == NULL) return HttpServer_SendError(ctx, 400, "invalid_json");
   cJSON* dataItem = cJSON_GetObjectItem(body, "data");
-  if (!cJSON_IsArray(dataItem)) {
+  if (!cJSON_IsString(dataItem) || dataItem->valuestring == NULL || (strlen(dataItem->valuestring) & 1U) != 0) {
     cJSON_Delete(body);
-    return HttpServer_SendError(ctx, 400, "data must be an array of integers 0-255.");
+    return HttpServer_SendError(ctx, 400, "data must be an even-length hex string.");
   }
-  int n = cJSON_GetArraySize(dataItem);
+  size_t n = strlen(dataItem->valuestring) / 2;
   if (n > CONFIG_SPI_MAX_TRANSFER_BYTES) {
     cJSON_Delete(body);
     snprintf(reason, sizeof(reason), "data is too large. Send at most %u bytes per request.",
@@ -449,29 +445,25 @@ static esp_err_t Route_SpiPostTransceiveHandler(HttpServer_Context* ctx)
   uint8_t* tx = NULL;
   uint8_t* rx = NULL;
   if (n > 0) {
-    tx = malloc((size_t)n);
-    rx = malloc((size_t)n);
+    tx = malloc(n);
+    rx = malloc(n);
     if (tx == NULL || rx == NULL) {
       free(tx);
       free(rx);
       cJSON_Delete(body);
       return HttpServer_SendError(ctx, 500, "internal");
     }
-    for (int i = 0; i < n; i++) {
-      cJSON* v = cJSON_GetArrayItem(dataItem, i);
-      if (!cJSON_IsNumber(v) || v->valueint < 0 || v->valueint > 255) {
-        free(tx);
-        free(rx);
-        cJSON_Delete(body);
-        snprintf(reason, sizeof(reason), "data[%d] must be an integer from 0 to 255.", i);
-        return HttpServer_SendError(ctx, 400, reason);
-      }
-      tx[i] = (uint8_t)v->valueint;
+    size_t decoded = 0;
+    if (!Tool_HexDecode(dataItem->valuestring, tx, n, &decoded)) {
+      free(tx);
+      free(rx);
+      cJSON_Delete(body);
+      return HttpServer_SendError(ctx, 400, "data must be an even-length hex string.");
     }
   }
   cJSON_Delete(body);
   size_t rxLen = 0;
-  esp_err_t ret = SpiCtrl_MasterTransceive(id, tx, (size_t)n, rx, &rxLen, reason, sizeof(reason));
+  esp_err_t ret = SpiCtrl_MasterTransceive(id, tx, n, rx, &rxLen, reason, sizeof(reason));
   free(tx);
   if (ret != ESP_OK) {
     free(rx);

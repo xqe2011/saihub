@@ -1783,7 +1783,7 @@
           "spi"
         ],
         "summary": "Clock a master transfer",
-        "description": "Blocks until the clocks finish. data length 0-256. Empty data clocks nothing and returns data []. Non-empty data requires pins.mosi. When pins.miso is unset the response data is []. When both data lines are set, response data has the same length as the request.",
+        "description": "Blocks until the clocks finish. data is an even-length hex string of 0-255 bytes. Empty data clocks nothing and returns data \"\". Non-empty data requires pins.mosi. When pins.miso is unset the response data is \"\". When both data lines are set, response data has the same length as the request.",
         "parameters": [
           {
             "$ref": "#/components/parameters/SpiPath"
@@ -1804,7 +1804,7 @@
         },
         "responses": {
           "200": {
-            "description": "Bytes shifted in, or an empty array when MISO is unset",
+            "description": "Bytes shifted in, or an empty string when MISO is unset",
             "content": {
               "application/json": {
                 "schema": {
@@ -2769,20 +2769,8 @@
         ],
         "properties": {
           "data": {
-            "description": "UTF-8 string when encoding is utf8; array of 0-255 integers when encoding is byte.",
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 255
-                }
-              }
-            ]
+            "type": "string",
+            "description": "UTF-8 text when encoding is utf8; even-length hex when encoding is byte."
           }
         },
         "additionalProperties": false
@@ -2795,29 +2783,19 @@
         ],
         "properties": {
           "data": {
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 255
-                }
-              }
-            ]
+            "type": "string",
+            "description": "UTF-8 text when encoding is utf8; even-length hex when encoding is byte."
           },
           "time": {
             "$ref": "#/components/schemas/TimeUs"
           }
         }
       },
-      "SpiByte": {
-        "type": "integer",
-        "minimum": 0,
-        "maximum": 255
+      "SpiBytes": {
+        "type": "string",
+        "pattern": "^([0-9a-fA-F]{2})*$",
+        "maxLength": 510,
+        "description": "Even-length hexadecimal bytes. An empty string is zero bytes."
       },
       "SpiPin": {
         "type": [
@@ -3037,11 +3015,7 @@
         ],
         "properties": {
           "data": {
-            "type": "array",
-            "maxItems": 255,
-            "items": {
-              "$ref": "#/components/schemas/SpiByte"
-            }
+            "$ref": "#/components/schemas/SpiBytes"
           }
         },
         "additionalProperties": false
@@ -3054,11 +3028,7 @@
         ],
         "properties": {
           "data": {
-            "type": "array",
-            "maxItems": 255,
-            "items": {
-              "$ref": "#/components/schemas/SpiByte"
-            }
+            "$ref": "#/components/schemas/SpiBytes"
           },
           "time": {
             "$ref": "#/components/schemas/TimeUs"
@@ -3082,18 +3052,10 @@
             "$ref": "#/components/schemas/TimeUs"
           },
           "receive": {
-            "type": "array",
-            "maxItems": 255,
-            "items": {
-              "$ref": "#/components/schemas/SpiByte"
-            }
+            "$ref": "#/components/schemas/SpiBytes"
           },
           "send": {
-            "type": "array",
-            "maxItems": 255,
-            "items": {
-              "$ref": "#/components/schemas/SpiByte"
-            }
+            "$ref": "#/components/schemas/SpiBytes"
           }
         },
         "additionalProperties": false
@@ -3133,18 +3095,10 @@
             ]
           },
           "mosi": {
-            "type": "array",
-            "maxItems": 255,
-            "items": {
-              "$ref": "#/components/schemas/SpiByte"
-            }
+            "$ref": "#/components/schemas/SpiBytes"
           },
           "miso": {
-            "type": "array",
-            "maxItems": 255,
-            "items": {
-              "$ref": "#/components/schemas/SpiByte"
-            }
+            "$ref": "#/components/schemas/SpiBytes"
           }
         },
         "additionalProperties": false

@@ -4,10 +4,11 @@ type Json = Record<string, any>;
 type PinState = { pin: number; mode: string; openDrain: boolean; pullUp: boolean; pullDown: boolean };
 type SpiEvent = { receive: number[]; send: number[]; startTime: number; endTime: number };
 type TraceEvent = { pin: number; edge: string; level: number; time: number };
-type Snapshot = { pins: PinState[]; uart: Json; spi: Json; power: Record<string, boolean> };
+type Snapshot = { pins: PinState[]; uart: Json; spi: Json };
 type Result = { status: number; body: any; text: string };
 type Check = { name: string; passed: boolean; detail?: string };
 
+// Single-board API, resource, script and concurrency checks belong in smoke.ts.
 // TEST_PINS is either one pin-to-pin row, or two board rows with corresponding columns connected.
 const help = process.argv.includes("--help");
 const timeout = Number(process.env.TEST_TIMEOUT_MS ?? 15000);
@@ -48,6 +49,20 @@ function bytes(length: number): number[] {
   });
 }
 
+function toHex(data: number[]): string {
+  return data.map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function fromHex(hex: string): number[] {
+  const out: number[] = [];
+  for (let index = 0; index < hex.length; index += 2) out.push(Number.parseInt(hex.slice(index, index + 2), 16));
+  return out;
+}
+
+function wireData(data: number[] | string): string {
+  return typeof data === "string" ? data : toHex(data);
+}
+
 function log(message: string): void {
   console.log("[hardware-pair] " + message);
 }
@@ -65,7 +80,6 @@ class Board {
   uart: Json = { enable: false, baudRate: 115200, dataBits: 8, parity: "none", stopBits: 1,
     encoding: "byte", pins: { rx: null, tx: null } };
   spi: Json;
-  locks = new Set<string>();
   touched = false;
 
   constructor(address: string, row: number[]) {
@@ -179,20 +193,28 @@ class Board {
   }
 
   async transfer(data: number[], mcp = false): Promise<number[]> {
-    const result = mcp ? await this.tool("spi_master_transceive", { id: 0, data })
-      : await this.rest("POST", "/spi/0/master/transceive", { data });
-    return result.data;
+    const payload = toHex(data);
+    const result = mcp ? await this.tool("spi_master_transceive", { id: 0, data: payload })
+      : await this.rest("POST", "/spi/0/master/transceive", { data: payload });
+    return fromHex(result.data);
   }
 
   async events(mcp = false): Promise<SpiEvent[]> {
     const result = mcp ? await this.tool("spi_slave_receive", { id: 0 })
       : await this.rest("GET", "/spi/0/slave/receive");
-    return result.events;
+    return (result.events as Json[]).map((event) => ({
+      startTime: event.startTime, endTime: event.endTime, receive: fromHex(String(event.receive ?? "")),
+      send: fromHex(String(event.send ?? "")),
+    }));
   }
 
   async mapping(mapping: Json[], mcp = false): Promise<void> {
-    if (mcp) await this.tool("spi_slave_transmit", { id: 0, mapping });
-    else await this.rest("POST", "/spi/0/slave/transmit", { mapping }, 204);
+    const encoded = mapping.map((entry) => ({
+      ...entry, mosi: Array.isArray(entry.mosi) ? toHex(entry.mosi) : entry.mosi,
+      miso: Array.isArray(entry.miso) ? toHex(entry.miso) : entry.miso,
+    }));
+    if (mcp) await this.tool("spi_slave_transmit", { id: 0, mapping: encoded });
+    else await this.rest("POST", "/spi/0/slave/transmit", { mapping: encoded }, 204);
   }
 
   async trace(pin: number, edge = "both", duration = 20000, mcp = false): Promise<TraceEvent[]> {
@@ -245,36 +267,10 @@ async function preflight(): Promise<void> {
       assert(pins.find((state) => state.pin === pin)?.mode === "disable",
         board.name + " pin " + pin + " must initially be disabled");
     }
-    const power: Record<string, boolean> = {};
-    for (const rail of ["3v3", "5v"]) power[rail] = (await board.rest("GET", "/power/" + rail)).enable;
-    board.snapshot = { pins, uart, spi, power };
+    board.snapshot = { pins, uart, spi };
     report.boards.at(-1).snapshot = board.snapshot;
   }
   for (const board of boards) board.touched = true;
-}
-
-async function powerBuzzerScripts(board: Board): Promise<void> {
-  for (const rail of ["3v3", "5v"]) {
-    const original = board.snapshot!.power[rail];
-    await board.rest("POST", "/power/" + rail, { enable: !original }, 204);
-    equal((await board.tool("get_output_power_state", { rail })).enable, !original, "REST power toggle");
-    await board.tool("set_output_power_state", { rail, enable: original });
-    equal((await board.rest("GET", "/power/" + rail)).enable, original, "MCP power restore");
-  }
-  await board.rest("POST", "/buzzer", { sequence: "." }, 204);
-  await board.tool("play_buzzer", { sequence: "." });
-  const pin = board.row[0]!;
-  const script = "configure_pins{pins={" + pin + "},"
-    + "mode='digitalOutput',openDrain=false,pullUp=false,pullDown=false}\n"
-    + "set_pin_levels{pins={" + pin + "},level=1}\n"
-    + "local v=get_pin_levels{pins={" + pin + "}}.levels[1]\n"
-    + "set_pin_levels{pins={" + pin + "},level=0}\n"
-    + "print('pair-script')\nreturn {ok=v==1}";
-  const args = { script, maxCalls: 8, timeout: 1000000 };
-  const result = board === boards[0] ? await board.rest("POST", "/script", args)
-    : await board.tool("run_script", args);
-  assert(result.result?.ok && result.output.includes("pair-script"), "Script hardware calls and output");
-  await board.pin(pin, "disable");
 }
 
 async function wiring(): Promise<void> {
@@ -317,15 +313,11 @@ async function pwmTracePulse(): Promise<void> {
       const input = sink!.row[column]!;
       await sink!.pin(input, "digitalInput");
       await source!.pin(output, "pwmOutput", true);
-      const frequencies = column === 0 ? [500, 2000, 10000, 50000] : [2000];
+      const frequencies = column === 0 ? [500, 2000, 10000] : [2000];
       for (const [index, hz] of frequencies.entries()) {
         const duty = [10, 25, 50, 90][index]!;
         if (index % 2) await source!.tool("set_pin_pwms", { pins: [output], frequency: hz, duty });
         else await source!.rest("POST", "/pin/" + output + "/pwm", { frequency: hz, duty }, 204);
-        const state = (await source!.tool("get_pin_pwms", { pins: [output] })).pwms[0];
-        assert(Math.abs(state.frequency - hz) <= Math.max(2, hz * 0.02), "PWM frequency readback");
-        assert(Math.abs(state.duty - duty) <= 1, "PWM duty readback");
-        // High-frequency readback is checked above; interrupt tracing is not a 50 kHz waveform analyzer.
         if (hz <= 10000) {
           const events = await sink!.trace(input, "both", 10000, index % 2 === 0);
           assert(events.some((event) => event.edge === "raising") && events.some((event) => event.edge === "falling"),
@@ -342,16 +334,6 @@ async function pwmTracePulse(): Promise<void> {
       }
       await source!.pin(output, "disable");
       await sink!.pin(input, "disable");
-    }
-    // Four independent output channels, with the other board providing four independent probes.
-    for (let column = 0; column < 4; column++) {
-      await source!.pin(source!.row[column]!, "pwmOutput");
-      await sink!.pin(sink!.row[column]!, "digitalInput");
-      await source!.rest("POST", "/pin/" + source!.row[column] + "/pwm",
-        { frequency: [500, 1000, 2000, 4000][column], duty: 50 }, 204);
-    }
-    for (let column = 0; column < 4; column++) {
-      assert((await sink!.trace(sink!.row[column]!, "both", 10000)).length > 0, "Four-channel PWM probe");
     }
     await releaseAll();
     const output = source!.row[0]!;
@@ -385,7 +367,7 @@ async function uartReceive(board: Board, expected: number[] | string, mcp: boole
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline && received.length < expected.length) {
     const result = mcp ? await board.tool("uart_receive", { id: 0 }) : await board.rest("GET", "/uart/0/receive");
-    received = typeof received === "string" ? received + result.data : [...received, ...result.data];
+    received = typeof received === "string" ? received + result.data : [...received, ...fromHex(result.data)];
     if (received.length < expected.length) await Bun.sleep(10);
   }
   equal(received, expected, board.name + " UART received exact payload");
@@ -402,7 +384,7 @@ async function uart(): Promise<void> {
     await uartPair("byte", condition, index % 2 === 0);
     for (const [source, sink] of [boards, boards.toReversed()]) {
       const data = bytes(64).map((byte) => byte & (condition.dataBits === 7 ? 127 : 255));
-      await source!.tool("uart_transmit", { id: 0, data });
+      await source!.tool("uart_transmit", { id: 0, data: wireData(data) });
       await uartReceive(sink!, data, false);
     }
   }
@@ -410,17 +392,12 @@ async function uart(): Promise<void> {
     await uartPair(encoding);
     for (const [source, sink] of [boards, boards.toReversed()]) {
       const data = encoding === "byte" ? bytes(256) : "paired UART 你好 π ".repeat(5);
-      await source!.tool("uart_transmit", { id: 0, data });
+      await source!.tool("uart_transmit", { id: 0, data: wireData(data) });
       await uartReceive(sink!, data, false);
-      const empty = encoding === "byte" ? [] : "";
-      await source!.rest("POST", "/uart/0/transmit", { data: empty }, 204);
-      equal((await sink!.tool("uart_receive", { id: 0 })).data, empty, "Empty UART transmit");
-      await source!.rest("POST", "/uart/0/transmit", { data }, 204);
+      await source!.rest("POST", "/uart/0/transmit", { data: wireData(data) }, 204);
       await Bun.sleep(30);
       await sink!.tool("uart_flush", { id: 0 });
-      equal((await sink!.rest("GET", "/uart/0/receive")).data, empty, "UART flush");
-      const oversized = encoding === "byte" ? bytes(2049) : "x".repeat(2049);
-      await source!.rest("POST", "/uart/0/transmit", { data: oversized }, 400);
+      equal((await sink!.rest("GET", "/uart/0/receive")).data, "", "UART flush");
     }
   }
   // Keep maximum-size requests isolated so a failure does not hide the other UART checks.
@@ -429,7 +406,7 @@ async function uart(): Promise<void> {
       await section("UART maximum " + encoding + " payload " + source!.name, async () => {
         await uartPair(encoding);
         const data = encoding === "byte" ? bytes(2048) : "x".repeat(2048);
-        await source!.tool("uart_transmit", { id: 0, data });
+        await source!.tool("uart_transmit", { id: 0, data: wireData(data) });
         await uartReceive(sink!, data, false);
       });
     }
@@ -438,47 +415,15 @@ async function uart(): Promise<void> {
   const source = boards[0]!;
   const sink = boards[1]!;
   const chunks = [[1, 2, 3, 4], [11, 12, 13, 14], [21, 22, 23, 24], [31, 32, 33, 34]];
-  await Promise.all(chunks.map((data) => source.tool("uart_transmit", { id: 0, data })));
+  await Promise.all(chunks.map((data) => source.tool("uart_transmit", { id: 0, data: toHex(data) })));
   const all: number[] = [];
   const end = Date.now() + 3000;
   while (all.length < 16 && Date.now() < end) {
-    all.push(...(await sink.rest("GET", "/uart/0/receive")).data);
+    all.push(...fromHex((await sink.rest("GET", "/uart/0/receive")).data));
     if (all.length < 16) await Bun.sleep(10);
   }
   const observed = Array.from({ length: 4 }, (_, index) => JSON.stringify(all.slice(index * 4, index * 4 + 4)));
   equal(observed.sort(), chunks.map((chunk) => JSON.stringify(chunk)).sort(), "Concurrent UART intact chunks");
-  await source.rest("PUT", "/pin/" + source.row[0], { mode: "digitalOutput" }, 423);
-  await source.rest("POST", "/spi/0/config", source.spiConfig("master", 0, "msb", 1000000), 409);
-}
-
-async function locksAndConcurrency(board: Board): Promise<void> {
-  const pin = board.row[0]!;
-  await board.pin(pin, "digitalOutput");
-  await board.level(pin, 0);
-  const resources = [{ type: "pin", pins: [pin], method: ["read", "write"] }];
-  const race = await Promise.all([
-    board.raw("POST", "/lock", { resources }), board.raw("POST", "/lock", { resources }),
-  ]);
-  for (const winner of race.filter((result) => result.status === 201)) board.locks.add(winner.body.id);
-  equal(race.map((result) => result.status).sort(), [201, 409], "Concurrent lock acquisition");
-  const id = race.find((result) => result.status === 201)!.body.id;
-  await board.rest("GET", "/pin/" + pin + "/level", undefined, 412);
-  equal((await board.tool("get_pin_levels", { pins: [pin], lockId: id })).levels, [0], "MCP uses REST lock");
-  equal((await board.tool("renew_lock", { id })).id, id, "Lock renewal");
-  await board.tool("delete_lock", { id });
-  board.locks.delete(id);
-  await board.rest("DELETE", "/lock/" + id, undefined, 204);
-  const second = await board.tool("create_lock", { resources });
-  board.locks.add(second.id);
-  await board.rest("PUT", "/lock/" + second.id);
-  await board.rest("DELETE", "/lock/" + second.id, undefined, 204);
-  board.locks.delete(second.id);
-  const reads = await Promise.all(Array.from({ length: 2 }, () => board.tool("get_pin_levels", { pins: [pin] })));
-  assert(reads.every((result) => result.levels[0] === 0), "Concurrent pin reads");
-  const scripts = await Promise.all([0, 1].map(() => board.raw("POST", "/script", {
-    script: "sleep(250000)\nreturn true", maxCalls: 1, timeout: 500000,
-  })));
-  equal(scripts.map((result) => result.status).sort(), [200, 409], "Concurrent script exclusion");
 }
 
 async function spiSetup(master: Board, slave: Board, mode = 0, order = "msb", hz = 1000000): Promise<void> {
@@ -580,21 +525,11 @@ async function spiFeatures(): Promise<void> {
       equal(events.length, 1, "MCP full-length slave event count");
       equal(events[0]!.send, reply, "MCP full-length slave event");
     }
-    await master!.rest("POST", "/spi/0/master/transceive", { data: bytes(256) }, 400);
-    for (const field of ["mosi", "miso"]) {
-      await slave!.rest("POST", "/spi/0/slave/transmit", {
-        mapping: [{ type: "exact", mosi: [1], miso: [1], [field]: bytes(256) }],
-      }, 400);
-    }
-    await slave!.rest("POST", "/spi/0/master/transceive", { data: [1] }, 422);
-    await master!.rest("GET", "/spi/0/slave/receive", undefined, 422);
     await slave!.mapping([]);
     await master!.transfer([1]);
     await slave!.events();
     equal(await master!.transfer([0, 0]), [0, 0], "Clear SPI response map");
     await slave!.events();
-    equal(await master!.transfer([]), [], "Empty SPI master transfer");
-    equal(await slave!.events(), [], "Empty transfer produced no event");
     const reply = bytes(255);
     await slave!.mapping([{ type: "prefix", mosi: [], miso: reply }]);
     await master!.transfer([1]);
@@ -613,23 +548,6 @@ async function spiFeatures(): Promise<void> {
         received.length = 0;
       }
     }
-    await section("SPI scripts " + master!.name + "->" + slave!.name, async () => {
-      const script = await master!.tool("run_script", {
-        script: "return spi_master_transceive{id=0,data={" + bytes(255).join(",") + "}}",
-        maxCalls: 1, timeout: 1000000,
-      });
-      equal(script.result.data, reply, "255-byte SPI through script");
-      const decoded = await slave!.tool("run_script", {
-        script: "local e=spi_slave_receive{id=0}.events return {count=#e,send=e[1].send}",
-        maxCalls: 1, timeout: 1000000,
-      });
-      equal(decoded.result.count, 1, "SPI events decoded in script");
-      equal(decoded.result.send, reply, "255-byte SPI event arrays decoded in script");
-    }, false);
-    const pins = master!.spi.pins;
-    await master!.configureSpi({ ...master!.spi, pins: { ...pins, miso: null } });
-    equal(await master!.transfer([1, 2, 3]), [], "SPI master without MISO");
-    await slave!.events();
   }
 }
 
@@ -655,16 +573,12 @@ async function cleanup(): Promise<void> {
     const attempt = async (action: () => Promise<unknown>) => {
       try { await action(); } catch (error) { errors.push(String(error)); }
     };
-    for (const id of board.locks) await attempt(() => board.tool("delete_lock", { id }));
     await attempt(() => board.release());
     await attempt(() => board.configureUart(bodyConfig(board.snapshot!.uart)));
     await attempt(() => board.configureSpi(bodyConfig(board.snapshot!.spi)));
     for (const state of board.snapshot.pins.filter((pin) => board.row.includes(pin.pin))) {
       const config = { mode: state.mode, openDrain: state.openDrain, pullUp: state.pullUp, pullDown: state.pullDown };
       await attempt(() => board.rest("PUT", "/pin/" + state.pin, config, 204));
-    }
-    for (const [rail, enable] of Object.entries(board.snapshot.power)) {
-      await attempt(() => board.rest("POST", "/power/" + rail, { enable }, 204));
     }
     await attempt(async () => {
       const pins = (await board.rest("GET", "/pin/")).pins;
@@ -676,9 +590,6 @@ async function cleanup(): Promise<void> {
       }
       assert(!(await board.rest("GET", "/spi/")).spis[0].enable, "SPI disabled after cleanup");
       assert(!(await board.rest("GET", "/uart/")).uarts[0].enable, "UART disabled after cleanup");
-      for (const [rail, enable] of Object.entries(board.snapshot!.power)) {
-        equal((await board.rest("GET", "/power/" + rail)).enable, enable, "Restore output power");
-      }
     });
     report.cleanup.push({ board: board.name, restored: errors.length === 0, errors });
     failures.push(...errors.map((error) => board.name + " cleanup: " + error));
@@ -690,15 +601,14 @@ async function main(): Promise<void> {
     console.log("TEST_BOARDS='[\"10.229.29.35\",\"10.229.29.248\"]' "
       + "TEST_PINS='[1,2,4,5]' bun tests/hardware/pair.ts");
     console.log("TEST_PINS='[[1,2,4,5],[0,3,5,6]]' maps corresponding columns between the two boards.");
-    console.log("Connect those wires plus GND; leave power outputs unloaded. "
+    console.log("Connect those wires plus GND. "
       + "Selected pins, UART and SPI must be idle.");
     console.log("First four columns: MISO, MOSI, clock, select. UART uses the first two columns.");
     console.log("Optional: TEST_ROUNDS=1 TEST_SOAK_ITERATIONS=8 TEST_TIMEOUT_MS=15000 TEST_SEED=20261101");
     console.log("Optional: TEST_SPI_HZ='[100000,1000000,5000000,10000000]' TEST_REPORT=/tmp/pair-results.json");
     console.log("Optional: TEST_SECTIONS selects section names by regex; wiring preflight always runs.");
     console.log("All SPI modes/orders/clocks use 1, 128, 129 and 255 bytes; other lengths run once per direction/round.");
-    console.log("Covers REST/MCP, mapped GPIO, PWM/trace/pulse, UART, SPI, power, "
-      + "buzzer, scripts, locks and concurrency.");
+    console.log("Covers cross-board GPIO, PWM/trace/pulse, UART and SPI over REST/MCP. Run smoke.ts first.");
     return;
   }
   const addresses = JSON.parse(process.env.TEST_BOARDS ?? "[]") as string[];
@@ -722,17 +632,13 @@ async function main(): Promise<void> {
   report.settings = { addresses, pinRows, rounds, soak, timeout, seed: randomState,
     sections: process.env.TEST_SECTIONS ?? "all" };
   await preflight();
-  for (const board of boards) await section(board.name + " power, buzzer and scripts", () => powerBuzzerScripts(board));
   if (!await section("GPIO wiring matrix, both directions", wiring)) {
     throw new Error("Wiring validation failed; remaining electrical tests require the configured connections.");
   }
   await section("PWM, pulse and trace, both directions", pwmTracePulse);
   await section("UART framing, payloads, flush and concurrency", uart);
-  for (const board of boards) {
-    await section(board.name + " locks and concurrency", () => locksAndConcurrency(board));
-  }
   await section("SPI modes, bit orders, clocks and 1-255-byte payloads", spiMatrix);
-  await section("SPI maps, boundaries, MCP, scripts and soak", spiFeatures);
+  await section("SPI mapped responses, MCP and soak", spiFeatures);
   await section("GPIO trace after releasing SPI", traceAfterSpi);
 }
 

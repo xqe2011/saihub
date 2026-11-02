@@ -652,29 +652,31 @@ static esp_err_t ToolCall_FillTransmitData(cJSON* args, UartCtrl_Encoding encodi
     *lenOut = len;
     return ESP_OK;
   }
-  if (!cJSON_IsArray(dataItem)) {
-    snprintf(reason, reasonLen, "data must be an array of integers 0-255 when encoding is byte.");
+  if (!cJSON_IsString(dataItem) || dataItem->valuestring == NULL) {
+    snprintf(reason, reasonLen, "data must be an even-length hex string when encoding is byte.");
     return ESP_ERR_INVALID_ARG;
   }
-  int n = cJSON_GetArraySize(dataItem);
-  if (n > (int)CONFIG_UART_MAX_PAYLOAD_BYTES) {
+  size_t chars = strlen(dataItem->valuestring);
+  if ((chars & 1U) != 0) {
+    snprintf(reason, reasonLen, "data must be an even-length hex string when encoding is byte.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  size_t n = chars / 2;
+  if (n > CONFIG_UART_MAX_PAYLOAD_BYTES) {
     snprintf(reason, reasonLen, "data is too large. Send at most %u bytes per request.",
              (unsigned)CONFIG_UART_MAX_PAYLOAD_BYTES);
     return ESP_ERR_INVALID_ARG;
   }
-  uint8_t* buf = malloc(n > 0 ? (size_t)n : 1);
+  uint8_t* buf = malloc(n > 0 ? n : 1);
   if (buf == NULL) return ESP_ERR_NO_MEM;
-  for (int i = 0; i < n; i++) {
-    cJSON* v = cJSON_GetArrayItem(dataItem, i);
-    if (!cJSON_IsNumber(v) || v->valueint < 0 || v->valueint > 255) {
-      free(buf);
-      snprintf(reason, reasonLen, "data[%d] must be an integer from 0 to 255.", i);
-      return ESP_ERR_INVALID_ARG;
-    }
-    buf[i] = (uint8_t)v->valueint;
+  size_t decoded = 0;
+  if (!Tool_HexDecode(dataItem->valuestring, buf, n > 0 ? n : 1, &decoded)) {
+    free(buf);
+    snprintf(reason, reasonLen, "data must be an even-length hex string when encoding is byte.");
+    return ESP_ERR_INVALID_ARG;
   }
   *dataOut = buf;
-  *lenOut = (size_t)n;
+  *lenOut = decoded;
   return ESP_OK;
 }
 
@@ -740,9 +742,15 @@ static ToolCall_Result ToolCall_UartReceive(cJSON* args)
     cJSON_AddStringToObject(root, "data", s);
     free(s);
   } else {
-    cJSON* arr = cJSON_CreateArray();
-    for (size_t i = 0; i < n; i++) cJSON_AddItemToArray(arr, cJSON_CreateNumber(buf[i]));
-    cJSON_AddItemToObject(root, "data", arr);
+    char* s = malloc(n * 2 + 1);
+    if (s == NULL) {
+      free(buf);
+      cJSON_Delete(root);
+      return ToolCall_Fail(500, "internal");
+    }
+    Tool_HexEncode(buf, n, s);
+    cJSON_AddStringToObject(root, "data", s);
+    free(s);
   }
   free(buf);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
@@ -910,8 +918,10 @@ ToolCall_Result ToolCall_SpiMasterCapture(cJSON* args, uint8_t** rxOut, size_t* 
   int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_SPI, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
   if (lockSt) return ToolCall_Fail(lockSt, reason);
   cJSON* dataItem = cJSON_GetObjectItem(args, "data");
-  if (!cJSON_IsArray(dataItem)) return ToolCall_Err("data must be an array of integers 0-255.");
-  int n = cJSON_GetArraySize(dataItem);
+  if (!cJSON_IsString(dataItem) || dataItem->valuestring == NULL || (strlen(dataItem->valuestring) & 1U) != 0) {
+    return ToolCall_Err("data must be an even-length hex string.");
+  }
+  size_t n = strlen(dataItem->valuestring) / 2;
   if (n > CONFIG_SPI_MAX_TRANSFER_BYTES) {
     snprintf(reason, sizeof(reason), "data is too large. Send at most %u bytes per request.",
              (unsigned)CONFIG_SPI_MAX_TRANSFER_BYTES);
@@ -920,26 +930,22 @@ ToolCall_Result ToolCall_SpiMasterCapture(cJSON* args, uint8_t** rxOut, size_t* 
   uint8_t* tx = NULL;
   uint8_t* rx = NULL;
   if (n > 0) {
-    tx = malloc((size_t)n);
-    rx = malloc((size_t)n);
+    tx = malloc(n);
+    rx = malloc(n);
     if (tx == NULL || rx == NULL) {
       free(tx);
       free(rx);
       return ToolCall_Fail(500, "internal");
     }
-    for (int i = 0; i < n; i++) {
-      cJSON* v = cJSON_GetArrayItem(dataItem, i);
-      if (!cJSON_IsNumber(v) || v->valueint < 0 || v->valueint > 255) {
-        free(tx);
-        free(rx);
-        snprintf(reason, sizeof(reason), "data[%d] must be an integer from 0 to 255.", i);
-        return ToolCall_Err(reason);
-      }
-      tx[i] = (uint8_t)v->valueint;
+    size_t decoded = 0;
+    if (!Tool_HexDecode(dataItem->valuestring, tx, n, &decoded)) {
+      free(tx);
+      free(rx);
+      return ToolCall_Err("data must be an even-length hex string.");
     }
   }
   size_t rxLen = 0;
-  esp_err_t ret = SpiCtrl_MasterTransceive(id, tx, (size_t)n, rx, &rxLen, reason, sizeof(reason));
+  esp_err_t ret = SpiCtrl_MasterTransceive(id, tx, n, rx, &rxLen, reason, sizeof(reason));
   free(tx);
   if (ret != ESP_OK) {
     free(rx);
@@ -964,10 +970,16 @@ static ToolCall_Result ToolCall_SpiMasterTransceive(cJSON* args)
   ToolCall_Result result = ToolCall_SpiMasterCapture(args, &rx, &rxLen);
   if (!result.ok) return result;
   cJSON* root = cJSON_CreateObject();
-  cJSON* data = cJSON_CreateArray();
-  for (size_t i = 0; i < rxLen; i++) cJSON_AddItemToArray(data, cJSON_CreateNumber(rx[i]));
+  char* data = malloc(rxLen * 2 + 1);
+  if (data == NULL) {
+    free(rx);
+    cJSON_Delete(root);
+    return ToolCall_Fail(500, "internal");
+  }
+  Tool_HexEncode(rx, rxLen, data);
   free(rx);
-  cJSON_AddItemToObject(root, "data", data);
+  cJSON_AddStringToObject(root, "data", data);
+  free(data);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
   return ToolCall_Ok(root);
 }
@@ -975,25 +987,24 @@ static ToolCall_Result ToolCall_SpiMasterTransceive(cJSON* args)
 static esp_err_t ToolCall_ParseMapBytes(cJSON* item, const char* field, int index, uint8_t* out, size_t* lenOut, char* reason,
                                         size_t reasonLen)
 {
-  if (!cJSON_IsArray(item)) {
-    snprintf(reason, reasonLen, "mapping[%d].%s must be an array of integers 0-255.", index, field);
+  if (!cJSON_IsString(item) || item->valuestring == NULL) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
     return ESP_ERR_INVALID_ARG;
   }
-  int n = cJSON_GetArraySize(item);
-  if (n > CONFIG_SPI_MAX_TRANSFER_BYTES) {
+  size_t chars = strlen(item->valuestring);
+  if ((chars & 1U) != 0) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (chars / 2 > CONFIG_SPI_MAX_TRANSFER_BYTES) {
     snprintf(reason, reasonLen, "mapping[%d].%s must contain at most %u bytes.", index, field,
              (unsigned)CONFIG_SPI_MAX_TRANSFER_BYTES);
     return ESP_ERR_INVALID_ARG;
   }
-  for (int i = 0; i < n; i++) {
-    cJSON* v = cJSON_GetArrayItem(item, i);
-    if (!cJSON_IsNumber(v) || v->valueint < 0 || v->valueint > 255) {
-      snprintf(reason, reasonLen, "mapping[%d].%s[%d] must be an integer from 0 to 255.", index, field, i);
-      return ESP_ERR_INVALID_ARG;
-    }
-    out[i] = (uint8_t)v->valueint;
+  if (!Tool_HexDecode(item->valuestring, out, CONFIG_SPI_MAX_TRANSFER_BYTES, lenOut)) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
   }
-  *lenOut = (size_t)n;
   return ESP_OK;
 }
 
@@ -1096,12 +1107,12 @@ static ToolCall_Result ToolCall_SpiSlaveReceive(cJSON* args)
     cJSON* item = cJSON_CreateObject();
     cJSON_AddNumberToObject(item, "startTime", (double)ev.startUs);
     cJSON_AddNumberToObject(item, "endTime", (double)ev.endUs);
-    cJSON* receive = cJSON_CreateArray();
-    for (uint16_t i = 0; i < ev.recvLen; i++) cJSON_AddItemToArray(receive, cJSON_CreateNumber(ev.recv[i]));
-    cJSON* send = cJSON_CreateArray();
-    for (uint16_t i = 0; i < ev.sendLen; i++) cJSON_AddItemToArray(send, cJSON_CreateNumber(ev.send[i]));
-    cJSON_AddItemToObject(item, "receive", receive);
-    cJSON_AddItemToObject(item, "send", send);
+    char receive[CONFIG_SPI_MAX_TRANSFER_BYTES * 2 + 1];
+    char send[CONFIG_SPI_MAX_TRANSFER_BYTES * 2 + 1];
+    Tool_HexEncode(ev.recv, ev.recvLen, receive);
+    Tool_HexEncode(ev.send, ev.sendLen, send);
+    cJSON_AddStringToObject(item, "receive", receive);
+    cJSON_AddStringToObject(item, "send", send);
     cJSON_AddItemToArray(events, item);
   }
   free(storage);
