@@ -38,7 +38,7 @@ typedef struct {
   GpioCtrl_TraceEvent* events;
   size_t capacity;
   volatile size_t count;
-  bool includePin;
+  int64_t startTimeUs;
 } TraceContext;
 
 static int logicalToHw[] = CONFIG_GPIO_LOGICAL_TO_HW;
@@ -257,10 +257,10 @@ static void IRAM_ATTR GpioCtrl_IsrHandler(void* arg)
                     (context->edge == GPIO_CTRL_EDGE_FALLING && !raising);
     if (accepted) {
       GpioCtrl_TraceEvent* event = &context->events[context->count];
-      event->pin = context->includePin ? logicalPin : -1;
-      event->edge = raising ? "raising" : "falling";
+      event->pin = logicalPin;
+      event->edge = raising;
       event->level = level;
-      event->time = GpioCtrl_NowUs();
+      event->deltaUs = GpioCtrl_NowUs() - context->startTimeUs;
       context->count++;
     }
   }
@@ -536,9 +536,10 @@ static void GpioCtrl_ReleaseTracePins(const int* logicalPins, size_t pinCount, T
 }
 
 esp_err_t GpioCtrl_Trace(const int* logicalPins, size_t pinCount, GpioCtrl_Edge edge, uint64_t durationUs,
-                         GpioCtrl_TraceEvent* eventsOut, size_t maxEvents, size_t* eventCountOut, bool includePin)
+                         GpioCtrl_TraceEvent* eventsOut, size_t maxEvents, size_t* eventCountOut,
+                         int64_t* startTimeUsOut)
 {
-  if (logicalPins == NULL || pinCount == 0 || eventsOut == NULL || eventCountOut == NULL) {
+  if (logicalPins == NULL || pinCount == 0 || eventsOut == NULL || eventCountOut == NULL || startTimeUsOut == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
   if (durationUs == 0 || durationUs > CONFIG_GPIO_TRACE_MAX_DURATION_US) {
@@ -556,12 +557,13 @@ esp_err_t GpioCtrl_Trace(const int* logicalPins, size_t pinCount, GpioCtrl_Edge 
       .events = eventsOut,
       .capacity = maxEvents,
       .count = 0,
-      .includePin = includePin,
+      .startTimeUs = 0,
   };
 
   esp_err_t result = GpioCtrl_ClaimTracePins(logicalPins, pinCount, &context);
   if (result != ESP_OK) return result;
 
+  context.startTimeUs = GpioCtrl_NowUs();
   size_t enabledCount = 0;
   for (; enabledCount < pinCount; enabledCount++) {
     result = GpioCtrl_EnableTraceInterrupt(logicalPins[enabledCount], edge);
@@ -579,5 +581,6 @@ cleanup:
   }
   GpioCtrl_ReleaseTracePins(logicalPins, pinCount, &context);
   *eventCountOut = context.count;
+  *startTimeUsOut = context.startTimeUs;
   return result;
 }

@@ -28,8 +28,9 @@ typedef struct {
  */
 ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args);
 
-/** Capture trace events without constructing a JSON response. Caller frees events on success. */
-ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsOut, size_t* eventCountOut);
+/** Capture packed trace events without constructing a JSON response. Caller frees events on success. */
+ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsOut, size_t* eventCountOut,
+                                      int64_t* startTimeUsOut);
 
 /** Clock a master transfer without constructing JSON. Caller frees *rxOut. *rxOut is NULL when *rxLenOut is 0. */
 ToolCall_Result ToolCall_SpiMasterCapture(cJSON* args, uint8_t** rxOut, size_t* rxLenOut);

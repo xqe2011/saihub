@@ -441,7 +441,8 @@ static esp_err_t Route_McpDispatchTrace(HttpServer_Context* ctx, cJSON* id, cJSO
   bool ownedArgs = cJSON_GetObjectItem(params, "arguments") == NULL;
   GpioCtrl_TraceEvent* events = NULL;
   size_t eventCount = 0;
-  ToolCall_Result result = ToolCall_TraceCapture(args, &events, &eventCount);
+  int64_t startTimeUs = 0;
+  ToolCall_Result result = ToolCall_TraceCapture(args, &events, &eventCount, &startTimeUs);
   if (ownedArgs) cJSON_Delete(args);
   if (!result.ok) {
     return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr(result.reason)));
@@ -454,7 +455,8 @@ static esp_err_t Route_McpDispatchTrace(HttpServer_Context* ctx, cJSON* id, cJSO
   for (size_t i = 0; ret == ESP_OK && i < eventCount; i++) {
     int len = snprintf(item, sizeof(item),
                        "%s{\\\"pin\\\":%d,\\\"edge\\\":\\\"%s\\\",\\\"level\\\":%d,\\\"time\\\":%lld}",
-                       i == 0 ? "" : ",", events[i].pin, events[i].edge, events[i].level, (long long)events[i].time);
+                       i == 0 ? "" : ",", events[i].pin, events[i].edge ? "raising" : "falling", events[i].level,
+                       (long long)(startTimeUs + events[i].deltaUs));
     if (len < 0 || (size_t)len >= sizeof(item)) {
       ret = ESP_ERR_INVALID_SIZE;
       break;

@@ -352,10 +352,12 @@ static ToolCall_Result ToolCall_SetPinPwms(cJSON* args)
   return ToolCall_OkEmpty();
 }
 
-ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsOut, size_t* eventCountOut)
+ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsOut, size_t* eventCountOut,
+                                      int64_t* startTimeUsOut)
 {
   *eventsOut = NULL;
   *eventCountOut = 0;
+  *startTimeUsOut = 0;
   char reason[256];
   ToolCall_PinSelection sel;
   if (!ToolCall_ParsePinSelection(args, &sel, reason, sizeof(reason))) return ToolCall_Err(reason);
@@ -376,7 +378,9 @@ ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsO
   GpioCtrl_TraceEvent* events = calloc(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(GpioCtrl_TraceEvent));
   if (events == NULL) return ToolCall_Fail(500, "internal");
   size_t eventCount = 0;
-  esp_err_t tr = GpioCtrl_Trace(sel.pins, sel.count, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &eventCount, true);
+  int64_t startTimeUs = 0;
+  esp_err_t tr =
+      GpioCtrl_Trace(sel.pins, sel.count, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &eventCount, &startTimeUs);
   if (tr != ESP_OK) {
     free(events);
     if (tr == GPIO_CTRL_ERR_TRACE_BUSY) {
@@ -387,6 +391,7 @@ ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsO
   Lock_Touch(lockId);
   *eventsOut = events;
   *eventCountOut = eventCount;
+  *startTimeUsOut = startTimeUs;
   return ToolCall_Ok(NULL);
 }
 
@@ -394,16 +399,17 @@ static ToolCall_Result ToolCall_TracePins(cJSON* args)
 {
   GpioCtrl_TraceEvent* events = NULL;
   size_t eventCount = 0;
-  ToolCall_Result result = ToolCall_TraceCapture(args, &events, &eventCount);
+  int64_t startTimeUs = 0;
+  ToolCall_Result result = ToolCall_TraceCapture(args, &events, &eventCount, &startTimeUs);
   if (!result.ok) return result;
   cJSON* root = cJSON_CreateObject();
   cJSON* arr = cJSON_CreateArray();
   for (size_t i = 0; i < eventCount; i++) {
     cJSON* ev = cJSON_CreateObject();
     cJSON_AddNumberToObject(ev, "pin", events[i].pin);
-    cJSON_AddStringToObject(ev, "edge", events[i].edge);
+    cJSON_AddStringToObject(ev, "edge", events[i].edge ? "raising" : "falling");
     cJSON_AddNumberToObject(ev, "level", events[i].level);
-    cJSON_AddNumberToObject(ev, "time", (double)events[i].time);
+    cJSON_AddNumberToObject(ev, "time", (double)(startTimeUs + events[i].deltaUs));
     cJSON_AddItemToArray(arr, ev);
   }
   cJSON_AddItemToObject(root, "events", arr);
