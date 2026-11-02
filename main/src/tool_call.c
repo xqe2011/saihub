@@ -893,8 +893,10 @@ static ToolCall_Result ToolCall_ConfigureSpi(cJSON* args)
   return ToolCall_OkEmpty();
 }
 
-static ToolCall_Result ToolCall_SpiMasterTransceive(cJSON* args)
+ToolCall_Result ToolCall_SpiMasterCapture(cJSON* args, uint8_t** rxOut, size_t* rxLenOut)
 {
+  *rxOut = NULL;
+  *rxLenOut = 0;
   char reason[256];
   int id = 0;
   if (!ToolCall_ParseSpiId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
@@ -932,21 +934,35 @@ static ToolCall_Result ToolCall_SpiMasterTransceive(cJSON* args)
   }
   size_t rxLen = 0;
   esp_err_t ret = SpiCtrl_MasterTransceive(id, tx, (size_t)n, rx, &rxLen, reason, sizeof(reason));
+  free(tx);
   if (ret != ESP_OK) {
-    free(tx);
     free(rx);
     if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
     if (ret == ESP_ERR_INVALID_SIZE || ret == ESP_ERR_INVALID_ARG) return ToolCall_Err(reason);
     return ToolCall_Fail(500, reason[0] ? reason : "internal");
   }
+  Lock_Touch(lockId);
+  if (rxLen == 0) {
+    free(rx);
+    rx = NULL;
+  }
+  *rxOut = rx;
+  *rxLenOut = rxLen;
+  return ToolCall_Ok(NULL);
+}
+
+static ToolCall_Result ToolCall_SpiMasterTransceive(cJSON* args)
+{
+  uint8_t* rx = NULL;
+  size_t rxLen = 0;
+  ToolCall_Result result = ToolCall_SpiMasterCapture(args, &rx, &rxLen);
+  if (!result.ok) return result;
   cJSON* root = cJSON_CreateObject();
   cJSON* data = cJSON_CreateArray();
   for (size_t i = 0; i < rxLen; i++) cJSON_AddItemToArray(data, cJSON_CreateNumber(rx[i]));
-  free(tx);
   free(rx);
   cJSON_AddItemToObject(root, "data", data);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
-  Lock_Touch(lockId);
   return ToolCall_Ok(root);
 }
 
@@ -1033,8 +1049,10 @@ static ToolCall_Result ToolCall_SpiSlaveTransmit(cJSON* args)
   return ToolCall_OkEmpty();
 }
 
-static ToolCall_Result ToolCall_SpiSlaveReceive(cJSON* args)
+ToolCall_Result ToolCall_SpiSlaveCapture(cJSON* args, uint8_t** storageOut, size_t* lenOut)
 {
+  *storageOut = NULL;
+  *lenOut = 0;
   char reason[256];
   int id = 0;
   if (!ToolCall_ParseSpiId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
@@ -1048,6 +1066,22 @@ static ToolCall_Result ToolCall_SpiSlaveReceive(cJSON* args)
   uint8_t* storage = malloc(CONFIG_SPI_SLAVE_EVENT_BYTES);
   if (storage == NULL) return ToolCall_Fail(500, "internal");
   size_t len = SpiCtrl_TakeSlaveEvents(id, storage, CONFIG_SPI_SLAVE_EVENT_BYTES);
+  Lock_Touch(lockId);
+  if (len == 0) {
+    free(storage);
+    storage = NULL;
+  }
+  *storageOut = storage;
+  *lenOut = len;
+  return ToolCall_Ok(NULL);
+}
+
+static ToolCall_Result ToolCall_SpiSlaveReceive(cJSON* args)
+{
+  uint8_t* storage = NULL;
+  size_t len = 0;
+  ToolCall_Result result = ToolCall_SpiSlaveCapture(args, &storage, &len);
+  if (!result.ok) return result;
   cJSON* root = cJSON_CreateObject();
   cJSON* events = cJSON_CreateArray();
   size_t offset = 0;
@@ -1067,7 +1101,6 @@ static ToolCall_Result ToolCall_SpiSlaveReceive(cJSON* args)
   free(storage);
   cJSON_AddItemToObject(root, "events", events);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
-  Lock_Touch(lockId);
   return ToolCall_Ok(root);
 }
 

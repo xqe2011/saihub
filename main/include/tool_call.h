@@ -11,6 +11,7 @@
 #include <cJSON.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct {
   bool ok;
@@ -29,5 +30,10 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args);
 
 /** Capture trace events without constructing a JSON response. Caller frees events on success. */
 ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsOut, size_t* eventCountOut);
+
+/** Clock a master transfer without constructing JSON. Caller frees *rxOut. *rxOut is NULL when *rxLenOut is 0. */
+ToolCall_Result ToolCall_SpiMasterCapture(cJSON* args, uint8_t** rxOut, size_t* rxLenOut);
+/** Drain slave events without constructing JSON. Caller frees *storageOut. *storageOut is NULL when *lenOut is 0. */
+ToolCall_Result ToolCall_SpiSlaveCapture(cJSON* args, uint8_t** storageOut, size_t* lenOut);
 
 #endif
