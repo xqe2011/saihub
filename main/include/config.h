@@ -55,6 +55,16 @@
 #define CONFIG_UART_RX_BUF_BYTES 4096
 #define CONFIG_UART_MAX_PAYLOAD_BYTES 2048
 
+/* Product SPI id -> hardware host number. Id 0 is host 2. */
+#define CONFIG_SPI_ID_TO_HOST {1}
+/* Variable-length slave events. The oldest events are dropped when this buffer is full. */
+#define CONFIG_SPI_SLAVE_EVENT_BYTES 4096
+#define CONFIG_SPI_SLAVE_MAP_BYTES 2048
+/* Maximum transfer length in bytes: 0-255. */
+#define CONFIG_SPI_MAX_TRANSFER_BYTES 255 
+#define CONFIG_SPI_CLOCK_HZ_MIN 1
+#define CONFIG_SPI_CLOCK_HZ_MAX 10000000
+
 #define CONFIG_SCRIPT_MAX_CALLS 256
 #define CONFIG_SCRIPT_MAX_TIMEOUT_US (10ULL * 1000 * 1000)
 #define CONFIG_SCRIPT_MAX_SOURCE_BYTES 8192

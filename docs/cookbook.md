@@ -108,9 +108,11 @@ Power: `get_output_power_state`, `set_output_power_state` (`3v3` / `5v`).
 
 UART: `list_uarts`, `configure_uart`, `uart_transmit`, `uart_receive`, `uart_flush`.
 
+SPI: `list_spis`, `configure_spi`, `spi_master_transceive`, `spi_slave_receive`, `spi_slave_transmit`.
+
 Buzzer: `play_buzzer`.
 
-Scripts: `run_script` — sandboxed Lua 5.4 with the same pin/power tools plus `sleep(us)`.
+Scripts: `run_script` — sandboxed Lua 5.4 with the same pin, power, UART, and SPI tools plus `sleep(us)`.
 
 Full schemas: [`mcp.json`](../mcp.json). REST twin: [`openapi.json`](../openapi.json).
 

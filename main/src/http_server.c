@@ -452,6 +452,9 @@ int HttpServer_LockStatusId(const char* lockId, Lock_Kind kind, int pin, uint8_t
     } else if (kind == LOCK_KIND_UART) {
       snprintf(reasonOut, reasonLen, "UART %d %s is reserved by %s. Disable %s or use another UART.", pin, methodName,
                label, label);
+    } else if (kind == LOCK_KIND_SPI) {
+      snprintf(reasonOut, reasonLen, "SPI %d %s is reserved by %s. Disable %s or use another SPI.", pin, methodName,
+               label, label);
     } else {
       snprintf(reasonOut, reasonLen, "Power %s %s is reserved by %s. Disable %s or use another resource.",
                Lock_KindToString(kind), methodName, label, label);
@@ -468,6 +471,11 @@ int HttpServer_LockStatusId(const char* lockId, Lock_Kind kind, int pin, uint8_t
     } else if (kind == LOCK_KIND_UART) {
       snprintf(reasonOut, reasonLen,
                "UART %d %s is locked by another lock. Send header X-Lock-Id with the holding lock's id, DELETE that "
+               "lock, or wait until it expires.",
+               pin, methodName);
+    } else if (kind == LOCK_KIND_SPI) {
+      snprintf(reasonOut, reasonLen,
+               "SPI %d %s is locked by another lock. Send header X-Lock-Id with the holding lock's id, DELETE that "
                "lock, or wait until it expires.",
                pin, methodName);
     } else {
@@ -503,6 +511,9 @@ void HttpServer_FormatLockConflict(const Lock_Conflict* conflict, char* reason, 
     } else if (conflict->kind == LOCK_KIND_UART) {
       snprintf(reason, reasonLen, "Cannot create lock: UART %d is reserved by %s. Disable %s or use another UART.",
                conflict->pin, label, label);
+    } else if (conflict->kind == LOCK_KIND_SPI) {
+      snprintf(reason, reasonLen, "Cannot create lock: SPI %d is reserved by %s. Disable %s or use another SPI.",
+               conflict->pin, label, label);
     } else {
       snprintf(reason, reasonLen, "Cannot create lock: power %s is reserved by %s. Disable %s or use another resource.",
                Lock_KindToString(conflict->kind), label, label);
@@ -515,6 +526,9 @@ void HttpServer_FormatLockConflict(const Lock_Conflict* conflict, char* reason, 
   } else if (conflict->kind == LOCK_KIND_UART) {
     snprintf(reason, reasonLen,
              "Cannot create lock: UART %d is already held. DELETE that lock or wait until it expires.", conflict->pin);
+  } else if (conflict->kind == LOCK_KIND_SPI) {
+    snprintf(reason, reasonLen,
+             "Cannot create lock: SPI %d is already held. DELETE that lock or wait until it expires.", conflict->pin);
   } else {
     snprintf(reason, reasonLen,
              "Cannot create lock: power %s is already held. DELETE that lock or wait until it expires.",
@@ -667,7 +681,7 @@ esp_err_t HttpServer_ParseLockResources(cJSON* resourcesArr, Lock_Resource* out,
     cJSON* idsItem = cJSON_GetObjectItem(item, "ids");
     cJSON* methodsItem = cJSON_GetObjectItem(item, "method");
     if (!cJSON_IsString(typeItem) || typeItem->valuestring == NULL) {
-      snprintf(reason, reasonLen, "resources[%d].type must be pin, power, or uart.", g);
+      snprintf(reason, reasonLen, "resources[%d].type must be pin, power, uart, or spi.", g);
       return ESP_ERR_INVALID_ARG;
     }
     uint8_t bits = 0;
@@ -749,8 +763,33 @@ esp_err_t HttpServer_ParseLockResources(cJSON* resourcesArr, Lock_Resource* out,
         out[count].methods = bits;
         count++;
       }
+    } else if (strcmp(typeItem->valuestring, "spi") == 0) {
+      if (pinsItem != NULL || railsItem != NULL) {
+        snprintf(reason, reasonLen, "resources[%d] with type spi must not include pins or rails.", g);
+        return ESP_ERR_INVALID_ARG;
+      }
+      if (!cJSON_IsArray(idsItem) || cJSON_GetArraySize(idsItem) == 0) {
+        snprintf(reason, reasonLen, "resources[%d].ids must be a non-empty array of SPI ids from GET /spi/.", g);
+        return ESP_ERR_INVALID_ARG;
+      }
+      int idN = cJSON_GetArraySize(idsItem);
+      for (int s = 0; s < idN; s++) {
+        if (count >= maxOut) {
+          snprintf(reason, reasonLen, "resources expand to too many lock entries (max %u).", (unsigned)maxOut);
+          return ESP_ERR_INVALID_ARG;
+        }
+        cJSON* idVal = cJSON_GetArrayItem(idsItem, s);
+        if (!cJSON_IsNumber(idVal) || !Lock_IsValidSpiId(idVal->valueint)) {
+          snprintf(reason, reasonLen, "resources[%d].ids[%d] is invalid. Use an id from GET /spi/.", g, s);
+          return ESP_ERR_INVALID_ARG;
+        }
+        out[count].kind = LOCK_KIND_SPI;
+        out[count].pin = idVal->valueint;
+        out[count].methods = bits;
+        count++;
+      }
     } else {
-      snprintf(reason, reasonLen, "resources[%d].type must be pin, power, or uart.", g);
+      snprintf(reason, reasonLen, "resources[%d].type must be pin, power, uart, or spi.", g);
       return ESP_ERR_INVALID_ARG;
     }
   }
@@ -792,13 +831,23 @@ cJSON* HttpServer_SerializeLockResources(const Lock_Resource* resources, size_t 
         used[j] = true;
       }
       cJSON_AddItemToObject(r, "ids", ids);
+    } else if (resources[i].kind == LOCK_KIND_SPI) {
+      cJSON_AddStringToObject(r, "type", "spi");
+      cJSON* ids = cJSON_CreateArray();
+      for (size_t j = i; j < count; j++) {
+        if (used[j]) continue;
+        if (resources[j].kind != LOCK_KIND_SPI || resources[j].methods != methods) continue;
+        cJSON_AddItemToArray(ids, cJSON_CreateNumber(resources[j].pin));
+        used[j] = true;
+      }
+      cJSON_AddItemToObject(r, "ids", ids);
     } else {
       cJSON_AddStringToObject(r, "type", "power");
       cJSON* rails = cJSON_CreateArray();
       for (size_t j = i; j < count; j++) {
         if (used[j]) continue;
         if (resources[j].kind == LOCK_KIND_GPIO || resources[j].kind == LOCK_KIND_UART ||
-            resources[j].methods != methods)
+            resources[j].kind == LOCK_KIND_SPI || resources[j].methods != methods)
           continue;
         cJSON_AddItemToArray(rails, cJSON_CreateString(Lock_KindToString(resources[j].kind)));
         used[j] = true;
@@ -1101,6 +1150,7 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_OpenApiRegister(), "openapi routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(), "pin routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_UartRegister(), "uart routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_SpiRegister(), "spi routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(), "lock routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PowerRegister(), "power routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ScriptRegister(), "script routes failed");

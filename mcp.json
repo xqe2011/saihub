@@ -750,8 +750,336 @@
       }
     },
     {
+      "name": "list_spis",
+      "description": "List SPI ids with enable, role, cpol, cpha, bitOrder, pins, and clockHz when role is master.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "configure_spi",
+      "description": "Configure one SPI controller by id. role is master or slave. cpol and cpha are each 0 or 1. bitOrder is msb or lsb. clockHz is required for master and must be omitted for slave. clk and cs are required when enable is true. mosi and miso may be null.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "enable",
+              "role",
+              "cpol",
+              "cpha",
+              "bitOrder",
+              "clockHz",
+              "pins"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/spiId"
+              },
+              "enable": {
+                "type": "boolean"
+              },
+              "role": {
+                "type": "string",
+                "const": "master"
+              },
+              "cpol": {
+                "$ref": "#/$defs/clockEdge"
+              },
+              "cpha": {
+                "$ref": "#/$defs/clockEdge"
+              },
+              "bitOrder": {
+                "$ref": "#/$defs/bitOrder"
+              },
+              "clockHz": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000000
+              },
+              "pins": {
+                "$ref": "#/$defs/spiPins"
+              },
+              "lockId": {
+                "$ref": "#/$defs/lockId"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "enable",
+              "role",
+              "cpol",
+              "cpha",
+              "bitOrder",
+              "pins"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/spiId"
+              },
+              "enable": {
+                "type": "boolean"
+              },
+              "role": {
+                "type": "string",
+                "const": "slave"
+              },
+              "cpol": {
+                "$ref": "#/$defs/clockEdge"
+              },
+              "cpha": {
+                "$ref": "#/$defs/clockEdge"
+              },
+              "bitOrder": {
+                "$ref": "#/$defs/bitOrder"
+              },
+              "pins": {
+                "$ref": "#/$defs/spiPins"
+              },
+              "lockId": {
+                "$ref": "#/$defs/lockId"
+              }
+            }
+          }
+        ],
+        "$defs": {
+          "spiId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "clockEdge": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "bitOrder": {
+            "type": "string",
+            "enum": [
+              "msb",
+              "lsb"
+            ]
+          },
+          "spiPins": {
+            "type": "object",
+            "required": [
+              "mosi",
+              "miso",
+              "clk",
+              "cs"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "mosi": {
+                "$ref": "#/$defs/spiPin"
+              },
+              "miso": {
+                "$ref": "#/$defs/spiPin"
+              },
+              "clk": {
+                "$ref": "#/$defs/spiPin"
+              },
+              "cs": {
+                "$ref": "#/$defs/spiPin"
+              }
+            }
+          },
+          "spiPin": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 7
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "spi_master_transceive",
+      "description": "Clock bytes on an enabled master. data length is 0-256. Non-empty data requires pins.mosi. When pins.miso is unset, data in the result is [].",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "data"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/spiId"
+          },
+          "data": {
+            "type": "array",
+            "maxItems": 255,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            }
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "spiId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "spi_slave_receive",
+      "description": "Drain events from an enabled slave with pins.miso set. Each event has startTime, endTime, receive, and send. When the buffer is full, the oldest events are discarded.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/spiId"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "spiId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "spi_slave_transmit",
+      "description": "Replace the slave response map. type is exact or prefix. Match exact first, then the longest prefix. An empty prefix matches every receive. Requires an enabled slave with pins.mosi set.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "mapping"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/spiId"
+          },
+          "mapping": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "type",
+                "mosi",
+                "miso"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "exact",
+                    "prefix"
+                  ]
+                },
+                "mosi": {
+                  "type": "array",
+                  "maxItems": 255,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                  }
+                },
+                "miso": {
+                  "type": "array",
+                  "maxItems": 255,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                  }
+                }
+              }
+            }
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "spiId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
       "name": "create_lock",
-      "description": "Create a lock. Each resource is type pin with pins, type power with rails, or type uart with ids.",
+      "description": "Create a lock. Each resource is type pin with pins, type power with rails, type uart with ids, or type spi with ids.",
       "annotations": {
         "readOnlyHint": false,
         "idempotentHint": false,
@@ -837,6 +1165,32 @@
                       "$ref": "#/$defs/lockMethod"
                     }
                   }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "ids",
+                    "method"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "spi"
+                    },
+                    "ids": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 1,
+                      "items": {
+                        "$ref": "#/$defs/spiId"
+                      }
+                    },
+                    "method": {
+                      "$ref": "#/$defs/lockMethod"
+                    }
+                  }
                 }
               ]
             }
@@ -886,6 +1240,11 @@
             ]
           },
           "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "spiId": {
             "type": "integer",
             "minimum": 0,
             "maximum": 0
@@ -1051,7 +1410,7 @@
     },
     {
       "name": "run_script",
-      "description": "Run a sandboxed Lua 5.4 script on-device. The script can call the same pin/power/lock tools as MCP (not run_script). Optional maxCalls and timeout (microseconds) must not exceed firmware ceilings. One script at a time.\n\nLua 5.4. Allowed libraries: base, table, string, math, utf8. require, dofile, loadfile, load, and collectgarbage are nil. No io, os, package, debug, or coroutine.\n\nEach tool is a global that takes one argument table with the same keys as MCP (always pass pins even for one pin). JSON arrays become 1-based Lua tables. sleep(us) delays in microseconds and counts toward timeout, not maxCalls. print() is captured as output. The first return value is result (JSON).\n\nErrors raise a table {reason=\"...\"}. Catch with pcall and read err.reason. Uncaught errors fail the request with that reason; print output is discarded.\n\nCatchable with pcall:\n- Tool failure: system sentence (no \"The script reported\" prefix), e.g. pin/lock/mode errors\n- error(\"msg\"): \"The script reported an error: msg. Catch it with pcall or fix the script.\"\n- error() or error(\"\"): \"The script called error with no message. Catch it with pcall or fix the script.\"\n\nNot catchable (abort the whole run even if pcall returns):\n- timeout: \"Script exceeded timeout.\"\n- maxCalls: \"Script exceeded maxCalls.\"\n- out of memory: \"Script ran out of memory.\"\n- syntax or uncaught Lua runtime: \"The script failed: <message>. Catch it with pcall or fix the script.\"\n\nExample:\nconfigure_pins{pins={0}, mode=\"digitalOutput\", pullUp=false, pullDown=false}\nset_pin_levels{pins={0}, level=1}\nsleep(5000)\nlocal r = get_pin_levels{pins={0}}\nprint(\"level\", r.levels[1])\nreturn r\n\nError handling:\nlocal ok, err = pcall(function()\n  set_pin_levels{pins={0}, level=1}\nend)\nif not ok then\n  return {ok=false, reason=err.reason}\nend",
+      "description": "Run a sandboxed Lua 5.4 script on-device. The script can call the same pin/power/UART/SPI/lock tools as MCP (not run_script). Optional maxCalls and timeout (microseconds) must not exceed firmware ceilings. One script at a time.\n\nLua 5.4. Allowed libraries: base, table, string, math, utf8. require, dofile, loadfile, load, and collectgarbage are nil. No io, os, package, debug, or coroutine.\n\nEach tool is a global that takes one argument table with the same keys as MCP (always pass pins even for one pin). JSON arrays become 1-based Lua tables. sleep(us) delays in microseconds and counts toward timeout, not maxCalls. print() is captured as output. The first return value is result (JSON).\n\nErrors raise a table {reason=\"...\"}. Catch with pcall and read err.reason. Uncaught errors fail the request with that reason; print output is discarded.\n\nCatchable with pcall:\n- Tool failure: system sentence (no \"The script reported\" prefix), e.g. pin/lock/mode errors\n- error(\"msg\"): \"The script reported an error: msg. Catch it with pcall or fix the script.\"\n- error() or error(\"\"): \"The script called error with no message. Catch it with pcall or fix the script.\"\n\nNot catchable (abort the whole run even if pcall returns):\n- timeout: \"Script exceeded timeout.\"\n- maxCalls: \"Script exceeded maxCalls.\"\n- out of memory: \"Script ran out of memory.\"\n- syntax or uncaught Lua runtime: \"The script failed: <message>. Catch it with pcall or fix the script.\"\n\nExample:\nconfigure_pins{pins={0}, mode=\"digitalOutput\", pullUp=false, pullDown=false}\nset_pin_levels{pins={0}, level=1}\nsleep(5000)\nlocal r = get_pin_levels{pins={0}}\nprint(\"level\", r.levels[1])\nreturn r\n\nError handling:\nlocal ok, err = pcall(function()\n  set_pin_levels{pins={0}, level=1}\nend)\nif not ok then\n  return {ok=false, reason=err.reason}\nend",
       "annotations": {
         "readOnlyHint": false,
         "idempotentHint": false,

@@ -11,6 +11,7 @@
 esp_err_t Route_OpenApiRegister(void);
 esp_err_t Route_PinRegister(void);
 esp_err_t Route_UartRegister(void);
+esp_err_t Route_SpiRegister(void);
 esp_err_t Route_LockRegister(void);
 esp_err_t Route_PowerRegister(void);
 esp_err_t Route_McpRegister(void);

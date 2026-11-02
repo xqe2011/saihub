@@ -345,7 +345,6 @@ esp_err_t GpioCtrl_Init(void)
     int hw = GpioCtrl_Hw(i);
     gpio_reset_pin(hw);
     TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_SyncPad(i));
-    TOOL_CHECK_ESP_OK_OR_RETURN(gpio_isr_handler_add(hw, GpioCtrl_IsrHandler, (void*)(intptr_t)i));
   }
 
   TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_InitPowerRail(CONFIG_GPIO_POWER_3V3_PIN, &powerEnable3v3));
@@ -495,6 +494,7 @@ static esp_err_t GpioCtrl_EnableTraceInterrupt(int logicalPin, GpioCtrl_Edge edg
   gpio_int_type_t type = GPIO_INTR_ANYEDGE;
   if (edge == GPIO_CTRL_EDGE_RAISING) type = GPIO_INTR_POSEDGE;
   if (edge == GPIO_CTRL_EDGE_FALLING) type = GPIO_INTR_NEGEDGE;
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_isr_handler_add(hw, GpioCtrl_IsrHandler, (void*)(intptr_t)logicalPin));
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_intr_type(hw, type));
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_intr_enable(hw));
   pins[logicalPin].interruptActive = true;

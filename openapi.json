@@ -3,7 +3,7 @@
   "info": {
     "title": "SAIHub REST API",
     "version": "1.0.0",
-    "description": "JSON REST API for logical pins 0-7, PWM, UART, power rails (3v3/5v), the onboard buzzer, edge tracing, resource locks, on-device Lua 5.4 scripts, system info / firmware update, and cloud management. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}. While a firmware update is in progress, non-system routes return 503."
+    "description": "JSON REST API for logical pins 0-7, PWM, UART, SPI, power rails (3v3/5v), the onboard buzzer, edge tracing, resource locks, on-device Lua 5.4 scripts, system info / firmware update, and cloud management. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}. While a firmware update is in progress, non-system routes return 503."
   },
   "servers": [
     {
@@ -24,6 +24,9 @@
     },
     {
       "name": "uart"
+    },
+    {
+      "name": "spi"
     },
     {
       "name": "lock"
@@ -329,7 +332,7 @@
           "meta"
         ],
         "summary": "MCP Streamable HTTP endpoint (JSON-RPC 2.0)",
-        "description": "Stateless MCP Streamable HTTP transport. POST a single JSON-RPC request or notification. Responses are application/json (no SSE). Notifications and client responses return 202. Pin tools are plural and take pins arrays; create_lock resources use type pin+pins, type power+rails, or type uart+ids. See tools/list.",
+        "description": "Stateless MCP Streamable HTTP transport. POST a single JSON-RPC request or notification. Responses are application/json (no SSE). Notifications and client responses return 202. Pin tools are plural and take pins arrays; create_lock resources use type pin+pins, type power+rails, type uart+ids, or type spi+ids. See tools/list.",
         "parameters": [
           {
             "name": "Accept",
@@ -1381,7 +1384,7 @@
           "script"
         ],
         "summary": "Run a Lua 5.4 script on-device",
-        "description": "Execute a sandboxed Lua 5.4 script that can call the same pin/power/lock tools as MCP (not run_script). Optional maxCalls and timeout (microseconds) must not exceed firmware ceilings. Default lock for nested tool calls: X-Lock-Id. One script at a time.\n\nLua 5.4. Allowed libraries: base, table, string, math, utf8. require, dofile, loadfile, load, and collectgarbage are nil. No io, os, package, debug, or coroutine.\n\nEach tool is a global that takes one argument table with the same keys as MCP (always pass pins even for one pin). JSON arrays become 1-based Lua tables. sleep(us) delays in microseconds and counts toward timeout, not maxCalls. print() is captured as output. The first return value is result (JSON).\n\nErrors raise a table {reason=\"...\"}. Catch with pcall and read err.reason. Uncaught errors fail the request with that reason; print output is discarded.\n\nCatchable with pcall:\n- Tool failure: system sentence (no \"The script reported\" prefix), e.g. pin/lock/mode errors\n- error(\"msg\"): \"The script reported an error: msg. Catch it with pcall or fix the script.\"\n- error() or error(\"\"): \"The script called error with no message. Catch it with pcall or fix the script.\"\n\nNot catchable (abort the whole run even if pcall returns):\n- timeout: \"Script exceeded timeout.\"\n- maxCalls: \"Script exceeded maxCalls.\"\n- out of memory: \"Script ran out of memory.\"\n- syntax or uncaught Lua runtime: \"The script failed: <message>. Catch it with pcall or fix the script.\"\n\nExample:\nconfigure_pins{pins={0}, mode=\"digitalOutput\", pullUp=false, pullDown=false}\nset_pin_levels{pins={0}, level=1}\nsleep(5000)\nlocal r = get_pin_levels{pins={0}}\nprint(\"level\", r.levels[1])\nreturn r\n\nError handling:\nlocal ok, err = pcall(function()\n  set_pin_levels{pins={0}, level=1}\nend)\nif not ok then\n  return {ok=false, reason=err.reason}\nend",
+        "description": "Execute a sandboxed Lua 5.4 script that can call the same pin/power/UART/SPI/lock tools as MCP (not run_script). Optional maxCalls and timeout (microseconds) must not exceed firmware ceilings. Default lock for nested tool calls: X-Lock-Id. One script at a time.\n\nLua 5.4. Allowed libraries: base, table, string, math, utf8. require, dofile, loadfile, load, and collectgarbage are nil. No io, os, package, debug, or coroutine.\n\nEach tool is a global that takes one argument table with the same keys as MCP (always pass pins even for one pin). JSON arrays become 1-based Lua tables. sleep(us) delays in microseconds and counts toward timeout, not maxCalls. print() is captured as output. The first return value is result (JSON).\n\nErrors raise a table {reason=\"...\"}. Catch with pcall and read err.reason. Uncaught errors fail the request with that reason; print output is discarded.\n\nCatchable with pcall:\n- Tool failure: system sentence (no \"The script reported\" prefix), e.g. pin/lock/mode errors\n- error(\"msg\"): \"The script reported an error: msg. Catch it with pcall or fix the script.\"\n- error() or error(\"\"): \"The script called error with no message. Catch it with pcall or fix the script.\"\n\nNot catchable (abort the whole run even if pcall returns):\n- timeout: \"Script exceeded timeout.\"\n- maxCalls: \"Script exceeded maxCalls.\"\n- out of memory: \"Script ran out of memory.\"\n- syntax or uncaught Lua runtime: \"The script failed: <message>. Catch it with pcall or fix the script.\"\n\nExample:\nconfigure_pins{pins={0}, mode=\"digitalOutput\", pullUp=false, pullDown=false}\nset_pin_levels{pins={0}, level=1}\nsleep(5000)\nlocal r = get_pin_levels{pins={0}}\nprint(\"level\", r.levels[1])\nreturn r\n\nError handling:\nlocal ok, err = pcall(function()\n  set_pin_levels{pins={0}, level=1}\nend)\nif not ok then\n  return {ok=false, reason=err.reason}\nend",
         "parameters": [
           {
             "name": "X-Lock-Id",
@@ -1689,6 +1692,239 @@
         }
       }
     },
+    "/spi/": {
+      "get": {
+        "tags": [
+          "spi"
+        ],
+        "summary": "List all SPI ids",
+        "responses": {
+          "200": {
+            "description": "SPI inventory. clockHz is present only when role is master.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "spis",
+                    "time"
+                  ],
+                  "properties": {
+                    "spis": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SpiState"
+                      }
+                    },
+                    "time": {
+                      "$ref": "#/components/schemas/TimeUs"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spi/{id}/config": {
+      "post": {
+        "tags": [
+          "spi"
+        ],
+        "summary": "Configure an SPI controller",
+        "description": "One role at a time. CS is active-low. clk and cs are required integers when enable is true, and may be null when enable is false. mosi and miso may be null. Duplicate pins are rejected. A slave body must not include clockHz. A master body must include clockHz.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpiPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpiConfigBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Configured"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/spi/{id}/master/transceive": {
+      "post": {
+        "tags": [
+          "spi"
+        ],
+        "summary": "Clock a master transfer",
+        "description": "Blocks until the clocks finish. data length 0-256. Empty data clocks nothing and returns data []. Non-empty data requires pins.mosi. When pins.miso is unset the response data is []. When both data lines are set, response data has the same length as the request.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpiPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpiMasterTransceiveBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bytes shifted in, or an empty array when MISO is unset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpiMasterTransceiveState"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/spi/{id}/slave/receive": {
+      "get": {
+        "tags": [
+          "spi"
+        ],
+        "summary": "Drain slave transfer events",
+        "description": "Requires an enabled slave with pins.miso set. Drains the event buffer. An empty buffer returns events []. When the buffer is full, the oldest events are discarded.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpiPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Drained slave events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpiSlaveReceiveState"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/spi/{id}/slave/transmit": {
+      "post": {
+        "tags": [
+          "spi"
+        ],
+        "summary": "Store the slave response map",
+        "description": "Does not wait for a master. Requires an enabled slave with pins.mosi set. mapping replaces the previous map. An empty array clears it. Match exact entries first, then the longest prefix. An empty prefix matches every receive. The stored map is used for the transaction after the one already in flight.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpiPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpiSlaveTransmitBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Map stored"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
     "/lock": {
       "post": {
         "tags": [
@@ -1953,7 +2189,7 @@
         "schema": {
           "type": "string"
         },
-        "description": "Required when another lock holds the resource+method (pin, power rail, or UART). Missing or unknown yields 412; a different live holder or peripheral reservation yields 423."
+        "description": "Required when another lock holds the resource+method (pin, power rail, UART, or SPI). Missing or unknown yields 412; a different live holder or peripheral reservation yields 423."
       },
       "UartPath": {
         "name": "id",
@@ -1965,6 +2201,17 @@
           "maximum": 0
         },
         "description": "UART id from GET /uart/"
+      },
+      "SpiPath": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 0
+        },
+        "description": "SPI id from GET /spi/"
       }
     },
     "schemas": {
@@ -2290,6 +2537,33 @@
               }
             },
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "ids",
+              "method"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "spi"
+              },
+              "ids": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 0
+                }
+              },
+              "method": {
+                "$ref": "#/components/schemas/LockMethod"
+              }
+            },
+            "additionalProperties": false
           }
         ]
       },
@@ -2539,6 +2813,356 @@
             "$ref": "#/components/schemas/TimeUs"
           }
         }
+      },
+      "SpiByte": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+      },
+      "SpiPin": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 7
+      },
+      "SpiPins": {
+        "type": "object",
+        "required": [
+          "mosi",
+          "miso",
+          "clk",
+          "cs"
+        ],
+        "properties": {
+          "mosi": {
+            "$ref": "#/components/schemas/SpiPin"
+          },
+          "miso": {
+            "$ref": "#/components/schemas/SpiPin"
+          },
+          "clk": {
+            "$ref": "#/components/schemas/SpiPin"
+          },
+          "cs": {
+            "$ref": "#/components/schemas/SpiPin"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SpiBitOrder": {
+        "type": "string",
+        "enum": [
+          "msb",
+          "lsb"
+        ]
+      },
+      "SpiClockEdge": {
+        "type": "integer",
+        "enum": [
+          0,
+          1
+        ],
+        "description": "0 or 1. cpol is the clock idle level. cpha is which edge samples."
+      },
+      "SpiConfigBody": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "enable",
+              "role",
+              "cpol",
+              "cpha",
+              "bitOrder",
+              "clockHz",
+              "pins"
+            ],
+            "properties": {
+              "enable": {
+                "type": "boolean"
+              },
+              "role": {
+                "type": "string",
+                "const": "master"
+              },
+              "cpol": {
+                "$ref": "#/components/schemas/SpiClockEdge"
+              },
+              "cpha": {
+                "$ref": "#/components/schemas/SpiClockEdge"
+              },
+              "bitOrder": {
+                "$ref": "#/components/schemas/SpiBitOrder"
+              },
+              "clockHz": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000000
+              },
+              "pins": {
+                "$ref": "#/components/schemas/SpiPins"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "enable",
+              "role",
+              "cpol",
+              "cpha",
+              "bitOrder",
+              "pins"
+            ],
+            "properties": {
+              "enable": {
+                "type": "boolean"
+              },
+              "role": {
+                "type": "string",
+                "const": "slave"
+              },
+              "cpol": {
+                "$ref": "#/components/schemas/SpiClockEdge"
+              },
+              "cpha": {
+                "$ref": "#/components/schemas/SpiClockEdge"
+              },
+              "bitOrder": {
+                "$ref": "#/components/schemas/SpiBitOrder"
+              },
+              "pins": {
+                "$ref": "#/components/schemas/SpiPins"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "SpiState": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "enable",
+              "role",
+              "cpol",
+              "cpha",
+              "bitOrder",
+              "clockHz",
+              "pins"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 0
+              },
+              "enable": {
+                "type": "boolean"
+              },
+              "role": {
+                "type": "string",
+                "const": "master"
+              },
+              "cpol": {
+                "$ref": "#/components/schemas/SpiClockEdge"
+              },
+              "cpha": {
+                "$ref": "#/components/schemas/SpiClockEdge"
+              },
+              "bitOrder": {
+                "$ref": "#/components/schemas/SpiBitOrder"
+              },
+              "clockHz": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000000
+              },
+              "pins": {
+                "$ref": "#/components/schemas/SpiPins"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "enable",
+              "role",
+              "cpol",
+              "cpha",
+              "bitOrder",
+              "pins"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 0
+              },
+              "enable": {
+                "type": "boolean"
+              },
+              "role": {
+                "type": "string",
+                "const": "slave"
+              },
+              "cpol": {
+                "$ref": "#/components/schemas/SpiClockEdge"
+              },
+              "cpha": {
+                "$ref": "#/components/schemas/SpiClockEdge"
+              },
+              "bitOrder": {
+                "$ref": "#/components/schemas/SpiBitOrder"
+              },
+              "pins": {
+                "$ref": "#/components/schemas/SpiPins"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "SpiMasterTransceiveBody": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "maxItems": 255,
+            "items": {
+              "$ref": "#/components/schemas/SpiByte"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "SpiMasterTransceiveState": {
+        "type": "object",
+        "required": [
+          "data",
+          "time"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "maxItems": 255,
+            "items": {
+              "$ref": "#/components/schemas/SpiByte"
+            }
+          },
+          "time": {
+            "$ref": "#/components/schemas/TimeUs"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SpiSlaveEvent": {
+        "type": "object",
+        "required": [
+          "startTime",
+          "endTime",
+          "receive",
+          "send"
+        ],
+        "properties": {
+          "startTime": {
+            "$ref": "#/components/schemas/TimeUs"
+          },
+          "endTime": {
+            "$ref": "#/components/schemas/TimeUs"
+          },
+          "receive": {
+            "type": "array",
+            "maxItems": 255,
+            "items": {
+              "$ref": "#/components/schemas/SpiByte"
+            }
+          },
+          "send": {
+            "type": "array",
+            "maxItems": 255,
+            "items": {
+              "$ref": "#/components/schemas/SpiByte"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "SpiSlaveReceiveState": {
+        "type": "object",
+        "required": [
+          "events",
+          "time"
+        ],
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpiSlaveEvent"
+            }
+          },
+          "time": {
+            "$ref": "#/components/schemas/TimeUs"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SpiSlaveMapEntry": {
+        "type": "object",
+        "required": [
+          "type",
+          "mosi",
+          "miso"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "prefix"
+            ]
+          },
+          "mosi": {
+            "type": "array",
+            "maxItems": 255,
+            "items": {
+              "$ref": "#/components/schemas/SpiByte"
+            }
+          },
+          "miso": {
+            "type": "array",
+            "maxItems": 255,
+            "items": {
+              "$ref": "#/components/schemas/SpiByte"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "SpiSlaveTransmitBody": {
+        "type": "object",
+        "required": [
+          "mapping"
+        ],
+        "properties": {
+          "mapping": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpiSlaveMapEntry"
+            }
+          }
+        },
+        "additionalProperties": false
       }
     },
     "responses": {
@@ -2563,7 +3187,7 @@
         }
       },
       "NotFound": {
-        "description": "Unknown URL, pin in path out of 0-7, UART id missing from GET /uart/, or lock id missing on PUT",
+        "description": "Unknown URL, pin in path out of 0-7, UART id missing from GET /uart/, SPI id missing from GET /spi/, or lock id missing on PUT",
         "content": {
           "application/json": {
             "schema": {
@@ -2623,7 +3247,7 @@
         }
       },
       "Unprocessable": {
-        "description": "Pin mode cannot perform the operation, PWM resources exhausted, or UART not enabled / missing direction pin",
+        "description": "Pin mode cannot perform the operation, PWM resources exhausted, UART not enabled / missing direction pin, or SPI not enabled / wrong role / missing data pin",
         "content": {
           "application/json": {
             "schema": {
@@ -2633,7 +3257,7 @@
         }
       },
       "Locked": {
-        "description": "Resource+method held by a different live lock, or reserved by a peripheral such as UART",
+        "description": "Resource+method held by a different live lock, or reserved by a peripheral such as UART or SPI",
         "content": {
           "application/json": {
             "schema": {

@@ -23,11 +23,12 @@ typedef enum {
   LOCK_KIND_POWER_3V3,
   LOCK_KIND_POWER_5V,
   LOCK_KIND_UART,
+  LOCK_KIND_SPI,
 } Lock_Kind;
 
 typedef struct {
   Lock_Kind kind;
-  int pin;         /* GPIO logical pin, or UART id when kind == LOCK_KIND_UART */
+  int pin;         /* GPIO logical pin, UART id, or SPI id */
   uint8_t methods; /* bit flags LOCK_METHOD_* */
 } Lock_Resource;
 
@@ -74,6 +75,7 @@ int64_t Lock_NowUs(void);
 const char* Lock_KindToString(Lock_Kind kind);
 bool Lock_PowerFromString(const char* s, Lock_Kind* out);
 bool Lock_IsValidUartId(int id);
+bool Lock_IsValidSpiId(int id);
 
 /**
  * Acquire a no-TTL peripheral hold over resources. owner e.g. "uart:0".

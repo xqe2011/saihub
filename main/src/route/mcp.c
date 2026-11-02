@@ -270,11 +270,12 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
   cJSON_AddItemToObject(result, "serverInfo", info);
   cJSON_AddStringToObject(
       result, "instructions",
-      "SAIHub: logical pins 0-7, UART ids from list_uarts, times in microseconds, optional lockId for contested "
-      "resources. Use plural pin tools (configure_pins, get_pin_levels, …) and always pass pins even for one pin "
-      "(pins:[1]). Power tools use rail=3v3|5v. UART tools use configure_uart, uart_transmit, uart_receive, uart_flush. "
+      "SAIHub: logical pins 0-7, UART ids from list_uarts, SPI ids from list_spis, times in microseconds, optional lockId "
+      "for contested resources. Use plural pin tools (configure_pins, get_pin_levels, …) and always pass pins even for "
+      "one pin (pins:[1]). Power tools use rail=3v3|5v. UART tools use configure_uart, uart_transmit, uart_receive, "
+      "uart_flush. SPI tools use configure_spi, spi_master_transceive, spi_slave_receive, spi_slave_transmit. "
       "play_buzzer plays a Morse-style sequence of . and - and blocks until it finishes (one at a time). "
-      "create_lock resources use type pin with pins, type power with rails, or type uart with ids. "
+      "create_lock resources use type pin with pins, type power with rails, type uart with ids, or type spi with ids. "
       "System tools: get_system_info, check_system_ota, get_system_ota, upgrade_system_ota (url+sha256 required). "
       "While a firmware update runs, non-system tools return 503. "
       "For multi-step on-device work, use run_script with a Lua script that calls the same tools.");

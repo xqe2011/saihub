@@ -27,6 +27,11 @@ const EXPECTED_MCP_TOOLS = [
   "uart_transmit",
   "uart_receive",
   "uart_flush",
+  "list_spis",
+  "configure_spi",
+  "spi_master_transceive",
+  "spi_slave_receive",
+  "spi_slave_transmit",
   "play_buzzer",
   "create_lock",
   "renew_lock",
@@ -275,6 +280,9 @@ async function captureSnapshot(): Promise<Snapshot> {
 
   const uartList = await requestJson<{ uarts: UartConfig[]; time: number }>("GET", "/uart/");
   assert(Array.isArray(uartList.uarts) && uartList.uarts.length === 1, "REST UART inventory must contain UART 0");
+  const spiList = await requestJson<{ spis: Array<{ id: number; enable: boolean }>; time: number }>("GET", "/spi/");
+  assert(Array.isArray(spiList.spis) && spiList.spis.length === 1, "REST SPI inventory must contain SPI 0");
+  assert(spiList.spis[0]?.id === 0, "REST SPI inventory omitted SPI 0");
   const uart = uartList.uarts[0];
   assert(uart !== undefined && uart.id === UART_ID, "REST UART inventory omitted UART 0");
   if (uart.enable) {
@@ -355,8 +363,10 @@ async function testInventorySurfaces(state: Snapshot): Promise<void> {
   log("REST and MCP inventory");
   const mcpPins = await mcpTool<{ pins: PinState[] }>("list_pins", {});
   const mcpUarts = await mcpTool<{ uarts: UartConfig[] }>("list_uarts", {});
+  const mcpSpis = await mcpTool<{ spis: Array<{ id: number }> }>("list_spis", {});
   assert(mcpPins.pins.length === 8, "MCP list_pins did not return eight pins");
   assert(mcpUarts.uarts.length === 1, "MCP list_uarts did not return UART 0");
+  assert(mcpSpis.spis.length === 1 && mcpSpis.spis[0]?.id === 0, "MCP list_spis did not return SPI 0");
   for (const rail of ["3v3", "5v"] as const) {
     const power = await mcpTool<{ enable: boolean }>("get_output_power_state", { rail });
     assert(power.enable === state.power[rail], `MCP ${rail} power state disagrees with REST`);
