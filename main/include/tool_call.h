@@ -32,8 +32,6 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args);
 ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsOut, size_t* eventCountOut,
                                       int64_t* startTimeUsOut);
 
-/** Clock a master transfer without constructing JSON. Caller frees *rxOut. *rxOut is NULL when *rxLenOut is 0. */
-ToolCall_Result ToolCall_SpiMasterCapture(cJSON* args, uint8_t** rxOut, size_t* rxLenOut);
 /** Drain slave events without constructing JSON. Caller frees *storageOut. *storageOut is NULL when *lenOut is 0. */
 ToolCall_Result ToolCall_SpiSlaveCapture(cJSON* args, uint8_t** storageOut, size_t* lenOut);
 

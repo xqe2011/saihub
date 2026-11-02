@@ -907,7 +907,7 @@ static ToolCall_Result ToolCall_ConfigureSpi(cJSON* args)
   return ToolCall_OkEmpty();
 }
 
-ToolCall_Result ToolCall_SpiMasterCapture(cJSON* args, uint8_t** rxOut, size_t* rxLenOut)
+static ToolCall_Result ToolCall_SpiMasterCapture(cJSON* args, uint8_t** rxOut, size_t* rxLenOut)
 {
   *rxOut = NULL;
   *rxLenOut = 0;

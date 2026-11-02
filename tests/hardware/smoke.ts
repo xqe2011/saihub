@@ -1006,6 +1006,79 @@ async function testScripts(): Promise<void> {
     "REST script buzzer budget was not enforced");
   const uncaught = await rawRequest("POST", "/script", { script: "error('condition failure')", maxCalls: 1, timeout: 100000 });
   assert(uncaught.status === 422 && uncaught.text.includes("condition failure"), "REST uncaught script error was not reported");
+
+  log("script memory exhaustion during compilation and execution, then recovery");
+  const constants = Array.from({ length: 1000 }, (_, i) => `"${i.toString(36).padStart(4, "0")}"`).join(",");
+  for (const script of [`return {${constants}}`, "return string.rep('x', 65536)"]) {
+    const exhausted = await rawRequest("POST", "/script", { script });
+    const exhaustedBody = parseJson(exhausted, "script memory exhaustion");
+    const memoryError = isObject(exhaustedBody) && exhaustedBody.reason === "Script ran out of memory.";
+    assert(exhausted.status === 422 && memoryError, "REST script memory exhaustion was not reported correctly");
+    const recovered = await requestJson<JsonObject>("POST", "/script", { script: "return 42" });
+    assert(recovered.result === 42, "REST script runner did not recover after memory exhaustion");
+  }
+  const caughtMemory = await requestJson<JsonObject>("POST", "/script", {
+    script: "local ok = pcall(function() return string.rep('x', 65536) end); return not ok",
+  });
+  assert(caughtMemory.result === true, "REST script could not catch a memory error with pcall");
+
+  log("script event views for trace_pins and spi_slave_receive (# / index / ipairs / return)");
+  await configureRestPin(OUTPUT_A, "pwmOutput");
+  await configureRestPin(OUTPUT_B, "digitalInput");
+  await requestJson<void>("POST", `/pin/${OUTPUT_A}/pwm`, { frequency: 10000, duty: 50 }, 204);
+  const saturatedTrace = await requestJson<JsonObject>("POST", "/script", {
+    script: [
+      `local trace = trace_pins{pins={${OUTPUT_B}}, edge="both", duration=200000}`,
+      "assert(#trace.events == 1024)",
+      "local count = 0",
+      "for _, ev in ipairs(trace.events) do",
+      `  assert(ev.pin == ${OUTPUT_B})`,
+      "  assert(ev.edge == 'raising' or ev.edge == 'falling')",
+      "  assert(ev.level == 0 or ev.level == 1)",
+      "  assert(type(ev.time) == 'number')",
+      "  count = count + 1",
+      "end",
+      "return count",
+    ].join("\n"),
+    maxCalls: 1,
+    timeout: 1000000,
+  });
+  assert(saturatedTrace.result === 1024,
+    "REST script could not iterate all 1024 trace events after garbage collection");
+  await requestJson<void>("POST", `/pin/${OUTPUT_A}/pwm`, { frequency: 1000, duty: 50 }, 204);
+  spiTouched = true;
+  const eventViews = await requestJson<JsonObject>("POST", "/script", {
+    script: [
+      `local trace = trace_pins{pins={${OUTPUT_B}}, edge="both", duration=20000}`,
+      "local n = #trace.events",
+      "local firstPin = n > 0 and trace.events[1].pin or -1",
+      "local count = 0",
+      "for _, ev in ipairs(trace.events) do count = count + 1 end",
+      "configure_spi{id=0, enable=true, role='slave', cpol=0, cpha=0, bitOrder='msb', pins={miso=0, mosi=1, clk=2, cs=3}}",
+      "local log = spi_slave_receive{id=0}",
+      "return {n=n, firstPin=firstPin, count=count, spiN=#log.events, hasTime=(type(log.time)=='number'), returned=trace}",
+    ].join("\n"),
+    maxCalls: 12,
+    timeout: 500000,
+  });
+  await requestJson<void>("POST", `/pin/${OUTPUT_A}/pwm`, { frequency: 1000, duty: 0 }, 204);
+  await configureRestPin(OUTPUT_A, "disable");
+  await configureRestPin(OUTPUT_B, "disable");
+  await requestJson<void>("POST", "/spi/0/config", spiBody(disabledSpi), 204);
+  assert(isObject(eventViews.result), "script event views returned an invalid result");
+  const views = eventViews.result;
+  assert(typeof views.n === "number" && views.n > 0, "script trace view reported no events");
+  assert(views.count === views.n, "script ipairs over trace.events did not match #trace.events");
+  assert(views.firstPin === OUTPUT_B, `script trace.events[1].pin was ${views.firstPin}, expected ${OUTPUT_B}`);
+  assert(typeof views.spiN === "number" && views.spiN >= 0, "script spi_slave_receive view omitted #events");
+  assert(views.hasTime === true, "script spi_slave_receive view omitted time");
+  assert(isObject(views.returned), "script return of trace view was not an object");
+  const returnedEvents = views.returned.events;
+  assert(Array.isArray(returnedEvents) && returnedEvents.length === views.n,
+    "script return of trace view did not materialize events JSON");
+  const first = returnedEvents[0];
+  assert(isObject(first) && first.pin === OUTPUT_B && typeof first.edge === "string" && typeof first.time === "number",
+    "script returned trace event was missing fields");
 }
 
 async function testConcurrency(): Promise<void> {

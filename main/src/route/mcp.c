@@ -369,64 +369,6 @@ static esp_err_t Route_McpDispatchBuzzer(HttpServer_Context* ctx, cJSON* id, cJS
   return ESP_OK;
 }
 
-static esp_err_t Route_McpStreamToolJson(HttpServer_Context* ctx, cJSON* id,
-                                         esp_err_t (*append)(HttpServer_Context* ctx, const uint8_t* data, size_t len, bool escape),
-                                         const uint8_t* data, size_t len)
-{
-  esp_err_t ret = HttpServer_SendChunkBegin(ctx, 200, "application/json", NULL);
-  if (ret == ESP_OK) {
-    ret = HttpServer_SendChunk(ctx, "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"",
-                               sizeof("{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"") - 1);
-  }
-  if (ret == ESP_OK) ret = append(ctx, data, len, true);
-  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "\"}]},\"id\":", sizeof("\"}]},\"id\":") - 1);
-  char* printedId = ret == ESP_OK && id != NULL ? cJSON_PrintUnformatted(id) : NULL;
-  if (ret == ESP_OK && id != NULL && printedId == NULL) ret = ESP_ERR_NO_MEM;
-  if (ret == ESP_OK) {
-    ret = HttpServer_SendChunk(ctx, printedId != NULL ? printedId : "null", printedId != NULL ? strlen(printedId) : 4);
-  }
-  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "}", 1);
-  free(printedId);
-  esp_err_t endRet = HttpServer_SendChunkDone(ctx);
-  return ret == ESP_OK ? endRet : ret;
-}
-
-static esp_err_t Route_McpDispatchSpi(HttpServer_Context* ctx, cJSON* id, cJSON* params, const char* toolName,
-                                      ToolCall_Result (*capture)(cJSON* args, uint8_t** dataOut, size_t* lenOut),
-                                      esp_err_t (*append)(HttpServer_Context* ctx, const uint8_t* data, size_t len, bool escape))
-{
-  if (!cJSON_IsObject(params)) {
-    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("params are required.")));
-  }
-  cJSON* args = cJSON_GetObjectItem(params, "arguments");
-  if (args != NULL && !cJSON_IsObject(args)) {
-    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("arguments must be an object.")));
-  }
-  bool ownedArgs = args == NULL;
-  if (ownedArgs) {
-    args = cJSON_CreateObject();
-    if (args == NULL) {
-      return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("internal")));
-    }
-  }
-  cJSON* idItem = cJSON_GetObjectItem(args, "id");
-  cJSON* lockItem = cJSON_GetObjectItem(args, "lockId");
-  const char* lockId = (cJSON_IsString(lockItem) && lockItem->valuestring != NULL) ? lockItem->valuestring : "";
-  TOOL_CALL_LOG("mcp/%s %s(id=%d, lockId=%s)", HttpServer_GetFrom(ctx), toolName, cJSON_IsNumber(idItem) ? idItem->valueint : -1, lockId);
-
-  uint8_t* data = NULL;
-  size_t len = 0;
-  ToolCall_Result result = capture(args, &data, &len);
-  if (ownedArgs) cJSON_Delete(args);
-  if (!result.ok) {
-    free(data);
-    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr(result.reason)));
-  }
-  esp_err_t ret = Route_McpStreamToolJson(ctx, id, append, data, len);
-  free(data);
-  return ret;
-}
-
 static esp_err_t Route_McpDispatchTrace(HttpServer_Context* ctx, cJSON* id, cJSON* params)
 {
   if (!cJSON_IsObject(params)) {
@@ -470,6 +412,44 @@ static esp_err_t Route_McpDispatchTrace(HttpServer_Context* ctx, cJSON* id, cJSO
   if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "}", 1);
   free(printedId);
   free(events);
+  esp_err_t endRet = HttpServer_SendChunkDone(ctx);
+  return ret == ESP_OK ? endRet : ret;
+}
+
+static esp_err_t Route_McpDispatchSpiSlaveReceive(HttpServer_Context* ctx, cJSON* id, cJSON* params)
+{
+  if (!cJSON_IsObject(params)) {
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("params are required.")));
+  }
+  cJSON* args = cJSON_GetObjectItem(params, "arguments");
+  if (args != NULL && !cJSON_IsObject(args)) {
+    return Route_McpSendJsonRpc(ctx, 200,
+                                Route_McpJsonRpcResult(id, Route_McpToolResultErr("arguments must be an object.")));
+  }
+  if (args == NULL) args = cJSON_CreateObject();
+  bool ownedArgs = cJSON_GetObjectItem(params, "arguments") == NULL;
+  uint8_t* storage = NULL;
+  size_t len = 0;
+  ToolCall_Result result = ToolCall_SpiSlaveCapture(args, &storage, &len);
+  if (ownedArgs) cJSON_Delete(args);
+  if (!result.ok) {
+    free(storage);
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr(result.reason)));
+  }
+
+  esp_err_t ret = HttpServer_SendChunkBegin(ctx, 200, "application/json", NULL);
+  if (ret == ESP_OK) {
+    ret = HttpServer_SendChunk(ctx, "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"",
+                               sizeof("{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"") - 1);
+  }
+  if (ret == ESP_OK) ret = Route_SpiAppendSlaveJson(ctx, storage, len, true);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "\"}]},\"id\":", sizeof("\"}]},\"id\":") - 1);
+  char* printedId = ret == ESP_OK && id != NULL ? cJSON_PrintUnformatted(id) : NULL;
+  if (ret == ESP_OK && id != NULL && printedId == NULL) ret = ESP_ERR_NO_MEM;
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, printedId != NULL ? printedId : "null", printedId != NULL ? strlen(printedId) : 4);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "}", 1);
+  free(printedId);
+  free(storage);
   esp_err_t endRet = HttpServer_SendChunkDone(ctx);
   return ret == ESP_OK ? endRet : ret;
 }
@@ -556,12 +536,7 @@ static esp_err_t Route_McpDispatch(HttpServer_Context* ctx, cJSON* msg)
         }
         if (strcmp(toolName, "run_script") == 0) return Route_McpDispatchRunScript(ctx, id, params);
         if (strcmp(toolName, "trace_pins") == 0) return Route_McpDispatchTrace(ctx, id, params);
-        if (strcmp(toolName, "spi_master_transceive") == 0) {
-          return Route_McpDispatchSpi(ctx, id, params, toolName, ToolCall_SpiMasterCapture, Route_SpiAppendMasterJson);
-        }
-        if (strcmp(toolName, "spi_slave_receive") == 0) {
-          return Route_McpDispatchSpi(ctx, id, params, toolName, ToolCall_SpiSlaveCapture, Route_SpiAppendSlaveJson);
-        }
+        if (strcmp(toolName, "spi_slave_receive") == 0) return Route_McpDispatchSpiSlaveReceive(ctx, id, params);
         if (strcmp(toolName, "play_buzzer") == 0) return Route_McpDispatchBuzzer(ctx, id, params);
       }
     } else if (System_OtaIsUpgrading()) {
