@@ -44,13 +44,14 @@ static cJSON* Route_PinQueryObject(HttpServer_Context* ctx)
   cJSON_AddItemToObject(root, "pins", pins);
   return root;
 }
-static esp_err_t Route_PinSendTraceEvents(HttpServer_Context* ctx, const GpioCtrl_TraceEvent* events, size_t count, bool includePin);
+static esp_err_t Route_PinSendTraceEvents(HttpServer_Context* ctx, const GpioCtrl_TraceEvent* events, size_t count,
+                                          int64_t startTimeUs, bool includePin);
 
 typedef struct { HttpServer_Context* ctx; int* pins; size_t pinCount; GpioCtrl_Edge edge; uint64_t duration; bool includePin; char lockId[64]; } PinTraceJob;
 static void Route_PinTraceTask(void* arg) {
-  PinTraceJob* j = arg; GpioCtrl_TraceEvent* ev = calloc(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(*ev)); size_t n=0;
-  esp_err_t r = ev ? GpioCtrl_Trace(j->pins,j->pinCount,j->edge,j->duration,ev,CONFIG_GPIO_TRACE_MAX_EVENTS,&n,j->includePin) : ESP_ERR_NO_MEM;
-  if (r == ESP_OK) { Lock_Touch(j->lockId[0] ? j->lockId : NULL); Route_PinSendTraceEvents(j->ctx,ev,n,j->includePin); }
+  PinTraceJob* j = arg; GpioCtrl_TraceEvent* ev = calloc(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(*ev)); size_t n=0; int64_t startUs=0;
+  esp_err_t r = ev ? GpioCtrl_Trace(j->pins,j->pinCount,j->edge,j->duration,ev,CONFIG_GPIO_TRACE_MAX_EVENTS,&n,&startUs) : ESP_ERR_NO_MEM;
+  if (r == ESP_OK) { Lock_Touch(j->lockId[0] ? j->lockId : NULL); Route_PinSendTraceEvents(j->ctx,ev,n,startUs,j->includePin); }
   else if (r == GPIO_CTRL_ERR_TRACE_BUSY) HttpServer_SendError(j->ctx,409,"One or more pins already have an active trace request.");
   else HttpServer_SendError(j->ctx,500,"internal");
   free(ev); free(j->pins); HttpServer_AsyncComplete(j->ctx); free(j); vTaskDelete(NULL);
@@ -62,7 +63,8 @@ static esp_err_t Route_PinStartTrace(HttpServer_Context* ctx,const int* pins,siz
   if(xTaskCreate(Route_PinTraceTask,"pin_trace",4096,j,5,NULL)!=pdPASS){ HttpServer_SendError(j->ctx,500,"internal"); HttpServer_AsyncComplete(j->ctx); free(j->pins); free(j); return ESP_OK; } return ESP_OK;
 }
 
-static esp_err_t Route_PinSendTraceEvents(HttpServer_Context* ctx, const GpioCtrl_TraceEvent* events, size_t count, bool includePin)
+static esp_err_t Route_PinSendTraceEvents(HttpServer_Context* ctx, const GpioCtrl_TraceEvent* events, size_t count,
+                                          int64_t startTimeUs, bool includePin)
 {
   esp_err_t ret = HttpServer_SendChunkBegin(ctx, 200, "application/json", NULL);
   if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "{\"events\":[", sizeof("{\"events\":[") - 1);
@@ -70,10 +72,11 @@ static esp_err_t Route_PinSendTraceEvents(HttpServer_Context* ctx, const GpioCtr
   for (size_t i = 0; ret == ESP_OK && i < count; i++) {
     int len = includePin
                   ? snprintf(item, sizeof(item), "%s{\"pin\":%d,\"edge\":\"%s\",\"level\":%d,\"time\":%lld}",
-                             i == 0 ? "" : ",", events[i].pin, events[i].edge, events[i].level,
-                             (long long)events[i].time)
+                             i == 0 ? "" : ",", events[i].pin, events[i].edge ? "raising" : "falling", events[i].level,
+                             (long long)(startTimeUs + events[i].deltaUs))
                   : snprintf(item, sizeof(item), "%s{\"edge\":\"%s\",\"level\":%d,\"time\":%lld}",
-                             i == 0 ? "" : ",", events[i].edge, events[i].level, (long long)events[i].time);
+                             i == 0 ? "" : ",", events[i].edge ? "raising" : "falling", events[i].level,
+                             (long long)(startTimeUs + events[i].deltaUs));
     if (len < 0 || (size_t)len >= sizeof(item)) {
       ret = ESP_ERR_INVALID_SIZE;
       break;

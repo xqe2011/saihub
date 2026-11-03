@@ -178,29 +178,31 @@ static esp_err_t Route_ParseTransmitData(cJSON* body, UartCtrl_Encoding encoding
     return ESP_OK;
   }
 
-  if (!cJSON_IsArray(dataItem)) {
-    snprintf(reason, reasonLen, "data must be an array of integers 0-255 when encoding is byte.");
+  if (!cJSON_IsString(dataItem) || dataItem->valuestring == NULL) {
+    snprintf(reason, reasonLen, "data must be an even-length hex string when encoding is byte.");
     return ESP_ERR_INVALID_ARG;
   }
-  int n = cJSON_GetArraySize(dataItem);
-  if (n > (int)CONFIG_UART_MAX_PAYLOAD_BYTES) {
+  size_t chars = strlen(dataItem->valuestring);
+  if ((chars & 1U) != 0) {
+    snprintf(reason, reasonLen, "data must be an even-length hex string when encoding is byte.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  size_t n = chars / 2;
+  if (n > CONFIG_UART_MAX_PAYLOAD_BYTES) {
     snprintf(reason, reasonLen, "data is too large. Send at most %u bytes per request.",
              (unsigned)CONFIG_UART_MAX_PAYLOAD_BYTES);
     return ESP_ERR_INVALID_SIZE;
   }
-  uint8_t* buf = malloc(n > 0 ? (size_t)n : 1);
+  uint8_t* buf = malloc(n > 0 ? n : 1);
   if (buf == NULL) return ESP_ERR_NO_MEM;
-  for (int i = 0; i < n; i++) {
-    cJSON* v = cJSON_GetArrayItem(dataItem, i);
-    if (!cJSON_IsNumber(v) || v->valueint < 0 || v->valueint > 255) {
-      free(buf);
-      snprintf(reason, reasonLen, "data[%d] must be an integer from 0 to 255.", i);
-      return ESP_ERR_INVALID_ARG;
-    }
-    buf[i] = (uint8_t)v->valueint;
+  size_t decoded = 0;
+  if (!Tool_HexDecode(dataItem->valuestring, buf, n > 0 ? n : 1, &decoded)) {
+    free(buf);
+    snprintf(reason, reasonLen, "data must be an even-length hex string when encoding is byte.");
+    return ESP_ERR_INVALID_ARG;
   }
   *dataOut = buf;
-  *lenOut = (size_t)n;
+  *lenOut = decoded;
   return ESP_OK;
 }
 
@@ -215,11 +217,12 @@ static cJSON* Route_EncodeReceiveData(UartCtrl_Encoding encoding, const uint8_t*
     free(s);
     return item;
   }
-  cJSON* arr = cJSON_CreateArray();
-  for (size_t i = 0; i < len; i++) {
-    cJSON_AddItemToArray(arr, cJSON_CreateNumber(data[i]));
-  }
-  return arr;
+  char* s = malloc(len * 2 + 1);
+  if (s == NULL) return NULL;
+  Tool_HexEncode(data, len, s);
+  cJSON* item = cJSON_CreateString(s);
+  free(s);
+  return item;
 }
 
 static esp_err_t Route_UartListHandler(HttpServer_Context* ctx)

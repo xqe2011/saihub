@@ -48,6 +48,8 @@ const char* Lock_KindToString(Lock_Kind kind)
       return "5v";
     case LOCK_KIND_UART:
       return "uart";
+    case LOCK_KIND_SPI:
+      return "spi";
     default:
       return "gpio";
   }
@@ -73,6 +75,12 @@ bool Lock_IsValidUartId(int id)
   return id >= 0 && id < (int)TOOL_GET_ARRAY_LENGTH(map);
 }
 
+bool Lock_IsValidSpiId(int id)
+{
+  static const int map[] = CONFIG_SPI_ID_TO_HOST;
+  return id >= 0 && id < (int)TOOL_GET_ARRAY_LENGTH(map);
+}
+
 static void Lock_MakeId(char* out, size_t outLen)
 {
   uint32_t a = esp_random();
@@ -86,6 +94,11 @@ static void Lock_OwnerToLabel(const char* owner, char* out, size_t outLen)
   unsigned uartId = 0;
   if (sscanf(owner, "uart:%u", &uartId) == 1) {
     snprintf(out, outLen, "UART %u", uartId);
+    return;
+  }
+  unsigned spiId = 0;
+  if (sscanf(owner, "spi:%u", &spiId) == 1) {
+    snprintf(out, outLen, "SPI %u", spiId);
     return;
   }
   snprintf(out, outLen, "%s", owner);
@@ -168,7 +181,7 @@ static Lock_Entry* Lock_FindById(const char* id)
 
 static bool Lock_ResourceNeedsPin(Lock_Kind kind)
 {
-  return kind == LOCK_KIND_GPIO || kind == LOCK_KIND_UART;
+  return kind == LOCK_KIND_GPIO || kind == LOCK_KIND_UART || kind == LOCK_KIND_SPI;
 }
 
 static bool Lock_ResourceEqualKey(const Lock_Resource* a, const Lock_Resource* b)

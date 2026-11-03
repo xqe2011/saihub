@@ -8,6 +8,8 @@
 #include "buzzer.h"
 #include "config.h"
 #include "http_server.h"
+#include "spi_ctrl.h"
+#include "tool.h"
 #include "tool_call.h"
 
 #include <cJSON.h>
@@ -33,7 +35,6 @@ typedef enum {
   SCRIPT_ABORT_NONE = 0,
   SCRIPT_ABORT_TIMEOUT,
   SCRIPT_ABORT_MAX_CALLS,
-  SCRIPT_ABORT_OOM,
 } Script_Abort;
 
 typedef struct Script_Block {
@@ -48,6 +49,32 @@ typedef struct {
   Script_Block* freeList;
   size_t usedBytes; /* allocated payload+hdr total for OOM diagnostics */
 } Script_Arena;
+
+/* Packed event views (MCP-style capture): system-heap buffers + tiny Lua userdata. */
+#define SCRIPT_MT_TRACE_EVENTS "Saihub.TraceEvents"
+#define SCRIPT_MT_TRACE_EVENT "Saihub.TraceEvent"
+#define SCRIPT_MT_SPI_EVENTS "Saihub.SpiSlaveEvents"
+#define SCRIPT_MT_SPI_EVENT "Saihub.SpiSlaveEvent"
+
+typedef struct {
+  GpioCtrl_TraceEvent* events; /* owned; freed in __gc */
+  size_t count;
+  int64_t startTimeUs;
+} Script_TraceEvents;
+
+typedef struct {
+  size_t index; /* 0-based into parent events */
+} Script_TraceEvent;
+
+typedef struct {
+  uint8_t* storage; /* owned; freed in __gc; NULL when empty */
+  size_t len;
+  size_t count;
+} Script_SpiSlaveEvents;
+
+typedef struct {
+  size_t offset; /* byte offset of this event in parent storage */
+} Script_SpiSlaveEvent;
 
 static uint8_t* scriptLuaHeap = NULL;
 static Script_Arena scriptArena;
@@ -175,7 +202,7 @@ static void* Script_ArenaAlloc(size_t nsize)
     prev = cur;
     cur = cur->next;
   }
-  scriptAbort = SCRIPT_ABORT_OOM;
+  /* Lua may collect garbage and retry. Only its final status is a fatal memory error. */
   return NULL;
 }
 
@@ -240,8 +267,6 @@ static void Script_RaiseAbort(lua_State* L)
     lua_pushstring(L, "Script exceeded timeout.");
   } else if (scriptAbort == SCRIPT_ABORT_MAX_CALLS) {
     lua_pushstring(L, "Script exceeded maxCalls.");
-  } else if (scriptAbort == SCRIPT_ABORT_OOM) {
-    lua_pushstring(L, "Script ran out of memory.");
   } else {
     lua_pushstring(L, "Script aborted.");
   }
@@ -370,6 +395,266 @@ static int Script_LuaSleep(lua_State* L)
   return 0;
 }
 
+static size_t Script_CountSpiSlaveEvents(const uint8_t* storage, size_t len)
+{
+  size_t count = 0;
+  size_t offset = 0;
+  SpiCtrl_Event ev;
+  while (SpiCtrl_NextSlaveEvent(storage, len, &offset, &ev)) count++;
+  return count;
+}
+
+static int Script_TraceEventsGc(lua_State* L)
+{
+  Script_TraceEvents* te = (Script_TraceEvents*)luaL_checkudata(L, 1, SCRIPT_MT_TRACE_EVENTS);
+  free(te->events);
+  te->events = NULL;
+  te->count = 0;
+  return 0;
+}
+
+static int Script_TraceEventsLen(lua_State* L)
+{
+  Script_TraceEvents* te = (Script_TraceEvents*)luaL_checkudata(L, 1, SCRIPT_MT_TRACE_EVENTS);
+  lua_pushinteger(L, (lua_Integer)te->count);
+  return 1;
+}
+
+static int Script_TraceEventIndex(lua_State* L)
+{
+  Script_TraceEvent* row = (Script_TraceEvent*)luaL_checkudata(L, 1, SCRIPT_MT_TRACE_EVENT);
+  const char* key = luaL_checkstring(L, 2);
+  lua_getiuservalue(L, 1, 1);
+  Script_TraceEvents* te = (Script_TraceEvents*)luaL_checkudata(L, -1, SCRIPT_MT_TRACE_EVENTS);
+  lua_pop(L, 1);
+  if (row->index >= te->count || te->events == NULL) {
+    lua_pushnil(L);
+    return 1;
+  }
+  const GpioCtrl_TraceEvent* e = &te->events[row->index];
+  if (strcmp(key, "pin") == 0) {
+    lua_pushinteger(L, (lua_Integer)e->pin);
+  } else if (strcmp(key, "edge") == 0) {
+    lua_pushstring(L, e->edge ? "raising" : "falling");
+  } else if (strcmp(key, "level") == 0) {
+    lua_pushinteger(L, (lua_Integer)e->level);
+  } else if (strcmp(key, "time") == 0) {
+    lua_pushnumber(L, (double)(te->startTimeUs + e->deltaUs));
+  } else {
+    lua_pushnil(L);
+  }
+  return 1;
+}
+
+static int Script_TraceEventsIndex(lua_State* L)
+{
+  Script_TraceEvents* te = (Script_TraceEvents*)luaL_checkudata(L, 1, SCRIPT_MT_TRACE_EVENTS);
+  if (!lua_isinteger(L, 2)) {
+    lua_pushnil(L);
+    return 1;
+  }
+  lua_Integer i = lua_tointeger(L, 2);
+  if (i < 1 || (size_t)i > te->count) {
+    lua_pushnil(L);
+    return 1;
+  }
+  Script_TraceEvent* row = (Script_TraceEvent*)lua_newuserdatauv(L, sizeof(Script_TraceEvent), 1);
+  row->index = (size_t)(i - 1);
+  luaL_getmetatable(L, SCRIPT_MT_TRACE_EVENT);
+  lua_setmetatable(L, -2);
+  lua_pushvalue(L, 1);
+  lua_setiuservalue(L, -2, 1);
+  return 1;
+}
+
+static void Script_PushTraceResult(lua_State* L, GpioCtrl_TraceEvent* events, size_t count, int64_t startTimeUs)
+{
+  lua_createtable(L, 0, 1);
+  Script_TraceEvents* te = (Script_TraceEvents*)lua_newuserdatauv(L, sizeof(Script_TraceEvents), 0);
+  te->events = events;
+  te->count = count;
+  te->startTimeUs = startTimeUs;
+  luaL_getmetatable(L, SCRIPT_MT_TRACE_EVENTS);
+  lua_setmetatable(L, -2);
+  lua_setfield(L, -2, "events");
+}
+
+static int Script_SpiSlaveEventsGc(lua_State* L)
+{
+  Script_SpiSlaveEvents* se = (Script_SpiSlaveEvents*)luaL_checkudata(L, 1, SCRIPT_MT_SPI_EVENTS);
+  free(se->storage);
+  se->storage = NULL;
+  se->len = 0;
+  se->count = 0;
+  return 0;
+}
+
+static int Script_SpiSlaveEventsLen(lua_State* L)
+{
+  Script_SpiSlaveEvents* se = (Script_SpiSlaveEvents*)luaL_checkudata(L, 1, SCRIPT_MT_SPI_EVENTS);
+  lua_pushinteger(L, (lua_Integer)se->count);
+  return 1;
+}
+
+static int Script_SpiSlaveEventIndex(lua_State* L)
+{
+  Script_SpiSlaveEvent* row = (Script_SpiSlaveEvent*)luaL_checkudata(L, 1, SCRIPT_MT_SPI_EVENT);
+  const char* key = luaL_checkstring(L, 2);
+  lua_getiuservalue(L, 1, 1);
+  Script_SpiSlaveEvents* se = (Script_SpiSlaveEvents*)luaL_checkudata(L, -1, SCRIPT_MT_SPI_EVENTS);
+  lua_pop(L, 1);
+  size_t offset = row->offset;
+  SpiCtrl_Event ev;
+  if (!SpiCtrl_NextSlaveEvent(se->storage, se->len, &offset, &ev)) {
+    lua_pushnil(L);
+    return 1;
+  }
+  if (strcmp(key, "startTime") == 0) {
+    lua_pushnumber(L, (double)ev.startUs);
+  } else if (strcmp(key, "endTime") == 0) {
+    lua_pushnumber(L, (double)ev.endUs);
+  } else if (strcmp(key, "receive") == 0) {
+    char hex[CONFIG_SPI_MAX_TRANSFER_BYTES * 2 + 1];
+    Tool_HexEncode(ev.recv, ev.recvLen, hex);
+    lua_pushstring(L, hex);
+  } else if (strcmp(key, "send") == 0) {
+    char hex[CONFIG_SPI_MAX_TRANSFER_BYTES * 2 + 1];
+    Tool_HexEncode(ev.send, ev.sendLen, hex);
+    lua_pushstring(L, hex);
+  } else {
+    lua_pushnil(L);
+  }
+  return 1;
+}
+
+static int Script_SpiSlaveEventsIndex(lua_State* L)
+{
+  Script_SpiSlaveEvents* se = (Script_SpiSlaveEvents*)luaL_checkudata(L, 1, SCRIPT_MT_SPI_EVENTS);
+  if (!lua_isinteger(L, 2)) {
+    lua_pushnil(L);
+    return 1;
+  }
+  lua_Integer i = lua_tointeger(L, 2);
+  if (i < 1 || (size_t)i > se->count) {
+    lua_pushnil(L);
+    return 1;
+  }
+  size_t offset = 0;
+  size_t n = 0;
+  SpiCtrl_Event ev;
+  while (true) {
+    size_t start = offset;
+    if (!SpiCtrl_NextSlaveEvent(se->storage, se->len, &offset, &ev)) break;
+    n++;
+    if (n != (size_t)i) continue;
+    Script_SpiSlaveEvent* row = (Script_SpiSlaveEvent*)lua_newuserdatauv(L, sizeof(Script_SpiSlaveEvent), 1);
+    row->offset = start;
+    luaL_getmetatable(L, SCRIPT_MT_SPI_EVENT);
+    lua_setmetatable(L, -2);
+    lua_pushvalue(L, 1);
+    lua_setiuservalue(L, -2, 1);
+    return 1;
+  }
+  lua_pushnil(L);
+  return 1;
+}
+
+static void Script_PushSpiSlaveResult(lua_State* L, uint8_t* storage, size_t len)
+{
+  lua_createtable(L, 0, 2);
+  Script_SpiSlaveEvents* se = (Script_SpiSlaveEvents*)lua_newuserdatauv(L, sizeof(Script_SpiSlaveEvents), 0);
+  se->storage = storage;
+  se->len = len;
+  se->count = Script_CountSpiSlaveEvents(storage, len);
+  luaL_getmetatable(L, SCRIPT_MT_SPI_EVENTS);
+  lua_setmetatable(L, -2);
+  lua_setfield(L, -2, "events");
+  lua_pushnumber(L, (double)HttpServer_NowUs());
+  lua_setfield(L, -2, "time");
+}
+
+static void Script_RegisterViewMetatables(lua_State* L)
+{
+  luaL_newmetatable(L, SCRIPT_MT_TRACE_EVENTS);
+  lua_pushcfunction(L, Script_TraceEventsGc);
+  lua_setfield(L, -2, "__gc");
+  lua_pushcfunction(L, Script_TraceEventsLen);
+  lua_setfield(L, -2, "__len");
+  lua_pushcfunction(L, Script_TraceEventsIndex);
+  lua_setfield(L, -2, "__index");
+  lua_pop(L, 1);
+
+  luaL_newmetatable(L, SCRIPT_MT_TRACE_EVENT);
+  lua_pushcfunction(L, Script_TraceEventIndex);
+  lua_setfield(L, -2, "__index");
+  lua_pop(L, 1);
+
+  luaL_newmetatable(L, SCRIPT_MT_SPI_EVENTS);
+  lua_pushcfunction(L, Script_SpiSlaveEventsGc);
+  lua_setfield(L, -2, "__gc");
+  lua_pushcfunction(L, Script_SpiSlaveEventsLen);
+  lua_setfield(L, -2, "__len");
+  lua_pushcfunction(L, Script_SpiSlaveEventsIndex);
+  lua_setfield(L, -2, "__index");
+  lua_pop(L, 1);
+
+  luaL_newmetatable(L, SCRIPT_MT_SPI_EVENT);
+  lua_pushcfunction(L, Script_SpiSlaveEventIndex);
+  lua_setfield(L, -2, "__index");
+  lua_pop(L, 1);
+}
+
+static cJSON* Script_TraceEventToJson(const Script_TraceEvents* te, size_t index)
+{
+  if (te->events == NULL || index >= te->count) return cJSON_CreateNull();
+  const GpioCtrl_TraceEvent* e = &te->events[index];
+  cJSON* ev = cJSON_CreateObject();
+  cJSON_AddNumberToObject(ev, "pin", e->pin);
+  cJSON_AddStringToObject(ev, "edge", e->edge ? "raising" : "falling");
+  cJSON_AddNumberToObject(ev, "level", e->level);
+  cJSON_AddNumberToObject(ev, "time", (double)(te->startTimeUs + e->deltaUs));
+  return ev;
+}
+
+static cJSON* Script_TraceEventsToJson(const Script_TraceEvents* te)
+{
+  cJSON* arr = cJSON_CreateArray();
+  for (size_t i = 0; i < te->count; i++) {
+    cJSON_AddItemToArray(arr, Script_TraceEventToJson(te, i));
+  }
+  return arr;
+}
+
+static cJSON* Script_SpiSlaveEventToJson(const uint8_t* storage, size_t len, size_t offset)
+{
+  size_t off = offset;
+  SpiCtrl_Event ev;
+  if (!SpiCtrl_NextSlaveEvent(storage, len, &off, &ev)) return cJSON_CreateNull();
+  cJSON* item = cJSON_CreateObject();
+  cJSON_AddNumberToObject(item, "startTime", (double)ev.startUs);
+  cJSON_AddNumberToObject(item, "endTime", (double)ev.endUs);
+  char receive[CONFIG_SPI_MAX_TRANSFER_BYTES * 2 + 1];
+  char send[CONFIG_SPI_MAX_TRANSFER_BYTES * 2 + 1];
+  Tool_HexEncode(ev.recv, ev.recvLen, receive);
+  Tool_HexEncode(ev.send, ev.sendLen, send);
+  cJSON_AddStringToObject(item, "receive", receive);
+  cJSON_AddStringToObject(item, "send", send);
+  return item;
+}
+
+static cJSON* Script_SpiSlaveEventsToJson(const Script_SpiSlaveEvents* se)
+{
+  cJSON* arr = cJSON_CreateArray();
+  size_t offset = 0;
+  SpiCtrl_Event ev;
+  while (true) {
+    size_t start = offset;
+    if (!SpiCtrl_NextSlaveEvent(se->storage, se->len, &offset, &ev)) break;
+    cJSON_AddItemToArray(arr, Script_SpiSlaveEventToJson(se->storage, se->len, start));
+  }
+  return arr;
+}
+
 static void Script_JsonToLua(lua_State* L, const cJSON* node)
 {
   if (node == NULL || cJSON_IsNull(node)) {
@@ -476,6 +761,27 @@ static cJSON* Script_LuaToJson(lua_State* L, int idx)
       return cJSON_CreateString(lua_tostring(L, idx));
     case LUA_TTABLE:
       return Script_LuaTableToJson(L, idx);
+    case LUA_TUSERDATA: {
+      Script_TraceEvents* te = (Script_TraceEvents*)luaL_testudata(L, idx, SCRIPT_MT_TRACE_EVENTS);
+      if (te != NULL) return Script_TraceEventsToJson(te);
+      Script_TraceEvent* trow = (Script_TraceEvent*)luaL_testudata(L, idx, SCRIPT_MT_TRACE_EVENT);
+      if (trow != NULL) {
+        lua_getiuservalue(L, idx, 1);
+        Script_TraceEvents* parent = (Script_TraceEvents*)luaL_testudata(L, -1, SCRIPT_MT_TRACE_EVENTS);
+        lua_pop(L, 1);
+        return parent != NULL ? Script_TraceEventToJson(parent, trow->index) : cJSON_CreateNull();
+      }
+      Script_SpiSlaveEvents* se = (Script_SpiSlaveEvents*)luaL_testudata(L, idx, SCRIPT_MT_SPI_EVENTS);
+      if (se != NULL) return Script_SpiSlaveEventsToJson(se);
+      Script_SpiSlaveEvent* srow = (Script_SpiSlaveEvent*)luaL_testudata(L, idx, SCRIPT_MT_SPI_EVENT);
+      if (srow != NULL) {
+        lua_getiuservalue(L, idx, 1);
+        Script_SpiSlaveEvents* parent = (Script_SpiSlaveEvents*)luaL_testudata(L, -1, SCRIPT_MT_SPI_EVENTS);
+        lua_pop(L, 1);
+        return parent != NULL ? Script_SpiSlaveEventToJson(parent->storage, parent->len, srow->offset) : cJSON_CreateNull();
+      }
+      return cJSON_CreateString(lua_typename(L, LUA_TUSERDATA));
+    }
     default:
       return cJSON_CreateString(lua_typename(L, lua_type(L, idx)));
   }
@@ -556,6 +862,33 @@ static int Script_LuaTool(lua_State* L)
     }
   }
 
+  /* MCP-style capture: packed buffers + userdata views (no event cJSON tree). */
+  if (strcmp(name, "trace_pins") == 0) {
+    GpioCtrl_TraceEvent* events = NULL;
+    size_t eventCount = 0;
+    int64_t startTimeUs = 0;
+    ToolCall_Result tr = ToolCall_TraceCapture(args, &events, &eventCount, &startTimeUs);
+    cJSON_Delete(args);
+    if (!tr.ok) {
+      Script_PushErr(L, tr.reason, tr.httpStatus);
+      return lua_error(L);
+    }
+    Script_PushTraceResult(L, events, eventCount, startTimeUs);
+    return 1;
+  }
+  if (strcmp(name, "spi_slave_receive") == 0) {
+    uint8_t* storage = NULL;
+    size_t len = 0;
+    ToolCall_Result tr = ToolCall_SpiSlaveCapture(args, &storage, &len);
+    cJSON_Delete(args);
+    if (!tr.ok) {
+      Script_PushErr(L, tr.reason, tr.httpStatus);
+      return lua_error(L);
+    }
+    Script_PushSpiSlaveResult(L, storage, len);
+    return 1;
+  }
+
   ToolCall_Result tr = ToolCall_Invoke("lua", name, args);
   cJSON_Delete(args);
   if (!tr.ok) {
@@ -610,6 +943,8 @@ static void Script_OpenSandbox(lua_State* L)
   lua_pushcfunction(L, Script_LuaSleep);
   lua_setglobal(L, "sleep");
 
+  Script_RegisterViewMetatables(L);
+
   static const char* tools[] = {
       "list_pins",
       "configure_pins",
@@ -626,6 +961,11 @@ static void Script_OpenSandbox(lua_State* L)
       "uart_transmit",
       "uart_receive",
       "uart_flush",
+      "list_spis",
+      "configure_spi",
+      "spi_master_transceive",
+      "spi_slave_receive",
+      "spi_slave_transmit",
       "play_buzzer",
       "create_lock",
       "renew_lock",
@@ -727,12 +1067,16 @@ static void Script_ExecuteJob(Script_Job* job)
 
   int loadStatus = luaL_loadbuffer(L, job->script, scriptLen, "script");
   if (loadStatus != LUA_OK) {
-    (void)Script_ExtractErr(L, out->reason, sizeof(out->reason));
+    if (loadStatus == LUA_ERRMEM) {
+      snprintf(out->reason, sizeof(out->reason), "Script ran out of memory.");
+    } else {
+      (void)Script_ExtractErr(L, out->reason, sizeof(out->reason));
+    }
     out->elapsedUs = (uint64_t)(Script_NowUs() - started);
     out->calls = scriptCalls;
     lua_close(L);
     job->status = SCRIPT_ERR_RUNTIME;
-    out->httpStatus = 400;
+    out->httpStatus = loadStatus == LUA_ERRMEM ? 422 : 400;
     return;
   }
 
@@ -754,7 +1098,7 @@ static void Script_ExecuteJob(Script_Job* job)
     job->status = SCRIPT_ERR_RUNTIME;
     return;
   }
-  if (scriptAbort == SCRIPT_ABORT_OOM) {
+  if (runStatus == LUA_ERRMEM) {
     snprintf(out->reason, sizeof(out->reason), "Script ran out of memory.");
     out->httpStatus = 422;
     lua_close(L);

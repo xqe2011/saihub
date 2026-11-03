@@ -108,9 +108,11 @@ GPIO：`list_pins`、`configure_pins`、`get_pin_levels`、`set_pin_levels`、`p
 
 UART：`list_uarts`、`configure_uart`、`uart_transmit`、`uart_receive`、`uart_flush`。
 
+SPI：`list_spis`、`configure_spi`、`spi_master_transceive`、`spi_slave_receive`、`spi_slave_transmit`。
+
 蜂鸣器：`play_buzzer`。
 
-脚本：`run_script` —— 在设备端沙箱中运行 Lua 5.4，可调用同一套引脚 / 电源工具，另提供 `sleep(us)`。
+脚本：`run_script` —— 在设备端沙箱中运行 Lua 5.4，可调用同一套引脚、电源、UART 和 SPI 工具，另提供 `sleep(us)`。
 
 完整 schema 见 [`mcp.json`](../mcp.json)；REST 对应描述见 [`openapi.json`](../openapi.json)。
 

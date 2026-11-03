@@ -40,11 +40,12 @@ typedef struct {
   int level;
 } GpioCtrl_State;
 
+/* Packed sample: startTime + deltaUs. edge: 1=raising, 0=falling. */
 typedef struct {
-  int pin; /* logical pin; -1 for single-pin response without pin field usage */
-  const char* edge;
-  int level;
-  int64_t time;
+  unsigned deltaUs : 27;
+  unsigned level : 1;
+  unsigned edge : 1;
+  unsigned pin : 3;
 } GpioCtrl_TraceEvent;
 
 bool GpioCtrl_IsValidLogicalPin(int pin);
@@ -73,9 +74,10 @@ const char* GpioCtrl_PowerRailToString(GpioCtrl_PowerRail rail);
 
 /**
  * Blocking capture. eventsOut capacity is maxEvents.
- * includePin: if true, fill event.pin; else leave pin as -1.
+ * *startTimeUsOut is capture start; event absolute time is startTimeUs + deltaUs.
  */
 esp_err_t GpioCtrl_Trace(const int* logicalPins, size_t pinCount, GpioCtrl_Edge edge, uint64_t durationUs,
-                         GpioCtrl_TraceEvent* eventsOut, size_t maxEvents, size_t* eventCountOut, bool includePin);
+                         GpioCtrl_TraceEvent* eventsOut, size_t maxEvents, size_t* eventCountOut,
+                         int64_t* startTimeUsOut);
 
 #endif

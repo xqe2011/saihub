@@ -38,7 +38,7 @@ typedef struct {
   GpioCtrl_TraceEvent* events;
   size_t capacity;
   volatile size_t count;
-  bool includePin;
+  int64_t startTimeUs;
 } TraceContext;
 
 static int logicalToHw[] = CONFIG_GPIO_LOGICAL_TO_HW;
@@ -257,10 +257,10 @@ static void IRAM_ATTR GpioCtrl_IsrHandler(void* arg)
                     (context->edge == GPIO_CTRL_EDGE_FALLING && !raising);
     if (accepted) {
       GpioCtrl_TraceEvent* event = &context->events[context->count];
-      event->pin = context->includePin ? logicalPin : -1;
-      event->edge = raising ? "raising" : "falling";
+      event->pin = logicalPin;
+      event->edge = raising;
       event->level = level;
-      event->time = GpioCtrl_NowUs();
+      event->deltaUs = GpioCtrl_NowUs() - context->startTimeUs;
       context->count++;
     }
   }
@@ -345,7 +345,6 @@ esp_err_t GpioCtrl_Init(void)
     int hw = GpioCtrl_Hw(i);
     gpio_reset_pin(hw);
     TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_SyncPad(i));
-    TOOL_CHECK_ESP_OK_OR_RETURN(gpio_isr_handler_add(hw, GpioCtrl_IsrHandler, (void*)(intptr_t)i));
   }
 
   TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_InitPowerRail(CONFIG_GPIO_POWER_3V3_PIN, &powerEnable3v3));
@@ -495,6 +494,7 @@ static esp_err_t GpioCtrl_EnableTraceInterrupt(int logicalPin, GpioCtrl_Edge edg
   gpio_int_type_t type = GPIO_INTR_ANYEDGE;
   if (edge == GPIO_CTRL_EDGE_RAISING) type = GPIO_INTR_POSEDGE;
   if (edge == GPIO_CTRL_EDGE_FALLING) type = GPIO_INTR_NEGEDGE;
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_isr_handler_add(hw, GpioCtrl_IsrHandler, (void*)(intptr_t)logicalPin));
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_intr_type(hw, type));
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_intr_enable(hw));
   pins[logicalPin].interruptActive = true;
@@ -536,9 +536,10 @@ static void GpioCtrl_ReleaseTracePins(const int* logicalPins, size_t pinCount, T
 }
 
 esp_err_t GpioCtrl_Trace(const int* logicalPins, size_t pinCount, GpioCtrl_Edge edge, uint64_t durationUs,
-                         GpioCtrl_TraceEvent* eventsOut, size_t maxEvents, size_t* eventCountOut, bool includePin)
+                         GpioCtrl_TraceEvent* eventsOut, size_t maxEvents, size_t* eventCountOut,
+                         int64_t* startTimeUsOut)
 {
-  if (logicalPins == NULL || pinCount == 0 || eventsOut == NULL || eventCountOut == NULL) {
+  if (logicalPins == NULL || pinCount == 0 || eventsOut == NULL || eventCountOut == NULL || startTimeUsOut == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
   if (durationUs == 0 || durationUs > CONFIG_GPIO_TRACE_MAX_DURATION_US) {
@@ -556,12 +557,13 @@ esp_err_t GpioCtrl_Trace(const int* logicalPins, size_t pinCount, GpioCtrl_Edge 
       .events = eventsOut,
       .capacity = maxEvents,
       .count = 0,
-      .includePin = includePin,
+      .startTimeUs = 0,
   };
 
   esp_err_t result = GpioCtrl_ClaimTracePins(logicalPins, pinCount, &context);
   if (result != ESP_OK) return result;
 
+  context.startTimeUs = GpioCtrl_NowUs();
   size_t enabledCount = 0;
   for (; enabledCount < pinCount; enabledCount++) {
     result = GpioCtrl_EnableTraceInterrupt(logicalPins[enabledCount], edge);
@@ -579,5 +581,6 @@ cleanup:
   }
   GpioCtrl_ReleaseTracePins(logicalPins, pinCount, &context);
   *eventCountOut = context.count;
+  *startTimeUsOut = context.startTimeUs;
   return result;
 }

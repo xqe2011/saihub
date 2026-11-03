@@ -1,0 +1,559 @@
+/**
+ * @name SPI routes
+ * @file spi.c
+ * @author xqe2011
+ */
+#include "route.h"
+
+#include "http_server.h"
+#include "lock.h"
+#include "spi_ctrl.h"
+#include "tool.h"
+
+#include <cJSON.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static const char* tag = "SAIHub-Spi";
+
+static int Route_ParseSpiPathId(const char* uri, const char* suffix, int* idOut)
+{
+  const char* prefix = "/spi/";
+  if (strncmp(uri, prefix, strlen(prefix)) != 0) return -1;
+  const char* p = uri + strlen(prefix);
+  if (*p < '0' || *p > '9') return -2;
+  char* end = NULL;
+  long raw = strtol(p, &end, 10);
+  if (end == p) return -2;
+  if (suffix) {
+    size_t sl = strlen(suffix);
+    if (strncmp(end, suffix, sl) != 0) return -2;
+    if (end[sl] != '\0' && end[sl] != '?') return -2;
+  } else if (*end != '\0' && *end != '?') {
+    return -2;
+  }
+  *idOut = (int)raw;
+  if (!SpiCtrl_IsValidId(*idOut)) return -3;
+  return 0;
+}
+
+static esp_err_t Route_SpiIdError(HttpServer_Context* ctx, int pr)
+{
+  if (pr == -3) {
+    char reason[128];
+    const char* p = strstr(HttpServer_GetUri(ctx), "/spi/");
+    long raw = p ? strtol(p + 5, NULL, 10) : -1;
+    snprintf(reason, sizeof(reason), "SPI %ld does not exist. Use an id from GET /spi/.", raw);
+    return HttpServer_SendError(ctx, 404, reason);
+  }
+  return HttpServer_SendError(ctx, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
+}
+
+static void Route_AddOptionalPin(cJSON* pins, const char* key, int pin)
+{
+  if (pin < 0) cJSON_AddNullToObject(pins, key);
+  else cJSON_AddNumberToObject(pins, key, pin);
+}
+
+static cJSON* Route_SpiConfigToJson(int id, const SpiCtrl_Config* cfg)
+{
+  cJSON* item = cJSON_CreateObject();
+  cJSON_AddNumberToObject(item, "id", id);
+  cJSON_AddBoolToObject(item, "enable", cfg->enable);
+  cJSON_AddStringToObject(item, "role", SpiCtrl_RoleToString(cfg->role));
+  cJSON_AddNumberToObject(item, "cpol", cfg->cpol);
+  cJSON_AddNumberToObject(item, "cpha", cfg->cpha);
+  cJSON_AddStringToObject(item, "bitOrder", SpiCtrl_BitOrderToString(cfg->bitOrder));
+  if (cfg->role == SPI_CTRL_ROLE_MASTER) cJSON_AddNumberToObject(item, "clockHz", cfg->clockHz);
+  cJSON* pins = cJSON_CreateObject();
+  Route_AddOptionalPin(pins, "mosi", cfg->mosiPin);
+  Route_AddOptionalPin(pins, "miso", cfg->misoPin);
+  Route_AddOptionalPin(pins, "clk", cfg->clkPin);
+  Route_AddOptionalPin(pins, "cs", cfg->csPin);
+  cJSON_AddItemToObject(item, "pins", pins);
+  return item;
+}
+
+static int Route_ParseOptionalPin(cJSON* pinsObj, const char* key, int* pinOut, char* reason, size_t reasonLen)
+{
+  cJSON* item = cJSON_GetObjectItem(pinsObj, key);
+  if (item == NULL || cJSON_IsNull(item)) {
+    *pinOut = -1;
+    return 0;
+  }
+  if (!cJSON_IsNumber(item)) {
+    snprintf(reason, reasonLen, "pins.%s must be an integer pin, null, or omitted.", key);
+    return -1;
+  }
+  *pinOut = item->valueint;
+  return 0;
+}
+
+static esp_err_t Route_ParseSpiConfigBody(cJSON* body, SpiCtrl_Config* cfg, char* reason, size_t reasonLen)
+{
+  cJSON* enableItem = cJSON_GetObjectItem(body, "enable");
+  cJSON* roleItem = cJSON_GetObjectItem(body, "role");
+  cJSON* cpolItem = cJSON_GetObjectItem(body, "cpol");
+  cJSON* cphaItem = cJSON_GetObjectItem(body, "cpha");
+  cJSON* bitItem = cJSON_GetObjectItem(body, "bitOrder");
+  cJSON* clockItem = cJSON_GetObjectItem(body, "clockHz");
+  cJSON* pinsItem = cJSON_GetObjectItem(body, "pins");
+
+  if (!cJSON_IsBool(enableItem)) {
+    snprintf(reason, reasonLen, "enable must be boolean.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!cJSON_IsString(roleItem) || !SpiCtrl_RoleFromString(roleItem->valuestring, &cfg->role)) {
+    snprintf(reason, reasonLen, "role must be one of: master, slave.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!cJSON_IsNumber(cpolItem) || (cpolItem->valueint != 0 && cpolItem->valueint != 1)) {
+    snprintf(reason, reasonLen, "cpol must be 0 or 1.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!cJSON_IsNumber(cphaItem) || (cphaItem->valueint != 0 && cphaItem->valueint != 1)) {
+    snprintf(reason, reasonLen, "cpha must be 0 or 1.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!cJSON_IsString(bitItem) || !SpiCtrl_BitOrderFromString(bitItem->valuestring, &cfg->bitOrder)) {
+    snprintf(reason, reasonLen, "bitOrder must be one of: msb, lsb.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (cfg->role == SPI_CTRL_ROLE_SLAVE) {
+    if (clockItem != NULL) {
+      snprintf(reason, reasonLen, "clockHz is not supported when role is slave.");
+      return ESP_ERR_INVALID_ARG;
+    }
+    cfg->clockHz = 0;
+  } else if (!cJSON_IsNumber(clockItem)) {
+    snprintf(reason, reasonLen, "clockHz must be an integer from %d to %d.", CONFIG_SPI_CLOCK_HZ_MIN, CONFIG_SPI_CLOCK_HZ_MAX);
+    return ESP_ERR_INVALID_ARG;
+  } else {
+    cfg->clockHz = clockItem->valueint;
+  }
+  if (!cJSON_IsObject(pinsItem)) {
+    snprintf(reason, reasonLen, "pins must be an object with mosi, miso, clk, and cs.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  cfg->enable = cJSON_IsTrue(enableItem);
+  cfg->cpol = cpolItem->valueint;
+  cfg->cpha = cphaItem->valueint;
+  if (Route_ParseOptionalPin(pinsItem, "mosi", &cfg->mosiPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseOptionalPin(pinsItem, "miso", &cfg->misoPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseOptionalPin(pinsItem, "clk", &cfg->clkPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseOptionalPin(pinsItem, "cs", &cfg->csPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  return ESP_OK;
+}
+
+static esp_err_t Route_ParseByteArray(cJSON* item, const char* field, int index, uint8_t* out, size_t* lenOut, char* reason,
+                                      size_t reasonLen)
+{
+  if (!cJSON_IsString(item) || item->valuestring == NULL) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
+  }
+  size_t chars = strlen(item->valuestring);
+  if ((chars & 1U) != 0) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (chars / 2 > CONFIG_SPI_MAX_TRANSFER_BYTES) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must contain at most %u bytes.", index, field,
+             (unsigned)CONFIG_SPI_MAX_TRANSFER_BYTES);
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!Tool_HexDecode(item->valuestring, out, CONFIG_SPI_MAX_TRANSFER_BYTES, lenOut)) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
+  }
+  return ESP_OK;
+}
+
+static esp_err_t Route_ParseSlaveMap(cJSON* body, uint8_t* packed, size_t* usedOut, char* reason, size_t reasonLen)
+{
+  *usedOut = 0;
+  cJSON* mapping = cJSON_GetObjectItem(body, "mapping");
+  if (!cJSON_IsArray(mapping)) {
+    snprintf(reason, reasonLen, "mapping must be an array.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  int n = cJSON_GetArraySize(mapping);
+  size_t used = 0;
+  for (int i = 0; i < n; i++) {
+    cJSON* entry = cJSON_GetArrayItem(mapping, i);
+    if (!cJSON_IsObject(entry)) {
+      snprintf(reason, reasonLen, "mapping[%d] must be an object.", i);
+      return ESP_ERR_INVALID_ARG;
+    }
+    cJSON* typeItem = cJSON_GetObjectItem(entry, "type");
+    SpiCtrl_MapType type;
+    if (!cJSON_IsString(typeItem) || typeItem->valuestring == NULL) {
+      snprintf(reason, reasonLen, "mapping[%d].type must be one of: exact, prefix.", i);
+      return ESP_ERR_INVALID_ARG;
+    }
+    if (strcmp(typeItem->valuestring, "exact") == 0) type = SPI_CTRL_MAP_EXACT;
+    else if (strcmp(typeItem->valuestring, "prefix") == 0) type = SPI_CTRL_MAP_PREFIX;
+    else {
+      snprintf(reason, reasonLen, "mapping[%d].type must be one of: exact, prefix.", i);
+      return ESP_ERR_INVALID_ARG;
+    }
+    uint8_t mosi[CONFIG_SPI_MAX_TRANSFER_BYTES];
+    uint8_t miso[CONFIG_SPI_MAX_TRANSFER_BYTES];
+    size_t mosiLen = 0;
+    size_t misoLen = 0;
+    if (Route_ParseByteArray(cJSON_GetObjectItem(entry, "mosi"), "mosi", i, mosi, &mosiLen, reason, reasonLen) != ESP_OK) {
+      return ESP_ERR_INVALID_ARG;
+    }
+    if (Route_ParseByteArray(cJSON_GetObjectItem(entry, "miso"), "miso", i, miso, &misoLen, reason, reasonLen) != ESP_OK) {
+      return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t err = SpiCtrl_PackMapAppend(packed, CONFIG_SPI_SLAVE_MAP_BYTES, &used, i, type, mosi, mosiLen, miso, misoLen,
+                                          reason, reasonLen);
+    if (err != ESP_OK) return err;
+  }
+  *usedOut = used;
+  return ESP_OK;
+}
+
+static esp_err_t Route_SpiConfigStatus(esp_err_t ret, HttpServer_Context* ctx, const char* reason)
+{
+  if (ret == ESP_ERR_INVALID_ARG) return HttpServer_SendError(ctx, 400, reason);
+  if (ret == ESP_ERR_INVALID_STATE) return HttpServer_SendError(ctx, 409, reason);
+  return HttpServer_SendError(ctx, 500, reason[0] ? reason : "internal");
+}
+
+static esp_err_t Route_SpiCallStatus(esp_err_t ret, HttpServer_Context* ctx, const char* reason)
+{
+  if (ret == ESP_ERR_INVALID_ARG || ret == ESP_ERR_INVALID_SIZE) return HttpServer_SendError(ctx, 400, reason);
+  if (ret == ESP_ERR_INVALID_STATE) return HttpServer_SendError(ctx, 422, reason);
+  return HttpServer_SendError(ctx, 500, reason[0] ? reason : "internal");
+}
+
+typedef struct {
+  HttpServer_Context* ctx;
+  bool escape;
+  esp_err_t err;
+  char buf[128];
+  size_t used;
+} Route_SpiOut;
+
+static void Route_SpiOutFlush(Route_SpiOut* out)
+{
+  if (out->err != ESP_OK || out->used == 0) return;
+  out->err = HttpServer_SendChunk(out->ctx, out->buf, out->used);
+  out->used = 0;
+}
+
+static void Route_SpiOutAdd(Route_SpiOut* out, char c)
+{
+  if (out->err != ESP_OK) return;
+  size_t need = (out->escape && (c == '"' || c == '\\')) ? 2 : 1;
+  if (out->used + need > sizeof(out->buf)) Route_SpiOutFlush(out);
+  if (out->err != ESP_OK) return;
+  if (need == 2) out->buf[out->used++] = '\\';
+  out->buf[out->used++] = c;
+}
+
+static void Route_SpiOutWrite(Route_SpiOut* out, const char* text)
+{
+  if (text == NULL) return;
+  while (*text != '\0') Route_SpiOutAdd(out, *text++);
+}
+
+static void Route_SpiOutBytes(Route_SpiOut* out, const uint8_t* data, size_t len)
+{
+  for (size_t i = 0; out->err == ESP_OK && i < len; i++) {
+    char pair[3];
+    Tool_HexEncode(data + i, 1, pair);
+    Route_SpiOutAdd(out, pair[0]);
+    Route_SpiOutAdd(out, pair[1]);
+  }
+}
+
+static void Route_SpiOutTime(Route_SpiOut* out, const char* prefix)
+{
+  char tail[48];
+  int n = snprintf(tail, sizeof(tail), "%s%lld}", prefix, (long long)HttpServer_NowUs());
+  if (n < 0 || (size_t)n >= sizeof(tail)) {
+    out->err = ESP_ERR_INVALID_SIZE;
+    return;
+  }
+  Route_SpiOutWrite(out, tail);
+}
+
+static void Route_SpiOutMaster(Route_SpiOut* out, const uint8_t* data, size_t len)
+{
+  if (len > 0 && data == NULL) {
+    out->err = ESP_ERR_INVALID_ARG;
+    return;
+  }
+  Route_SpiOutWrite(out, "{\"data\":\"");
+  Route_SpiOutBytes(out, data, len);
+  Route_SpiOutTime(out, "\",\"time\":");
+}
+
+static void Route_SpiOutSlave(Route_SpiOut* out, const uint8_t* storage, size_t len)
+{
+  if (len > 0 && storage == NULL) {
+    out->err = ESP_ERR_INVALID_ARG;
+    return;
+  }
+  Route_SpiOutWrite(out, "{\"events\":[");
+  size_t offset = 0;
+  SpiCtrl_Event ev;
+  bool first = true;
+  while (out->err == ESP_OK && SpiCtrl_NextSlaveEvent(storage, len, &offset, &ev)) {
+    if (!first) Route_SpiOutWrite(out, ",");
+    first = false;
+    char head[96];
+    int n = snprintf(head, sizeof(head), "{\"startTime\":%lld,\"endTime\":%lld,\"receive\":\"", (long long)ev.startUs,
+                     (long long)ev.endUs);
+    if (n < 0 || (size_t)n >= sizeof(head)) {
+      out->err = ESP_ERR_INVALID_SIZE;
+      return;
+    }
+    Route_SpiOutWrite(out, head);
+    Route_SpiOutBytes(out, ev.recv, ev.recvLen);
+    Route_SpiOutWrite(out, "\",\"send\":\"");
+    Route_SpiOutBytes(out, ev.send, ev.sendLen);
+    Route_SpiOutWrite(out, "\"}");
+  }
+  Route_SpiOutTime(out, "],\"time\":");
+}
+
+static esp_err_t Route_SpiAppend(HttpServer_Context* ctx, bool escape, const uint8_t* data, size_t len, bool slave)
+{
+  Route_SpiOut out = {.ctx = ctx, .escape = escape, .err = ESP_OK};
+  if (slave) Route_SpiOutSlave(&out, data, len);
+  else Route_SpiOutMaster(&out, data, len);
+  Route_SpiOutFlush(&out);
+  return out.err;
+}
+
+esp_err_t Route_SpiAppendMasterJson(HttpServer_Context* ctx, const uint8_t* data, size_t len, bool escape)
+{
+  return Route_SpiAppend(ctx, escape, data, len, false);
+}
+
+esp_err_t Route_SpiAppendSlaveJson(HttpServer_Context* ctx, const uint8_t* storage, size_t len, bool escape)
+{
+  return Route_SpiAppend(ctx, escape, storage, len, true);
+}
+
+static unsigned Route_SpiEventCount(const uint8_t* storage, size_t len)
+{
+  unsigned count = 0;
+  size_t offset = 0;
+  SpiCtrl_Event ev;
+  while (SpiCtrl_NextSlaveEvent(storage, len, &offset, &ev)) count++;
+  return count;
+}
+
+static esp_err_t Route_SpiSendJson(HttpServer_Context* ctx,
+                                   esp_err_t (*append)(HttpServer_Context* ctx, const uint8_t* data, size_t len, bool escape),
+                                   const uint8_t* data, size_t len, const char* field, unsigned count)
+{
+  esp_err_t ret = HttpServer_SendChunkBegin(ctx, 200, "application/json", NULL);
+  if (ret == ESP_OK) ret = append(ctx, data, len, false);
+  esp_err_t endRet = HttpServer_SendChunkDone(ctx);
+  if (ret == ESP_OK) {
+    ESP_LOGI(tag, "Resp rest/%s %s %s -> 200 %s=%u", HttpServer_GetFrom(ctx),
+             HttpServer_MethodName(HttpServer_GetMethod(ctx)), HttpServer_GetUri(ctx), field, count);
+  }
+  return ret == ESP_OK ? endRet : ret;
+}
+
+static esp_err_t Route_SpiListHandler(HttpServer_Context* ctx)
+{
+  HttpServer_LogCall(ctx);
+  TOOL_CALL_LOG("rest/%s %s %s", HttpServer_GetFrom(ctx), HttpServer_MethodName(HttpServer_GetMethod(ctx)),
+                HttpServer_GetUri(ctx));
+  Lock_SweepExpired();
+  cJSON* root = cJSON_CreateObject();
+  cJSON* arr = cJSON_CreateArray();
+  int count = SpiCtrl_GetCount();
+  for (int i = 0; i < count; i++) {
+    SpiCtrl_Config cfg;
+    SpiCtrl_GetConfig(i, &cfg);
+    cJSON_AddItemToArray(arr, Route_SpiConfigToJson(i, &cfg));
+  }
+  cJSON_AddItemToObject(root, "spis", arr);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  return HttpServer_SendJson(ctx, 200, root);
+}
+
+static esp_err_t Route_SpiPostConfigHandler(HttpServer_Context* ctx)
+{
+  HttpServer_LogCall(ctx);
+  Lock_SweepExpired();
+  int id = 0;
+  int pr = Route_ParseSpiPathId(HttpServer_GetUri(ctx), "/config", &id);
+  if (pr != 0) return Route_SpiIdError(ctx, pr);
+  if (!HttpServer_HasJsonContentType(ctx)) return HttpServer_SendError(ctx, 415, "Content-Type must be application/json.");
+
+  char lockId[64];
+  char reason[256];
+  int st = HttpServer_LockStatus(ctx, LOCK_KIND_SPI, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
+  if (st) return HttpServer_SendError(ctx, st, reason);
+
+  esp_err_t perr = ESP_OK;
+  cJSON* body = HttpServer_ParseBody(ctx, &perr);
+  if (body == NULL) return HttpServer_SendError(ctx, 400, "invalid_json");
+  SpiCtrl_Config cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  if (Route_ParseSpiConfigBody(body, &cfg, reason, sizeof(reason)) != ESP_OK) {
+    cJSON_Delete(body);
+    return HttpServer_SendError(ctx, 400, reason);
+  }
+  cJSON_Delete(body);
+  esp_err_t ret = SpiCtrl_SetConfig(id, &cfg, reason, sizeof(reason));
+  if (ret != ESP_OK) return Route_SpiConfigStatus(ret, ctx, reason);
+  Lock_Touch(lockId);
+  return HttpServer_SendEmpty(ctx, 204);
+}
+
+static esp_err_t Route_SpiPostTransceiveHandler(HttpServer_Context* ctx)
+{
+  HttpServer_LogCall(ctx);
+  Lock_SweepExpired();
+  int id = 0;
+  int pr = Route_ParseSpiPathId(HttpServer_GetUri(ctx), "/master/transceive", &id);
+  if (pr != 0) return Route_SpiIdError(ctx, pr);
+  if (!HttpServer_HasJsonContentType(ctx)) return HttpServer_SendError(ctx, 415, "Content-Type must be application/json.");
+
+  char lockId[64];
+  char reason[256];
+  int st = HttpServer_LockStatus(ctx, LOCK_KIND_SPI, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
+  if (st) return HttpServer_SendError(ctx, st, reason);
+
+  esp_err_t perr = ESP_OK;
+  cJSON* body = HttpServer_ParseBody(ctx, &perr);
+  if (body == NULL) return HttpServer_SendError(ctx, 400, "invalid_json");
+  cJSON* dataItem = cJSON_GetObjectItem(body, "data");
+  if (!cJSON_IsString(dataItem) || dataItem->valuestring == NULL || (strlen(dataItem->valuestring) & 1U) != 0) {
+    cJSON_Delete(body);
+    return HttpServer_SendError(ctx, 400, "data must be an even-length hex string.");
+  }
+  size_t n = strlen(dataItem->valuestring) / 2;
+  if (n > CONFIG_SPI_MAX_TRANSFER_BYTES) {
+    cJSON_Delete(body);
+    snprintf(reason, sizeof(reason), "data is too large. Send at most %u bytes per request.",
+             (unsigned)CONFIG_SPI_MAX_TRANSFER_BYTES);
+    return HttpServer_SendError(ctx, 400, reason);
+  }
+  uint8_t* tx = NULL;
+  uint8_t* rx = NULL;
+  if (n > 0) {
+    tx = malloc(n);
+    rx = malloc(n);
+    if (tx == NULL || rx == NULL) {
+      free(tx);
+      free(rx);
+      cJSON_Delete(body);
+      return HttpServer_SendError(ctx, 500, "internal");
+    }
+    size_t decoded = 0;
+    if (!Tool_HexDecode(dataItem->valuestring, tx, n, &decoded)) {
+      free(tx);
+      free(rx);
+      cJSON_Delete(body);
+      return HttpServer_SendError(ctx, 400, "data must be an even-length hex string.");
+    }
+  }
+  cJSON_Delete(body);
+  size_t rxLen = 0;
+  esp_err_t ret = SpiCtrl_MasterTransceive(id, tx, n, rx, &rxLen, reason, sizeof(reason));
+  free(tx);
+  if (ret != ESP_OK) {
+    free(rx);
+    return Route_SpiCallStatus(ret, ctx, reason);
+  }
+  if (rxLen == 0) {
+    free(rx);
+    rx = NULL;
+  }
+  Lock_Touch(lockId);
+  esp_err_t sent = Route_SpiSendJson(ctx, Route_SpiAppendMasterJson, rx, rxLen, "spi_bytes", (unsigned)rxLen);
+  free(rx);
+  return sent;
+}
+
+static esp_err_t Route_SpiGetSlaveReceiveHandler(HttpServer_Context* ctx)
+{
+  HttpServer_LogCall(ctx);
+  Lock_SweepExpired();
+  int id = 0;
+  int pr = Route_ParseSpiPathId(HttpServer_GetUri(ctx), "/slave/receive", &id);
+  if (pr != 0) return Route_SpiIdError(ctx, pr);
+
+  char lockId[64];
+  char reason[256];
+  int st = HttpServer_LockStatus(ctx, LOCK_KIND_SPI, id, LOCK_METHOD_READ, lockId, sizeof(lockId), reason, sizeof(reason));
+  if (st) return HttpServer_SendError(ctx, st, reason);
+  esp_err_t ret = SpiCtrl_CheckSlaveReceive(id, reason, sizeof(reason));
+  if (ret != ESP_OK) return Route_SpiCallStatus(ret, ctx, reason);
+
+  uint8_t* storage = malloc(CONFIG_SPI_SLAVE_EVENT_BYTES);
+  if (storage == NULL) return HttpServer_SendError(ctx, 500, "internal");
+  size_t len = SpiCtrl_TakeSlaveEvents(id, storage, CONFIG_SPI_SLAVE_EVENT_BYTES);
+  unsigned events = Route_SpiEventCount(storage, len);
+  if (len == 0) {
+    free(storage);
+    storage = NULL;
+  }
+  Lock_Touch(lockId);
+  esp_err_t sent = Route_SpiSendJson(ctx, Route_SpiAppendSlaveJson, storage, len, "spi_events", events);
+  free(storage);
+  return sent;
+}
+
+static esp_err_t Route_SpiPostSlaveTransmitHandler(HttpServer_Context* ctx)
+{
+  HttpServer_LogCall(ctx);
+  Lock_SweepExpired();
+  int id = 0;
+  int pr = Route_ParseSpiPathId(HttpServer_GetUri(ctx), "/slave/transmit", &id);
+  if (pr != 0) return Route_SpiIdError(ctx, pr);
+  if (!HttpServer_HasJsonContentType(ctx)) return HttpServer_SendError(ctx, 415, "Content-Type must be application/json.");
+
+  char lockId[64];
+  char reason[256];
+  int st = HttpServer_LockStatus(ctx, LOCK_KIND_SPI, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
+  if (st) return HttpServer_SendError(ctx, st, reason);
+
+  esp_err_t perr = ESP_OK;
+  cJSON* body = HttpServer_ParseBody(ctx, &perr);
+  if (body == NULL) return HttpServer_SendError(ctx, 400, "invalid_json");
+  uint8_t* packed = malloc(CONFIG_SPI_SLAVE_MAP_BYTES);
+  if (packed == NULL) {
+    cJSON_Delete(body);
+    return HttpServer_SendError(ctx, 500, "internal");
+  }
+  size_t used = 0;
+  esp_err_t parse = Route_ParseSlaveMap(body, packed, &used, reason, sizeof(reason));
+  cJSON_Delete(body);
+  if (parse != ESP_OK) {
+    free(packed);
+    return Route_SpiCallStatus(parse, ctx, reason);
+  }
+  esp_err_t ret = SpiCtrl_SetSlaveMap(id, packed, used, reason, sizeof(reason));
+  free(packed);
+  if (ret != ESP_OK) return Route_SpiCallStatus(ret, ctx, reason);
+  Lock_Touch(lockId);
+  return HttpServer_SendEmpty(ctx, 204);
+}
+
+static const HttpServer_Route uris[] = {
+    {.uri = "/spi/", .method = HTTP_SERVER_GET, .handler = Route_SpiListHandler},
+    {.uri = "/spi/*/config", .method = HTTP_SERVER_POST, .handler = Route_SpiPostConfigHandler},
+    {.uri = "/spi/*/master/transceive", .method = HTTP_SERVER_POST, .handler = Route_SpiPostTransceiveHandler},
+    {.uri = "/spi/*/slave/receive", .method = HTTP_SERVER_GET, .handler = Route_SpiGetSlaveReceiveHandler},
+    {.uri = "/spi/*/slave/transmit", .method = HTTP_SERVER_POST, .handler = Route_SpiPostSlaveTransmitHandler},
+};
+
+esp_err_t Route_SpiRegister(void)
+{
+  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(HttpServer_RegisterRoutes(uris, TOOL_GET_ARRAY_LENGTH(uris)), "register spi uri failed");
+  return ESP_OK;
+}

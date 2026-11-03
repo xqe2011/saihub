@@ -270,11 +270,12 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
   cJSON_AddItemToObject(result, "serverInfo", info);
   cJSON_AddStringToObject(
       result, "instructions",
-      "SAIHub: logical pins 0-7, UART ids from list_uarts, times in microseconds, optional lockId for contested "
-      "resources. Use plural pin tools (configure_pins, get_pin_levels, …) and always pass pins even for one pin "
-      "(pins:[1]). Power tools use rail=3v3|5v. UART tools use configure_uart, uart_transmit, uart_receive, uart_flush. "
+      "SAIHub: logical pins 0-7, UART ids from list_uarts, SPI ids from list_spis, times in microseconds, optional lockId "
+      "for contested resources. Use plural pin tools (configure_pins, get_pin_levels, …) and always pass pins even for "
+      "one pin (pins:[1]). Power tools use rail=3v3|5v. UART tools use configure_uart, uart_transmit, uart_receive, "
+      "uart_flush. SPI tools use configure_spi, spi_master_transceive, spi_slave_receive, spi_slave_transmit. "
       "play_buzzer plays a Morse-style sequence of . and - and blocks until it finishes (one at a time). "
-      "create_lock resources use type pin with pins, type power with rails, or type uart with ids. "
+      "create_lock resources use type pin with pins, type power with rails, type uart with ids, or type spi with ids. "
       "System tools: get_system_info, check_system_ota, get_system_ota, upgrade_system_ota (url+sha256 required). "
       "While a firmware update runs, non-system tools return 503. "
       "For multi-step on-device work, use run_script with a Lua script that calls the same tools.");
@@ -382,7 +383,8 @@ static esp_err_t Route_McpDispatchTrace(HttpServer_Context* ctx, cJSON* id, cJSO
   bool ownedArgs = cJSON_GetObjectItem(params, "arguments") == NULL;
   GpioCtrl_TraceEvent* events = NULL;
   size_t eventCount = 0;
-  ToolCall_Result result = ToolCall_TraceCapture(args, &events, &eventCount);
+  int64_t startTimeUs = 0;
+  ToolCall_Result result = ToolCall_TraceCapture(args, &events, &eventCount, &startTimeUs);
   if (ownedArgs) cJSON_Delete(args);
   if (!result.ok) {
     return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr(result.reason)));
@@ -395,7 +397,8 @@ static esp_err_t Route_McpDispatchTrace(HttpServer_Context* ctx, cJSON* id, cJSO
   for (size_t i = 0; ret == ESP_OK && i < eventCount; i++) {
     int len = snprintf(item, sizeof(item),
                        "%s{\\\"pin\\\":%d,\\\"edge\\\":\\\"%s\\\",\\\"level\\\":%d,\\\"time\\\":%lld}",
-                       i == 0 ? "" : ",", events[i].pin, events[i].edge, events[i].level, (long long)events[i].time);
+                       i == 0 ? "" : ",", events[i].pin, events[i].edge ? "raising" : "falling", events[i].level,
+                       (long long)(startTimeUs + events[i].deltaUs));
     if (len < 0 || (size_t)len >= sizeof(item)) {
       ret = ESP_ERR_INVALID_SIZE;
       break;
@@ -409,6 +412,44 @@ static esp_err_t Route_McpDispatchTrace(HttpServer_Context* ctx, cJSON* id, cJSO
   if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "}", 1);
   free(printedId);
   free(events);
+  esp_err_t endRet = HttpServer_SendChunkDone(ctx);
+  return ret == ESP_OK ? endRet : ret;
+}
+
+static esp_err_t Route_McpDispatchSpiSlaveReceive(HttpServer_Context* ctx, cJSON* id, cJSON* params)
+{
+  if (!cJSON_IsObject(params)) {
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("params are required.")));
+  }
+  cJSON* args = cJSON_GetObjectItem(params, "arguments");
+  if (args != NULL && !cJSON_IsObject(args)) {
+    return Route_McpSendJsonRpc(ctx, 200,
+                                Route_McpJsonRpcResult(id, Route_McpToolResultErr("arguments must be an object.")));
+  }
+  if (args == NULL) args = cJSON_CreateObject();
+  bool ownedArgs = cJSON_GetObjectItem(params, "arguments") == NULL;
+  uint8_t* storage = NULL;
+  size_t len = 0;
+  ToolCall_Result result = ToolCall_SpiSlaveCapture(args, &storage, &len);
+  if (ownedArgs) cJSON_Delete(args);
+  if (!result.ok) {
+    free(storage);
+    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr(result.reason)));
+  }
+
+  esp_err_t ret = HttpServer_SendChunkBegin(ctx, 200, "application/json", NULL);
+  if (ret == ESP_OK) {
+    ret = HttpServer_SendChunk(ctx, "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"",
+                               sizeof("{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"") - 1);
+  }
+  if (ret == ESP_OK) ret = Route_SpiAppendSlaveJson(ctx, storage, len, true);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "\"}]},\"id\":", sizeof("\"}]},\"id\":") - 1);
+  char* printedId = ret == ESP_OK && id != NULL ? cJSON_PrintUnformatted(id) : NULL;
+  if (ret == ESP_OK && id != NULL && printedId == NULL) ret = ESP_ERR_NO_MEM;
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, printedId != NULL ? printedId : "null", printedId != NULL ? strlen(printedId) : 4);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "}", 1);
+  free(printedId);
+  free(storage);
   esp_err_t endRet = HttpServer_SendChunkDone(ctx);
   return ret == ESP_OK ? endRet : ret;
 }
@@ -495,6 +536,7 @@ static esp_err_t Route_McpDispatch(HttpServer_Context* ctx, cJSON* msg)
         }
         if (strcmp(toolName, "run_script") == 0) return Route_McpDispatchRunScript(ctx, id, params);
         if (strcmp(toolName, "trace_pins") == 0) return Route_McpDispatchTrace(ctx, id, params);
+        if (strcmp(toolName, "spi_slave_receive") == 0) return Route_McpDispatchSpiSlaveReceive(ctx, id, params);
         if (strcmp(toolName, "play_buzzer") == 0) return Route_McpDispatchBuzzer(ctx, id, params);
       }
     } else if (System_OtaIsUpgrading()) {

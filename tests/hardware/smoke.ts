@@ -8,8 +8,10 @@ const PWM_LOOP_PIN = OUTPUT_A;
 const PWM_PROBE_PIN = OUTPUT_B;
 const PWM_SLOT_FREQUENCIES = [500, 2000, 10000, 50000] as const;
 const UART_ID = 0;
+const SPI_PINS = { miso: 0, mosi: 1, clk: 2, cs: 3 } as const;
 const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_REQUEST_TIMEOUT_MS ?? "5000", 10);
 const UART_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_UART_TIMEOUT_MS ?? "1500", 10);
+const SPI_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_SPI_TIMEOUT_MS ?? "1500", 10);
 const SOAK_ITERATIONS = Number.parseInt(process.env.SAIHUB_SOAK_ITERATIONS ?? "3", 10);
 const EXPECTED_MCP_TOOLS = [
   "list_pins",
@@ -27,6 +29,11 @@ const EXPECTED_MCP_TOOLS = [
   "uart_transmit",
   "uart_receive",
   "uart_flush",
+  "list_spis",
+  "configure_spi",
+  "spi_master_transceive",
+  "spi_slave_receive",
+  "spi_slave_transmit",
   "play_buzzer",
   "create_lock",
   "renew_lock",
@@ -55,6 +62,16 @@ type UartConfig = {
   encoding: "utf8" | "byte";
   pins: { rx: number | null; tx: number | null };
 };
+type SpiConfig = {
+  id?: number;
+  enable: boolean;
+  role: "master" | "slave";
+  cpol: number;
+  cpha: number;
+  bitOrder: "msb" | "lsb";
+  clockHz?: number;
+  pins: { mosi: number | null; miso: number | null; clk: number | null; cs: number | null };
+};
 type HttpResult = { status: number; headers: Headers; text: string };
 type McpEnvelope = { jsonrpc?: string; id?: number; result?: JsonObject; error?: JsonObject };
 
@@ -62,6 +79,7 @@ type Snapshot = {
   pins: Map<number, PinState>;
   pwm: Map<number, PwmState>;
   uart: UartConfig;
+  spi: SpiConfig;
   power: Record<"3v3" | "5v", boolean>;
 };
 
@@ -70,6 +88,7 @@ const createdRestLocks = new Set<string>();
 const createdMcpLocks = new Set<string>();
 let snapshot: Snapshot | undefined;
 let mutationStarted = false;
+let spiTouched = false;
 const deferredFailures: string[] = [];
 
 function fail(message: string): never {
@@ -236,6 +255,16 @@ function uartBody(config: UartConfig, enable = config.enable): JsonObject {
   };
 }
 
+function spiBody(config: SpiConfig, enable = config.enable): JsonObject {
+  const { id, ...body } = config;
+  return { ...body, enable };
+}
+
+const disabledSpi: SpiConfig = {
+  enable: false, role: "master", cpol: 0, cpha: 0, bitOrder: "msb", clockHz: 1000000,
+  pins: { mosi: null, miso: null, clk: null, cs: null },
+};
+
 const disabledUart: UartConfig = {
   enable: false,
   baudRate: 115200,
@@ -275,6 +304,14 @@ async function captureSnapshot(): Promise<Snapshot> {
 
   const uartList = await requestJson<{ uarts: UartConfig[]; time: number }>("GET", "/uart/");
   assert(Array.isArray(uartList.uarts) && uartList.uarts.length === 1, "REST UART inventory must contain UART 0");
+  const spiList = await requestJson<{ spis: SpiConfig[]; time: number }>("GET", "/spi/");
+  assert(Array.isArray(spiList.spis) && spiList.spis.length === 1, "REST SPI inventory must contain SPI 0");
+  assert(spiList.spis[0]?.id === 0, "REST SPI inventory omitted SPI 0");
+  const spi = spiList.spis[0]!;
+  assert(!spi.enable, "SPI must be disabled before the smoke test");
+  for (const pin of Object.values(SPI_PINS)) {
+    assert(pins.get(pin)?.mode === "disable", `Open-end SPI test requires idle pin ${pin}`);
+  }
   const uart = uartList.uarts[0];
   assert(uart !== undefined && uart.id === UART_ID, "REST UART inventory omitted UART 0");
   if (uart.enable) {
@@ -284,7 +321,7 @@ async function captureSnapshot(): Promise<Snapshot> {
 
   const power3v3 = await requestJson<{ enable: boolean; time: number }>("GET", "/power/3v3");
   const power5v = await requestJson<{ enable: boolean; time: number }>("GET", "/power/5v");
-  return { pins, pwm, uart, power: { "3v3": power3v3.enable, "5v": power5v.enable } };
+  return { pins, pwm, uart, spi, power: { "3v3": power3v3.enable, "5v": power5v.enable } };
 }
 
 async function testRestMetadata(): Promise<void> {
@@ -355,8 +392,10 @@ async function testInventorySurfaces(state: Snapshot): Promise<void> {
   log("REST and MCP inventory");
   const mcpPins = await mcpTool<{ pins: PinState[] }>("list_pins", {});
   const mcpUarts = await mcpTool<{ uarts: UartConfig[] }>("list_uarts", {});
+  const mcpSpis = await mcpTool<{ spis: Array<{ id: number }> }>("list_spis", {});
   assert(mcpPins.pins.length === 8, "MCP list_pins did not return eight pins");
   assert(mcpUarts.uarts.length === 1, "MCP list_uarts did not return UART 0");
+  assert(mcpSpis.spis.length === 1 && mcpSpis.spis[0]?.id === 0, "MCP list_spis did not return SPI 0");
   for (const rail of ["3v3", "5v"] as const) {
     const power = await mcpTool<{ enable: boolean }>("get_output_power_state", { rail });
     assert(power.enable === state.power[rail], `MCP ${rail} power state disagrees with REST`);
@@ -525,13 +564,23 @@ async function testMcpPins(): Promise<void> {
   });
 }
 
+function toHex(bytes: number[]): string {
+  return bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function fromHex(hex: string): number[] {
+  const bytes: number[] = [];
+  for (let index = 0; index < hex.length; index += 2) bytes.push(Number.parseInt(hex.slice(index, index + 2), 16));
+  return bytes;
+}
+
 async function collectRestUart(marker: number[]): Promise<number[]> {
   const received: number[] = [];
   const deadline = Date.now() + UART_TIMEOUT_MS;
   while (Date.now() < deadline && received.length < marker.length) {
-    const chunk = await requestJson<{ data: number[] }>("GET", `/uart/${UART_ID}/receive`);
-    assert(Array.isArray(chunk.data), "REST UART receive did not return byte data");
-    received.push(...chunk.data);
+    const chunk = await requestJson<{ data: string }>("GET", `/uart/${UART_ID}/receive`);
+    assert(typeof chunk.data === "string" && chunk.data.length % 2 === 0, "REST UART receive did not return hex data");
+    received.push(...fromHex(chunk.data));
     if (received.length < marker.length) await Bun.sleep(20);
   }
   return received;
@@ -541,9 +590,9 @@ async function collectMcpUart(marker: number[]): Promise<number[]> {
   const received: number[] = [];
   const deadline = Date.now() + UART_TIMEOUT_MS;
   while (Date.now() < deadline && received.length < marker.length) {
-    const chunk = await mcpTool<{ data: number[] }>("uart_receive", { id: UART_ID });
-    assert(Array.isArray(chunk.data), "MCP UART receive did not return byte data");
-    received.push(...chunk.data);
+    const chunk = await mcpTool<{ data: string }>("uart_receive", { id: UART_ID });
+    assert(typeof chunk.data === "string" && chunk.data.length % 2 === 0, "MCP UART receive did not return hex data");
+    received.push(...fromHex(chunk.data));
     if (received.length < marker.length) await Bun.sleep(20);
   }
   return received;
@@ -700,7 +749,7 @@ async function testRestUart(): Promise<void> {
       loopbackUart(OUTPUT_B, OUTPUT_A, condition.baudRate, condition.dataBits, condition.parity, condition.stopBits), 204);
     await requestJson<void>("POST", `/uart/${UART_ID}/flush`, undefined, 204);
     const marker = [0x31 + index, 0x41, 0x55, 0x7e];
-    await requestJson<void>("POST", `/uart/${UART_ID}/transmit`, { data: marker }, 204);
+    await requestJson<void>("POST", `/uart/${UART_ID}/transmit`, { data: toHex(marker) }, 204);
     const received = await collectRestUart(marker);
     assert(JSON.stringify(received) === JSON.stringify(marker),
       `REST UART ${condition.baudRate}/${condition.dataBits}/${condition.parity}/${condition.stopBits} mismatch: ${JSON.stringify(received)}`);
@@ -722,7 +771,7 @@ async function testMcpUart(): Promise<void> {
     });
     await mcpTool("uart_flush", { id: UART_ID });
     const marker = [0x61 + index, 0x42, 0x56, 0x7d];
-    await mcpTool("uart_transmit", { id: UART_ID, data: marker });
+    await mcpTool("uart_transmit", { id: UART_ID, data: toHex(marker) });
     const received = await collectMcpUart(marker);
     assert(JSON.stringify(received) === JSON.stringify(marker),
       `MCP UART ${condition.baudRate}/${condition.dataBits}/${condition.parity}/${condition.stopBits} mismatch: ${JSON.stringify(received)}`);
@@ -770,26 +819,27 @@ async function testUartPayloadsAndRaces(): Promise<void> {
   await mcpTool("uart_flush", { id: UART_ID });
   const maximum = Array.from({ length: 2048 }, (_, index) => (index * 31) & 0xff);
   const byteEnvelope = await rawRequest("POST", "/mcp", {
-    jsonrpc: "2.0", id: nextMcpId++, method: "tools/call", params: { name: "uart_transmit", arguments: { id: UART_ID, data: maximum } },
+    jsonrpc: "2.0", id: nextMcpId++, method: "tools/call",
+    params: { name: "uart_transmit", arguments: { id: UART_ID, data: toHex(maximum) } },
   }, { Accept: "application/json", "MCP-Protocol-Version": "2025-06-18" });
   assert(byteEnvelope.status === 200,
-    `MCP maximum byte-array UART payload returned ${byteEnvelope.status}: ${byteEnvelope.text.slice(0, 160)}`);
-  const byteResponse = parseJson(byteEnvelope, "MCP maximum byte-array UART payload");
-  assert(isObject(byteResponse) && !isObject(byteResponse.error), "MCP maximum byte-array UART payload returned an error envelope");
+    `MCP maximum byte UART payload returned ${byteEnvelope.status}: ${byteEnvelope.text.slice(0, 160)}`);
+  const byteResponse = parseJson(byteEnvelope, "MCP maximum byte UART payload");
+  assert(isObject(byteResponse) && !isObject(byteResponse.error), "MCP maximum byte UART payload returned an error envelope");
   const receivedMaximum = await collectRestUart(maximum);
   assert(JSON.stringify(receivedMaximum) === JSON.stringify(maximum), `Maximum byte UART payload mismatch: ${receivedMaximum.length} bytes`);
-  const oversized = await rawRequest("POST", `/uart/${UART_ID}/transmit`, { data: [...maximum, 1] });
+  const oversized = await rawRequest("POST", `/uart/${UART_ID}/transmit`, { data: toHex([...maximum, 1]) });
   assert(oversized.status === 400, `Oversized byte UART payload returned ${oversized.status}, expected 400`);
   await mcpTool("uart_flush", { id: UART_ID });
   const chunks = [[1, 2, 3, 4], [11, 12, 13, 14], [21, 22, 23, 24], [31, 32, 33, 34]];
   await Promise.all(chunks.map((data, index) => index % 2 === 0
-    ? requestJson<void>("POST", `/uart/${UART_ID}/transmit`, { data }, 204)
-    : mcpTool("uart_transmit", { id: UART_ID, data })));
+    ? requestJson<void>("POST", `/uart/${UART_ID}/transmit`, { data: toHex(data) }, 204)
+    : mcpTool("uart_transmit", { id: UART_ID, data: toHex(data) })));
   const expectedLength = chunks.reduce((total, chunk) => total + chunk.length, 0);
   const received: number[] = [];
   const deadline = Date.now() + UART_TIMEOUT_MS;
   while (Date.now() < deadline && received.length < expectedLength) {
-    received.push(...(await requestJson<{ data: number[] }>("GET", `/uart/${UART_ID}/receive`)).data);
+    received.push(...fromHex((await requestJson<{ data: string }>("GET", `/uart/${UART_ID}/receive`)).data));
     if (received.length < expectedLength) await Bun.sleep(20);
   }
   assert(received.length === expectedLength, `Concurrent UART transmit lost bytes: expected ${expectedLength}, got ${received.length}`);
@@ -797,6 +847,76 @@ async function testUartPayloadsAndRaces(): Promise<void> {
     assert(chunk.every((byte) => received.includes(byte)), `Concurrent UART transmit lost chunk ${JSON.stringify(chunk)}`);
   }
   await mcpTool("configure_uart", { id: UART_ID, ...uartBody(disabledUart) });
+}
+
+// Pins 0-3 have no peer; only completion, framing and idle behavior are meaningful here.
+async function testOpenEndSpi(): Promise<void> {
+  log("open-end SPI master transfers and non-blocking slave APIs over REST/MCP");
+  const promptly = async <T>(label: string, action: () => Promise<T>): Promise<T> => {
+    const started = performance.now();
+    const result = await action();
+    const elapsed = performance.now() - started;
+    assert(elapsed < SPI_TIMEOUT_MS, `${label} took ${Math.round(elapsed)} ms without a peer`);
+    return result;
+  };
+  const master: SpiConfig = { ...disabledSpi, enable: true, pins: SPI_PINS };
+  const slave: SpiConfig = { enable: true, role: "slave", cpol: 0, cpha: 0, bitOrder: "msb", pins: SPI_PINS };
+  spiTouched = true;
+  await promptly("REST master enable", () => requestJson<void>("POST", "/spi/0/config", spiBody(master), 204));
+  for (const mcp of [false, true]) {
+    for (const length of [0, 1, 128, 129, 255]) {
+      const data = toHex(Array.from({ length }, (_, index) => index & 255));
+      const result = await promptly("Open-end master transfer", () => mcp
+        ? mcpTool<{ data: string }>("spi_master_transceive", { id: 0, data })
+        : requestJson<{ data: string }>("POST", "/spi/0/master/transceive", { data }));
+      // Floating MISO has no defined value. Check the byte envelope, never the received content.
+      assert(typeof result.data === "string" && result.data.length === length * 2 && /^[0-9a-f]*$/.test(result.data),
+        "Open-end master returned invalid bytes or length");
+    }
+  }
+  await expectStatus("POST", "/spi/0/master/transceive", 400, { data: "00".repeat(256) });
+  await expectStatus("GET", "/spi/0/slave/receive", 422);
+  await mcpTool("configure_spi", { id: 0, ...spiBody({ ...master, pins: { ...SPI_PINS, miso: null } }) });
+  const transmitOnly = await promptly("Master without MISO", () =>
+    mcpTool<{ data: string }>("spi_master_transceive", { id: 0, data: "010203" }));
+  assert(transmitOnly.data === "", "Master without MISO returned data");
+  await promptly("REST master disable", () => requestJson<void>("POST", "/spi/0/config", spiBody(disabledSpi), 204));
+
+  // Unconnected inputs can float; verify polling completes without assuming event contents.
+  for (const mcp of [false, true]) {
+    await promptly("Slave enable without clock", () => mcp
+      ? mcpTool("configure_spi", { id: 0, ...spiBody(slave) })
+      : requestJson<void>("POST", "/spi/0/config", spiBody(slave), 204));
+    for (const mapping of [[{ type: "prefix", mosi: "", miso: "010203" }], []]) {
+      await promptly("Slave map update without clock", () => mcp
+        ? mcpTool("spi_slave_transmit", { id: 0, mapping })
+        : requestJson<void>("POST", "/spi/0/slave/transmit", { mapping }, 204));
+      const poll = () => promptly("Idle slave receive", () => mcp
+        ? mcpTool<{ events: unknown[] }>("spi_slave_receive", { id: 0 })
+        : requestJson<{ events: unknown[] }>("GET", "/spi/0/slave/receive"));
+      for (let iteration = 0; iteration < 2; iteration += 1) {
+        const [result] = await Promise.all([
+          poll(), promptly("System read while slave is armed", () => requestJson<JsonObject>("GET", "/system")),
+        ]);
+        assert(Array.isArray(result.events), "Open-end SPI slave returned an invalid event array");
+      }
+    }
+    for (const field of ["mosi", "miso"]) {
+      await expectStatus("POST", "/spi/0/slave/transmit", 400, {
+        mapping: [{ type: "exact", mosi: "01", miso: "01", [field]: "00".repeat(256) }],
+      });
+    }
+    await expectStatus("POST", "/spi/0/master/transceive", 422, { data: "01" });
+    await promptly("Slave disable without clock", () => mcp
+      ? mcpTool("configure_spi", { id: 0, ...spiBody(slave, false) })
+      : requestJson<void>("POST", "/spi/0/config", spiBody(slave, false), 204));
+  }
+}
+
+async function disableTestSpi(): Promise<void> {
+  if (!spiTouched) return;
+  await requestJson<void>("POST", "/spi/0/config", spiBody(disabledSpi), 204);
+  for (const pin of Object.values(SPI_PINS)) await configureRestPin(pin, "disable");
 }
 
 function hardwareScript(output: number, input: number, marker: string): string {
@@ -886,6 +1006,79 @@ async function testScripts(): Promise<void> {
     "REST script buzzer budget was not enforced");
   const uncaught = await rawRequest("POST", "/script", { script: "error('condition failure')", maxCalls: 1, timeout: 100000 });
   assert(uncaught.status === 422 && uncaught.text.includes("condition failure"), "REST uncaught script error was not reported");
+
+  log("script memory exhaustion during compilation and execution, then recovery");
+  const constants = Array.from({ length: 1000 }, (_, i) => `"${i.toString(36).padStart(4, "0")}"`).join(",");
+  for (const script of [`return {${constants}}`, "return string.rep('x', 65536)"]) {
+    const exhausted = await rawRequest("POST", "/script", { script });
+    const exhaustedBody = parseJson(exhausted, "script memory exhaustion");
+    const memoryError = isObject(exhaustedBody) && exhaustedBody.reason === "Script ran out of memory.";
+    assert(exhausted.status === 422 && memoryError, "REST script memory exhaustion was not reported correctly");
+    const recovered = await requestJson<JsonObject>("POST", "/script", { script: "return 42" });
+    assert(recovered.result === 42, "REST script runner did not recover after memory exhaustion");
+  }
+  const caughtMemory = await requestJson<JsonObject>("POST", "/script", {
+    script: "local ok = pcall(function() return string.rep('x', 65536) end); return not ok",
+  });
+  assert(caughtMemory.result === true, "REST script could not catch a memory error with pcall");
+
+  log("script event views for trace_pins and spi_slave_receive (# / index / ipairs / return)");
+  await configureRestPin(OUTPUT_A, "pwmOutput");
+  await configureRestPin(OUTPUT_B, "digitalInput");
+  await requestJson<void>("POST", `/pin/${OUTPUT_A}/pwm`, { frequency: 10000, duty: 50 }, 204);
+  const saturatedTrace = await requestJson<JsonObject>("POST", "/script", {
+    script: [
+      `local trace = trace_pins{pins={${OUTPUT_B}}, edge="both", duration=200000}`,
+      "assert(#trace.events == 1024)",
+      "local count = 0",
+      "for _, ev in ipairs(trace.events) do",
+      `  assert(ev.pin == ${OUTPUT_B})`,
+      "  assert(ev.edge == 'raising' or ev.edge == 'falling')",
+      "  assert(ev.level == 0 or ev.level == 1)",
+      "  assert(type(ev.time) == 'number')",
+      "  count = count + 1",
+      "end",
+      "return count",
+    ].join("\n"),
+    maxCalls: 1,
+    timeout: 1000000,
+  });
+  assert(saturatedTrace.result === 1024,
+    "REST script could not iterate all 1024 trace events after garbage collection");
+  await requestJson<void>("POST", `/pin/${OUTPUT_A}/pwm`, { frequency: 1000, duty: 50 }, 204);
+  spiTouched = true;
+  const eventViews = await requestJson<JsonObject>("POST", "/script", {
+    script: [
+      `local trace = trace_pins{pins={${OUTPUT_B}}, edge="both", duration=20000}`,
+      "local n = #trace.events",
+      "local firstPin = n > 0 and trace.events[1].pin or -1",
+      "local count = 0",
+      "for _, ev in ipairs(trace.events) do count = count + 1 end",
+      "configure_spi{id=0, enable=true, role='slave', cpol=0, cpha=0, bitOrder='msb', pins={miso=0, mosi=1, clk=2, cs=3}}",
+      "local log = spi_slave_receive{id=0}",
+      "return {n=n, firstPin=firstPin, count=count, spiN=#log.events, hasTime=(type(log.time)=='number'), returned=trace}",
+    ].join("\n"),
+    maxCalls: 12,
+    timeout: 500000,
+  });
+  await requestJson<void>("POST", `/pin/${OUTPUT_A}/pwm`, { frequency: 1000, duty: 0 }, 204);
+  await configureRestPin(OUTPUT_A, "disable");
+  await configureRestPin(OUTPUT_B, "disable");
+  await requestJson<void>("POST", "/spi/0/config", spiBody(disabledSpi), 204);
+  assert(isObject(eventViews.result), "script event views returned an invalid result");
+  const views = eventViews.result;
+  assert(typeof views.n === "number" && views.n > 0, "script trace view reported no events");
+  assert(views.count === views.n, "script ipairs over trace.events did not match #trace.events");
+  assert(views.firstPin === OUTPUT_B, `script trace.events[1].pin was ${views.firstPin}, expected ${OUTPUT_B}`);
+  assert(typeof views.spiN === "number" && views.spiN >= 0, "script spi_slave_receive view omitted #events");
+  assert(views.hasTime === true, "script spi_slave_receive view omitted time");
+  assert(isObject(views.returned), "script return of trace view was not an object");
+  const returnedEvents = views.returned.events;
+  assert(Array.isArray(returnedEvents) && returnedEvents.length === views.n,
+    "script return of trace view did not materialize events JSON");
+  const first = returnedEvents[0];
+  assert(isObject(first) && first.pin === OUTPUT_B && typeof first.edge === "string" && typeof first.time === "number",
+    "script returned trace event was missing fields");
 }
 
 async function testConcurrency(): Promise<void> {
@@ -1095,6 +1288,11 @@ async function cleanup(): Promise<void> {
     }
   };
 
+  if (spiTouched) {
+    await attempt("disable SPI", disableTestSpi);
+    await attempt("restore SPI config", () =>
+      requestJson<void>("POST", "/spi/0/config", spiBody(snapshot!.spi), 204));
+  }
   await attempt("disable UART", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
   for (const id of createdRestLocks) {
     await attempt(`delete REST lock ${id}`, () => requestJson<void>("DELETE", `/lock/${encodeURIComponent(id)}`, undefined, 204));
@@ -1123,10 +1321,13 @@ async function main(): Promise<void> {
   if (process.argv.includes("--help")) {
     console.log("SAIHUB_TARGET=192.168.88.160 bun tests/hardware/smoke.ts");
     console.log("Cloud: SAIHUB_TARGET=https://<cloud-host>/device/<device-digest> SAIHUB_ROUTING_TOKEN=<token> bun tests/hardware/smoke.ts");
-    console.log("Pins 6 and 7 must be jumpered. Four-channel PWM drives 0-2 plus 6 and probes pin 7; other tests drive only 6 and 7.");
+    console.log("Pins 6 and 7 must be jumpered. Leave idle pins 0-3 unconnected for open-end SPI; SPI must be disabled.");
+    console.log("Four-channel PWM drives 0-2 plus 6 and probes pin 7. SPI uses 0-3; other tests drive only 6 and 7.");
+    console.log("Optional: SAIHUB_SPI_TIMEOUT_MS=1500 bounds each non-blocking SPI operation, including transport time.");
     return;
   }
   assert(Number.isFinite(REQUEST_TIMEOUT_MS) && REQUEST_TIMEOUT_MS > 0, "SAIHUB_REQUEST_TIMEOUT_MS must be positive");
+  assert(Number.isFinite(SPI_TIMEOUT_MS) && SPI_TIMEOUT_MS > 0, "SAIHUB_SPI_TIMEOUT_MS must be positive");
   assert(Number.isFinite(UART_TIMEOUT_MS) && UART_TIMEOUT_MS > 0, "SAIHUB_UART_TIMEOUT_MS must be positive");
   assert(Number.isInteger(SOAK_ITERATIONS) && SOAK_ITERATIONS >= 0 && SOAK_ITERATIONS <= 100,
     "SAIHUB_SOAK_ITERATIONS must be an integer from 0 to 100");
@@ -1148,6 +1349,7 @@ async function main(): Promise<void> {
   await runSection("reset after MCP UART", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
   await runSection("UART payloads and races", testUartPayloadsAndRaces);
   await runSection("reset after UART stress", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
+  await runSection("open-end SPI", testOpenEndSpi, disableTestSpi);
   await runSection("buzzer", testBuzzer);
   await runSection("scripts", testScripts);
   await runSection("concurrency", testConcurrency, releaseTestLocks);
@@ -1178,5 +1380,5 @@ if (failure !== undefined) {
   console.error(failure instanceof Error ? failure.stack ?? failure.message : String(failure));
   process.exitCode = 1;
 } else if (!process.argv.includes("--help")) {
-  log("PASS: REST, MCP, pins 6/7, UART loopback, buzzer, scripts, locks, trace, PWM, and active power toggles");
+  log("PASS: REST, MCP, pins 6/7, UART loopback, open-end SPI, buzzer, scripts, locks, trace, PWM, and active power toggles");
 }

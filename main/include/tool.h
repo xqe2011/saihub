@@ -8,6 +8,9 @@
 
 #include <esp_err.h>
 #include <esp_log.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #define TOOL_CHECK_ESP_OK_OR_LOG_RETURN(expression, message, ...) \
   if ((expression) != ESP_OK) {                                   \
@@ -45,5 +48,41 @@
   }                                                                  \
   ESP_LOGE(tag, "Failed to register %s callback!", logName);         \
   return ESP_FAIL;
+
+/** Byte ring. `head` is the next byte to read, `tail` is the next byte to write. */
+typedef struct {
+  uint8_t* data;
+  size_t cap;
+  size_t head;
+  size_t tail;
+  size_t used;
+  bool owned;
+} Tool_Ring;
+
+/** Attach an external buffer. The ring does not free it. */
+void Tool_RingInit(Tool_Ring* ring, uint8_t* data, size_t cap);
+/** Allocate `cap` bytes and take ownership of them. */
+bool Tool_RingCreate(Tool_Ring* ring, size_t cap);
+/** Free a buffer owned by the ring and reset the ring. */
+void Tool_RingRelease(Tool_Ring* ring);
+void Tool_RingClear(Tool_Ring* ring);
+size_t Tool_RingLen(const Tool_Ring* ring);
+size_t Tool_RingFree(const Tool_Ring* ring);
+/** Copy bytes in. Fails when `len` exceeds the free space; the ring is left unchanged. */
+bool Tool_RingWrite(Tool_Ring* ring, const void* src, size_t len);
+/** Copy bytes out and advance the read head. */
+bool Tool_RingRead(Tool_Ring* ring, void* dst, size_t len);
+/** Copy bytes out without advancing the read head. */
+bool Tool_RingPeek(const Tool_Ring* ring, void* dst, size_t len);
+/** Discard bytes from the read head. */
+bool Tool_RingDrop(Tool_Ring* ring, size_t len);
+
+/**
+ * Decode an even-length hex string into `out`. `""` yields length 0.
+ * Returns false on NULL, an odd length, a non-hex digit, or a decoded length above `cap`.
+ */
+bool Tool_HexDecode(const char* hex, uint8_t* out, size_t cap, size_t* lenOut);
+/** Write lowercase hex and a trailing NUL. `out` must hold `2 * len + 1` bytes. */
+void Tool_HexEncode(const uint8_t* data, size_t len, char* out);
 
 #endif

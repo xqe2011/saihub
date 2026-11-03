@@ -829,7 +829,7 @@ const I18N={
     'uart.stopBits':'Stop bits','uart.encoding':'Encoding','uart.rx':'RX pin','uart.tx':'TX pin',
     'uart.apply':'Apply config',transmit:'Transmit',send:'Send','uart.flush':'Flush RX','uart.clear':'Clear log',
     'uart.rxLog':'Receive log','uart.emptyLog':'No data received yet.','uart.active':'Active','uart.off':'Off',
-    'uart.bytes':'Byte data must be integers from 0 to 255.',
+    'uart.bytes':'Byte data must be an even-length hex string.',
     copy:'Copy',copied:'Copied',
     'err.generic':'Something went wrong.','err.load':'Could not load device state.','err.request':'Request failed ({status})'
   },
@@ -864,7 +864,7 @@ const I18N={
     'uart.encoding':'编码','uart.rx':'RX 引脚','uart.tx':'TX 引脚','uart.apply':'应用配置',transmit:'发送数据',
     send:'发送','uart.flush':'清空 RX','uart.clear':'清空日志','uart.rxLog':'接收日志','uart.emptyLog':'暂无接收数据。',
     'uart.active':'已启用','uart.off':'关闭',
-    'uart.bytes':'字节数据必须是 0 到 255 的整数。',
+    'uart.bytes':'字节数据必须是偶数长度的十六进制字符串。',
     copy:'复制',copied:'已复制',
     'err.generic':'出错了。','err.load':'无法加载设备状态。','err.request':'请求失败（{status}）'
   }
@@ -1486,15 +1486,10 @@ function readUartConfig(id){
 }
 
 function parseBytePayload(text){
-  const parts=text.trim().split(/[\s,]+/).filter(Boolean);
-  if(!parts.length) return [];
-  const out=[];
-  for(const p of parts){
-    const n=Number(p);
-    if(!Number.isInteger(n)||n<0||n>255) throw new Error(t('uart.bytes'));
-    out.push(n);
-  }
-  return out;
+  const compact=text.trim().replace(/[\s,]+/g,'');
+  if(!compact) return '';
+  if(!/^([0-9a-fA-F]{2})+$/.test(compact)) throw new Error(t('uart.bytes'));
+  return compact.toLowerCase();
 }
 
 function bindUartCard(id){
@@ -1545,9 +1540,9 @@ async function pollUartReceive(){
     const j=await api('GET','/uart/'+id+'/receive');
     let chunk='';
     if(encoding==='byte'){
-      const arr=Array.isArray(j.data)?j.data:[];
-      if(!arr.length) return;
-      chunk=arr.join(' ')+' ';
+      const hex=typeof j.data==='string'?j.data:'';
+      if(!hex) return;
+      chunk=hex+' ';
     }else{
       if(!j.data) return;
       chunk=String(j.data);

@@ -11,6 +11,7 @@
 #include "gpio_ctrl.h"
 #include "http_server.h"
 #include "lock.h"
+#include "spi_ctrl.h"
 #include "system.h"
 #include "tool.h"
 #include "uart_ctrl.h"
@@ -351,10 +352,12 @@ static ToolCall_Result ToolCall_SetPinPwms(cJSON* args)
   return ToolCall_OkEmpty();
 }
 
-ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsOut, size_t* eventCountOut)
+ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsOut, size_t* eventCountOut,
+                                      int64_t* startTimeUsOut)
 {
   *eventsOut = NULL;
   *eventCountOut = 0;
+  *startTimeUsOut = 0;
   char reason[256];
   ToolCall_PinSelection sel;
   if (!ToolCall_ParsePinSelection(args, &sel, reason, sizeof(reason))) return ToolCall_Err(reason);
@@ -375,7 +378,9 @@ ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsO
   GpioCtrl_TraceEvent* events = calloc(CONFIG_GPIO_TRACE_MAX_EVENTS, sizeof(GpioCtrl_TraceEvent));
   if (events == NULL) return ToolCall_Fail(500, "internal");
   size_t eventCount = 0;
-  esp_err_t tr = GpioCtrl_Trace(sel.pins, sel.count, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &eventCount, true);
+  int64_t startTimeUs = 0;
+  esp_err_t tr =
+      GpioCtrl_Trace(sel.pins, sel.count, edge, duration, events, CONFIG_GPIO_TRACE_MAX_EVENTS, &eventCount, &startTimeUs);
   if (tr != ESP_OK) {
     free(events);
     if (tr == GPIO_CTRL_ERR_TRACE_BUSY) {
@@ -386,6 +391,7 @@ ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsO
   Lock_Touch(lockId);
   *eventsOut = events;
   *eventCountOut = eventCount;
+  *startTimeUsOut = startTimeUs;
   return ToolCall_Ok(NULL);
 }
 
@@ -393,16 +399,17 @@ static ToolCall_Result ToolCall_TracePins(cJSON* args)
 {
   GpioCtrl_TraceEvent* events = NULL;
   size_t eventCount = 0;
-  ToolCall_Result result = ToolCall_TraceCapture(args, &events, &eventCount);
+  int64_t startTimeUs = 0;
+  ToolCall_Result result = ToolCall_TraceCapture(args, &events, &eventCount, &startTimeUs);
   if (!result.ok) return result;
   cJSON* root = cJSON_CreateObject();
   cJSON* arr = cJSON_CreateArray();
   for (size_t i = 0; i < eventCount; i++) {
     cJSON* ev = cJSON_CreateObject();
     cJSON_AddNumberToObject(ev, "pin", events[i].pin);
-    cJSON_AddStringToObject(ev, "edge", events[i].edge);
+    cJSON_AddStringToObject(ev, "edge", events[i].edge ? "raising" : "falling");
     cJSON_AddNumberToObject(ev, "level", events[i].level);
-    cJSON_AddNumberToObject(ev, "time", (double)events[i].time);
+    cJSON_AddNumberToObject(ev, "time", (double)(startTimeUs + events[i].deltaUs));
     cJSON_AddItemToArray(arr, ev);
   }
   cJSON_AddItemToObject(root, "events", arr);
@@ -645,29 +652,31 @@ static esp_err_t ToolCall_FillTransmitData(cJSON* args, UartCtrl_Encoding encodi
     *lenOut = len;
     return ESP_OK;
   }
-  if (!cJSON_IsArray(dataItem)) {
-    snprintf(reason, reasonLen, "data must be an array of integers 0-255 when encoding is byte.");
+  if (!cJSON_IsString(dataItem) || dataItem->valuestring == NULL) {
+    snprintf(reason, reasonLen, "data must be an even-length hex string when encoding is byte.");
     return ESP_ERR_INVALID_ARG;
   }
-  int n = cJSON_GetArraySize(dataItem);
-  if (n > (int)CONFIG_UART_MAX_PAYLOAD_BYTES) {
+  size_t chars = strlen(dataItem->valuestring);
+  if ((chars & 1U) != 0) {
+    snprintf(reason, reasonLen, "data must be an even-length hex string when encoding is byte.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  size_t n = chars / 2;
+  if (n > CONFIG_UART_MAX_PAYLOAD_BYTES) {
     snprintf(reason, reasonLen, "data is too large. Send at most %u bytes per request.",
              (unsigned)CONFIG_UART_MAX_PAYLOAD_BYTES);
     return ESP_ERR_INVALID_ARG;
   }
-  uint8_t* buf = malloc(n > 0 ? (size_t)n : 1);
+  uint8_t* buf = malloc(n > 0 ? n : 1);
   if (buf == NULL) return ESP_ERR_NO_MEM;
-  for (int i = 0; i < n; i++) {
-    cJSON* v = cJSON_GetArrayItem(dataItem, i);
-    if (!cJSON_IsNumber(v) || v->valueint < 0 || v->valueint > 255) {
-      free(buf);
-      snprintf(reason, reasonLen, "data[%d] must be an integer from 0 to 255.", i);
-      return ESP_ERR_INVALID_ARG;
-    }
-    buf[i] = (uint8_t)v->valueint;
+  size_t decoded = 0;
+  if (!Tool_HexDecode(dataItem->valuestring, buf, n > 0 ? n : 1, &decoded)) {
+    free(buf);
+    snprintf(reason, reasonLen, "data must be an even-length hex string when encoding is byte.");
+    return ESP_ERR_INVALID_ARG;
   }
   *dataOut = buf;
-  *lenOut = (size_t)n;
+  *lenOut = decoded;
   return ESP_OK;
 }
 
@@ -733,9 +742,15 @@ static ToolCall_Result ToolCall_UartReceive(cJSON* args)
     cJSON_AddStringToObject(root, "data", s);
     free(s);
   } else {
-    cJSON* arr = cJSON_CreateArray();
-    for (size_t i = 0; i < n; i++) cJSON_AddItemToArray(arr, cJSON_CreateNumber(buf[i]));
-    cJSON_AddItemToObject(root, "data", arr);
+    char* s = malloc(n * 2 + 1);
+    if (s == NULL) {
+      free(buf);
+      cJSON_Delete(root);
+      return ToolCall_Fail(500, "internal");
+    }
+    Tool_HexEncode(buf, n, s);
+    cJSON_AddStringToObject(root, "data", s);
+    free(s);
   }
   free(buf);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
@@ -756,6 +771,354 @@ static ToolCall_Result ToolCall_UartFlush(cJSON* args)
   if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
   Lock_Touch(lockId);
   return ToolCall_OkEmpty();
+}
+
+static cJSON* ToolCall_SpiStateJson(int id, const SpiCtrl_Config* cfg)
+{
+  cJSON* item = cJSON_CreateObject();
+  cJSON_AddNumberToObject(item, "id", id);
+  cJSON_AddBoolToObject(item, "enable", cfg->enable);
+  cJSON_AddStringToObject(item, "role", SpiCtrl_RoleToString(cfg->role));
+  cJSON_AddNumberToObject(item, "cpol", cfg->cpol);
+  cJSON_AddNumberToObject(item, "cpha", cfg->cpha);
+  cJSON_AddStringToObject(item, "bitOrder", SpiCtrl_BitOrderToString(cfg->bitOrder));
+  if (cfg->role == SPI_CTRL_ROLE_MASTER) cJSON_AddNumberToObject(item, "clockHz", cfg->clockHz);
+  cJSON* pins = cJSON_CreateObject();
+  ToolCall_AddOptionalPin(pins, "mosi", cfg->mosiPin);
+  ToolCall_AddOptionalPin(pins, "miso", cfg->misoPin);
+  ToolCall_AddOptionalPin(pins, "clk", cfg->clkPin);
+  ToolCall_AddOptionalPin(pins, "cs", cfg->csPin);
+  cJSON_AddItemToObject(item, "pins", pins);
+  return item;
+}
+
+static bool ToolCall_ParseSpiId(cJSON* args, int* idOut, char* reason, size_t reasonLen)
+{
+  cJSON* idItem = cJSON_GetObjectItem(args, "id");
+  if (!cJSON_IsNumber(idItem) || !SpiCtrl_IsValidId(idItem->valueint)) {
+    snprintf(reason, reasonLen, "id is invalid. Use an id from list_spis.");
+    return false;
+  }
+  *idOut = idItem->valueint;
+  return true;
+}
+
+static int ToolCall_ParseSpiPin(cJSON* pinsObj, const char* key, int* pinOut, char* reason, size_t reasonLen)
+{
+  cJSON* item = cJSON_GetObjectItem(pinsObj, key);
+  if (item == NULL || cJSON_IsNull(item)) {
+    *pinOut = -1;
+    return 0;
+  }
+  if (!cJSON_IsNumber(item)) {
+    snprintf(reason, reasonLen, "pins.%s must be an integer pin, null, or omitted.", key);
+    return -1;
+  }
+  *pinOut = item->valueint;
+  return 0;
+}
+
+static bool ToolCall_ParseSpiConfig(cJSON* args, SpiCtrl_Config* cfg, char* reason, size_t reasonLen)
+{
+  cJSON* enableItem = cJSON_GetObjectItem(args, "enable");
+  cJSON* roleItem = cJSON_GetObjectItem(args, "role");
+  cJSON* cpolItem = cJSON_GetObjectItem(args, "cpol");
+  cJSON* cphaItem = cJSON_GetObjectItem(args, "cpha");
+  cJSON* bitItem = cJSON_GetObjectItem(args, "bitOrder");
+  cJSON* clockItem = cJSON_GetObjectItem(args, "clockHz");
+  cJSON* pinsItem = cJSON_GetObjectItem(args, "pins");
+  memset(cfg, 0, sizeof(*cfg));
+  if (!cJSON_IsBool(enableItem)) {
+    snprintf(reason, reasonLen, "enable must be boolean.");
+    return false;
+  }
+  if (!cJSON_IsString(roleItem) || !SpiCtrl_RoleFromString(roleItem->valuestring, &cfg->role)) {
+    snprintf(reason, reasonLen, "role must be one of: master, slave.");
+    return false;
+  }
+  if (!cJSON_IsNumber(cpolItem) || (cpolItem->valueint != 0 && cpolItem->valueint != 1)) {
+    snprintf(reason, reasonLen, "cpol must be 0 or 1.");
+    return false;
+  }
+  if (!cJSON_IsNumber(cphaItem) || (cphaItem->valueint != 0 && cphaItem->valueint != 1)) {
+    snprintf(reason, reasonLen, "cpha must be 0 or 1.");
+    return false;
+  }
+  if (!cJSON_IsString(bitItem) || !SpiCtrl_BitOrderFromString(bitItem->valuestring, &cfg->bitOrder)) {
+    snprintf(reason, reasonLen, "bitOrder must be one of: msb, lsb.");
+    return false;
+  }
+  if (cfg->role == SPI_CTRL_ROLE_SLAVE) {
+    if (clockItem != NULL) {
+      snprintf(reason, reasonLen, "clockHz is not supported when role is slave.");
+      return false;
+    }
+    cfg->clockHz = 0;
+  } else if (!cJSON_IsNumber(clockItem)) {
+    snprintf(reason, reasonLen, "clockHz must be an integer from %d to %d.", CONFIG_SPI_CLOCK_HZ_MIN, CONFIG_SPI_CLOCK_HZ_MAX);
+    return false;
+  } else {
+    cfg->clockHz = clockItem->valueint;
+  }
+  if (!cJSON_IsObject(pinsItem)) {
+    snprintf(reason, reasonLen, "pins must be an object with mosi, miso, clk, and cs.");
+    return false;
+  }
+  cfg->enable = cJSON_IsTrue(enableItem);
+  cfg->cpol = cpolItem->valueint;
+  cfg->cpha = cphaItem->valueint;
+  if (ToolCall_ParseSpiPin(pinsItem, "mosi", &cfg->mosiPin, reason, reasonLen) != 0) return false;
+  if (ToolCall_ParseSpiPin(pinsItem, "miso", &cfg->misoPin, reason, reasonLen) != 0) return false;
+  if (ToolCall_ParseSpiPin(pinsItem, "clk", &cfg->clkPin, reason, reasonLen) != 0) return false;
+  if (ToolCall_ParseSpiPin(pinsItem, "cs", &cfg->csPin, reason, reasonLen) != 0) return false;
+  return true;
+}
+
+static ToolCall_Result ToolCall_ListSpis(void)
+{
+  cJSON* root = cJSON_CreateObject();
+  cJSON* arr = cJSON_CreateArray();
+  int count = SpiCtrl_GetCount();
+  for (int i = 0; i < count; i++) {
+    SpiCtrl_Config cfg;
+    SpiCtrl_GetConfig(i, &cfg);
+    cJSON_AddItemToArray(arr, ToolCall_SpiStateJson(i, &cfg));
+  }
+  cJSON_AddItemToObject(root, "spis", arr);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_ConfigureSpi(cJSON* args)
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseSpiId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_SPI, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  SpiCtrl_Config cfg;
+  if (!ToolCall_ParseSpiConfig(args, &cfg, reason, sizeof(reason))) return ToolCall_Err(reason);
+  esp_err_t ret = SpiCtrl_SetConfig(id, &cfg, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_ARG) return ToolCall_Err(reason);
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(409, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  Lock_Touch(lockId);
+  return ToolCall_OkEmpty();
+}
+
+static ToolCall_Result ToolCall_SpiMasterCapture(cJSON* args, uint8_t** rxOut, size_t* rxLenOut)
+{
+  *rxOut = NULL;
+  *rxLenOut = 0;
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseSpiId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_SPI, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  cJSON* dataItem = cJSON_GetObjectItem(args, "data");
+  if (!cJSON_IsString(dataItem) || dataItem->valuestring == NULL || (strlen(dataItem->valuestring) & 1U) != 0) {
+    return ToolCall_Err("data must be an even-length hex string.");
+  }
+  size_t n = strlen(dataItem->valuestring) / 2;
+  if (n > CONFIG_SPI_MAX_TRANSFER_BYTES) {
+    snprintf(reason, sizeof(reason), "data is too large. Send at most %u bytes per request.",
+             (unsigned)CONFIG_SPI_MAX_TRANSFER_BYTES);
+    return ToolCall_Err(reason);
+  }
+  uint8_t* tx = NULL;
+  uint8_t* rx = NULL;
+  if (n > 0) {
+    tx = malloc(n);
+    rx = malloc(n);
+    if (tx == NULL || rx == NULL) {
+      free(tx);
+      free(rx);
+      return ToolCall_Fail(500, "internal");
+    }
+    size_t decoded = 0;
+    if (!Tool_HexDecode(dataItem->valuestring, tx, n, &decoded)) {
+      free(tx);
+      free(rx);
+      return ToolCall_Err("data must be an even-length hex string.");
+    }
+  }
+  size_t rxLen = 0;
+  esp_err_t ret = SpiCtrl_MasterTransceive(id, tx, n, rx, &rxLen, reason, sizeof(reason));
+  free(tx);
+  if (ret != ESP_OK) {
+    free(rx);
+    if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
+    if (ret == ESP_ERR_INVALID_SIZE || ret == ESP_ERR_INVALID_ARG) return ToolCall_Err(reason);
+    return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  }
+  Lock_Touch(lockId);
+  if (rxLen == 0) {
+    free(rx);
+    rx = NULL;
+  }
+  *rxOut = rx;
+  *rxLenOut = rxLen;
+  return ToolCall_Ok(NULL);
+}
+
+static ToolCall_Result ToolCall_SpiMasterTransceive(cJSON* args)
+{
+  uint8_t* rx = NULL;
+  size_t rxLen = 0;
+  ToolCall_Result result = ToolCall_SpiMasterCapture(args, &rx, &rxLen);
+  if (!result.ok) return result;
+  cJSON* root = cJSON_CreateObject();
+  char* data = malloc(rxLen * 2 + 1);
+  if (data == NULL) {
+    free(rx);
+    cJSON_Delete(root);
+    return ToolCall_Fail(500, "internal");
+  }
+  Tool_HexEncode(rx, rxLen, data);
+  free(rx);
+  cJSON_AddStringToObject(root, "data", data);
+  free(data);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  return ToolCall_Ok(root);
+}
+
+static esp_err_t ToolCall_ParseMapBytes(cJSON* item, const char* field, int index, uint8_t* out, size_t* lenOut, char* reason,
+                                        size_t reasonLen)
+{
+  if (!cJSON_IsString(item) || item->valuestring == NULL) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
+  }
+  size_t chars = strlen(item->valuestring);
+  if ((chars & 1U) != 0) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (chars / 2 > CONFIG_SPI_MAX_TRANSFER_BYTES) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must contain at most %u bytes.", index, field,
+             (unsigned)CONFIG_SPI_MAX_TRANSFER_BYTES);
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!Tool_HexDecode(item->valuestring, out, CONFIG_SPI_MAX_TRANSFER_BYTES, lenOut)) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
+  }
+  return ESP_OK;
+}
+
+static ToolCall_Result ToolCall_SpiSlaveTransmit(cJSON* args)
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseSpiId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_SPI, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  cJSON* mapping = cJSON_GetObjectItem(args, "mapping");
+  if (!cJSON_IsArray(mapping)) return ToolCall_Err("mapping must be an array.");
+  uint8_t* packed = malloc(CONFIG_SPI_SLAVE_MAP_BYTES);
+  if (packed == NULL) return ToolCall_Fail(500, "internal");
+  size_t used = 0;
+  int n = cJSON_GetArraySize(mapping);
+  for (int i = 0; i < n; i++) {
+    cJSON* entry = cJSON_GetArrayItem(mapping, i);
+    if (!cJSON_IsObject(entry)) {
+      free(packed);
+      snprintf(reason, sizeof(reason), "mapping[%d] must be an object.", i);
+      return ToolCall_Err(reason);
+    }
+    cJSON* typeItem = cJSON_GetObjectItem(entry, "type");
+    SpiCtrl_MapType type;
+    if (!cJSON_IsString(typeItem) || typeItem->valuestring == NULL ||
+        (strcmp(typeItem->valuestring, "exact") != 0 && strcmp(typeItem->valuestring, "prefix") != 0)) {
+      free(packed);
+      snprintf(reason, sizeof(reason), "mapping[%d].type must be one of: exact, prefix.", i);
+      return ToolCall_Err(reason);
+    }
+    type = strcmp(typeItem->valuestring, "exact") == 0 ? SPI_CTRL_MAP_EXACT : SPI_CTRL_MAP_PREFIX;
+    uint8_t mosi[CONFIG_SPI_MAX_TRANSFER_BYTES];
+    uint8_t miso[CONFIG_SPI_MAX_TRANSFER_BYTES];
+    size_t mosiLen = 0;
+    size_t misoLen = 0;
+    if (ToolCall_ParseMapBytes(cJSON_GetObjectItem(entry, "mosi"), "mosi", i, mosi, &mosiLen, reason, sizeof(reason)) !=
+            ESP_OK ||
+        ToolCall_ParseMapBytes(cJSON_GetObjectItem(entry, "miso"), "miso", i, miso, &misoLen, reason, sizeof(reason)) !=
+            ESP_OK) {
+      free(packed);
+      return ToolCall_Err(reason);
+    }
+    esp_err_t pack = SpiCtrl_PackMapAppend(packed, CONFIG_SPI_SLAVE_MAP_BYTES, &used, i, type, mosi, mosiLen, miso,
+                                           misoLen, reason, sizeof(reason));
+    if (pack != ESP_OK) {
+      free(packed);
+      if (pack == ESP_ERR_INVALID_SIZE) return ToolCall_Err(reason);
+      return ToolCall_Err(reason);
+    }
+  }
+  esp_err_t ret = SpiCtrl_SetSlaveMap(id, packed, used, reason, sizeof(reason));
+  free(packed);
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
+  if (ret == ESP_ERR_INVALID_ARG || ret == ESP_ERR_INVALID_SIZE) return ToolCall_Err(reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  Lock_Touch(lockId);
+  return ToolCall_OkEmpty();
+}
+
+ToolCall_Result ToolCall_SpiSlaveCapture(cJSON* args, uint8_t** storageOut, size_t* lenOut)
+{
+  *storageOut = NULL;
+  *lenOut = 0;
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseSpiId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_SPI, id, LOCK_METHOD_READ, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  esp_err_t ret = SpiCtrl_CheckSlaveReceive(id, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+
+  uint8_t* storage = malloc(CONFIG_SPI_SLAVE_EVENT_BYTES);
+  if (storage == NULL) return ToolCall_Fail(500, "internal");
+  size_t len = SpiCtrl_TakeSlaveEvents(id, storage, CONFIG_SPI_SLAVE_EVENT_BYTES);
+  Lock_Touch(lockId);
+  if (len == 0) {
+    free(storage);
+    storage = NULL;
+  }
+  *storageOut = storage;
+  *lenOut = len;
+  return ToolCall_Ok(NULL);
+}
+
+static ToolCall_Result ToolCall_SpiSlaveReceive(cJSON* args)
+{
+  uint8_t* storage = NULL;
+  size_t len = 0;
+  ToolCall_Result result = ToolCall_SpiSlaveCapture(args, &storage, &len);
+  if (!result.ok) return result;
+  cJSON* root = cJSON_CreateObject();
+  cJSON* events = cJSON_CreateArray();
+  size_t offset = 0;
+  SpiCtrl_Event ev;
+  while (SpiCtrl_NextSlaveEvent(storage, len, &offset, &ev)) {
+    cJSON* item = cJSON_CreateObject();
+    cJSON_AddNumberToObject(item, "startTime", (double)ev.startUs);
+    cJSON_AddNumberToObject(item, "endTime", (double)ev.endUs);
+    char receive[CONFIG_SPI_MAX_TRANSFER_BYTES * 2 + 1];
+    char send[CONFIG_SPI_MAX_TRANSFER_BYTES * 2 + 1];
+    Tool_HexEncode(ev.recv, ev.recvLen, receive);
+    Tool_HexEncode(ev.send, ev.sendLen, send);
+    cJSON_AddStringToObject(item, "receive", receive);
+    cJSON_AddStringToObject(item, "send", send);
+    cJSON_AddItemToArray(events, item);
+  }
+  free(storage);
+  cJSON_AddItemToObject(root, "events", events);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  return ToolCall_Ok(root);
 }
 
 static const char* ToolCall_ArgStr(const cJSON* args, const char* key)
@@ -861,6 +1224,20 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
                   ToolCall_ArgStr(args, "lockId"));
   } else if (strcmp(name, "uart_flush") == 0) {
     TOOL_CALL_LOG("%s uart_flush(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "list_spis") == 0) {
+    TOOL_CALL_LOG("%s list_spis()", via);
+  } else if (strcmp(name, "configure_spi") == 0) {
+    TOOL_CALL_LOG("%s configure_spi(id=%d, enable=%s, role=%s, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgBool(args, "enable"), ToolCall_ArgStr(args, "role"), ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "spi_master_transceive") == 0) {
+    TOOL_CALL_LOG("%s spi_master_transceive(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "spi_slave_receive") == 0) {
+    TOOL_CALL_LOG("%s spi_slave_receive(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "spi_slave_transmit") == 0) {
+    TOOL_CALL_LOG("%s spi_slave_transmit(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
                   ToolCall_ArgStr(args, "lockId"));
   } else if (strcmp(name, "play_buzzer") == 0) {
     TOOL_CALL_LOG("%s play_buzzer(sequence=%s)", via, ToolCall_ArgStr(args, "sequence"));
@@ -999,6 +1376,16 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
     r = ToolCall_UartReceive(args);
   else if (strcmp(name, "uart_flush") == 0)
     r = ToolCall_UartFlush(args);
+  else if (strcmp(name, "list_spis") == 0)
+    r = ToolCall_ListSpis();
+  else if (strcmp(name, "configure_spi") == 0)
+    r = ToolCall_ConfigureSpi(args);
+  else if (strcmp(name, "spi_master_transceive") == 0)
+    r = ToolCall_SpiMasterTransceive(args);
+  else if (strcmp(name, "spi_slave_transmit") == 0)
+    r = ToolCall_SpiSlaveTransmit(args);
+  else if (strcmp(name, "spi_slave_receive") == 0)
+    r = ToolCall_SpiSlaveReceive(args);
   else if (strcmp(name, "play_buzzer") == 0)
     r = ToolCall_PlayBuzzer(args);
   else if (strcmp(name, "get_cloud_status") == 0)
