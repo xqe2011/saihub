@@ -11,6 +11,7 @@
 #include "tool.h"
 
 #include <cJSON.h>
+#include <esp_log.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -230,137 +231,58 @@ static esp_err_t Route_SpiCallStatus(esp_err_t ret, HttpServer_Context* ctx, con
   return HttpServer_SendError(ctx, 500, reason[0] ? reason : "internal");
 }
 
-typedef struct {
-  HttpServer_Context* ctx;
-  bool escape;
-  esp_err_t err;
-  char buf[128];
-  size_t used;
-} Route_SpiOut;
-
-static void Route_SpiOutFlush(Route_SpiOut* out)
+static esp_err_t Route_SpiSendMasterData(HttpServer_Context* ctx, const uint8_t* data, size_t len)
 {
-  if (out->err != ESP_OK || out->used == 0) return;
-  out->err = HttpServer_SendChunk(out->ctx, out->buf, out->used);
-  out->used = 0;
-}
-
-static void Route_SpiOutAdd(Route_SpiOut* out, char c)
-{
-  if (out->err != ESP_OK) return;
-  size_t need = (out->escape && (c == '"' || c == '\\')) ? 2 : 1;
-  if (out->used + need > sizeof(out->buf)) Route_SpiOutFlush(out);
-  if (out->err != ESP_OK) return;
-  if (need == 2) out->buf[out->used++] = '\\';
-  out->buf[out->used++] = c;
-}
-
-static void Route_SpiOutWrite(Route_SpiOut* out, const char* text)
-{
-  if (text == NULL) return;
-  while (*text != '\0') Route_SpiOutAdd(out, *text++);
-}
-
-static void Route_SpiOutBytes(Route_SpiOut* out, const uint8_t* data, size_t len)
-{
-  for (size_t i = 0; out->err == ESP_OK && i < len; i++) {
-    char pair[3];
-    Tool_HexEncode(data + i, 1, pair);
-    Route_SpiOutAdd(out, pair[0]);
-    Route_SpiOutAdd(out, pair[1]);
-  }
-}
-
-static void Route_SpiOutTime(Route_SpiOut* out, const char* prefix)
-{
-  char tail[48];
-  int n = snprintf(tail, sizeof(tail), "%s%lld}", prefix, (long long)HttpServer_NowUs());
-  if (n < 0 || (size_t)n >= sizeof(tail)) {
-    out->err = ESP_ERR_INVALID_SIZE;
-    return;
-  }
-  Route_SpiOutWrite(out, tail);
-}
-
-static void Route_SpiOutMaster(Route_SpiOut* out, const uint8_t* data, size_t len)
-{
+  cJSON* root = cJSON_CreateObject();
+  char hex[CONFIG_SPI_MAX_TRANSFER_BYTES * 2 + 1];
   if (len > 0 && data == NULL) {
-    out->err = ESP_ERR_INVALID_ARG;
-    return;
+    cJSON_Delete(root);
+    return HttpServer_SendError(ctx, 500, "internal");
   }
-  Route_SpiOutWrite(out, "{\"data\":\"");
-  Route_SpiOutBytes(out, data, len);
-  Route_SpiOutTime(out, "\",\"time\":");
+  Tool_HexEncode(data, len, hex);
+  cJSON_AddStringToObject(root, "data", hex);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  return HttpServer_SendJson(ctx, 200, root);
 }
 
-static void Route_SpiOutSlave(Route_SpiOut* out, const uint8_t* storage, size_t len)
-{
-  if (len > 0 && storage == NULL) {
-    out->err = ESP_ERR_INVALID_ARG;
-    return;
-  }
-  Route_SpiOutWrite(out, "{\"events\":[");
-  size_t offset = 0;
-  SpiCtrl_Event ev;
-  bool first = true;
-  while (out->err == ESP_OK && SpiCtrl_NextSlaveEvent(storage, len, &offset, &ev)) {
-    if (!first) Route_SpiOutWrite(out, ",");
-    first = false;
-    char head[96];
-    int n = snprintf(head, sizeof(head), "{\"startTime\":%lld,\"endTime\":%lld,\"receive\":\"", (long long)ev.startUs,
-                     (long long)ev.endUs);
-    if (n < 0 || (size_t)n >= sizeof(head)) {
-      out->err = ESP_ERR_INVALID_SIZE;
-      return;
-    }
-    Route_SpiOutWrite(out, head);
-    Route_SpiOutBytes(out, ev.recv, ev.recvLen);
-    Route_SpiOutWrite(out, "\",\"send\":\"");
-    Route_SpiOutBytes(out, ev.send, ev.sendLen);
-    Route_SpiOutWrite(out, "\"}");
-  }
-  Route_SpiOutTime(out, "],\"time\":");
-}
-
-static esp_err_t Route_SpiAppend(HttpServer_Context* ctx, bool escape, const uint8_t* data, size_t len, bool slave)
-{
-  Route_SpiOut out = {.ctx = ctx, .escape = escape, .err = ESP_OK};
-  if (slave) Route_SpiOutSlave(&out, data, len);
-  else Route_SpiOutMaster(&out, data, len);
-  Route_SpiOutFlush(&out);
-  return out.err;
-}
-
-esp_err_t Route_SpiAppendMasterJson(HttpServer_Context* ctx, const uint8_t* data, size_t len, bool escape)
-{
-  return Route_SpiAppend(ctx, escape, data, len, false);
-}
-
-esp_err_t Route_SpiAppendSlaveJson(HttpServer_Context* ctx, const uint8_t* storage, size_t len, bool escape)
-{
-  return Route_SpiAppend(ctx, escape, storage, len, true);
-}
-
-static unsigned Route_SpiEventCount(const uint8_t* storage, size_t len)
-{
-  unsigned count = 0;
-  size_t offset = 0;
-  SpiCtrl_Event ev;
-  while (SpiCtrl_NextSlaveEvent(storage, len, &offset, &ev)) count++;
-  return count;
-}
-
-static esp_err_t Route_SpiSendJson(HttpServer_Context* ctx,
-                                   esp_err_t (*append)(HttpServer_Context* ctx, const uint8_t* data, size_t len, bool escape),
-                                   const uint8_t* data, size_t len, const char* field, unsigned count)
+static esp_err_t Route_SpiSendSlaveEvents(HttpServer_Context* ctx, const uint8_t* storage, size_t len)
 {
   esp_err_t ret = HttpServer_SendChunkBegin(ctx, 200, "application/json", NULL);
-  if (ret == ESP_OK) ret = append(ctx, data, len, false);
-  esp_err_t endRet = HttpServer_SendChunkDone(ctx);
-  if (ret == ESP_OK) {
-    ESP_LOGI(tag, "Resp rest/%s %s %s -> 200 %s=%u", HttpServer_GetFrom(ctx),
-             HttpServer_MethodName(HttpServer_GetMethod(ctx)), HttpServer_GetUri(ctx), field, count);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "{\"events\":[", sizeof("{\"events\":[") - 1);
+  size_t offset = 0;
+  SpiCtrl_Event ev;
+  unsigned count = 0;
+  char hex[CONFIG_SPI_MAX_TRANSFER_BYTES * 2 + 1];
+  char head[80];
+  while (ret == ESP_OK && SpiCtrl_NextSlaveEvent(storage, len, &offset, &ev)) {
+    int n = snprintf(head, sizeof(head), "%s{\"startTime\":%lld,\"endTime\":%lld,\"receive\":\"",
+                     count == 0 ? "" : ",", (long long)ev.startUs, (long long)ev.endUs);
+    if (n < 0 || (size_t)n >= sizeof(head)) {
+      ret = ESP_ERR_INVALID_SIZE;
+      break;
+    }
+    ret = HttpServer_SendChunk(ctx, head, (size_t)n);
+    if (ret == ESP_OK) {
+      Tool_HexEncode(ev.recv, ev.recvLen, hex);
+      ret = HttpServer_SendChunk(ctx, hex, ev.recvLen * 2);
+    }
+    if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "\",\"send\":\"", sizeof("\",\"send\":\"") - 1);
+    if (ret == ESP_OK) {
+      Tool_HexEncode(ev.send, ev.sendLen, hex);
+      ret = HttpServer_SendChunk(ctx, hex, ev.sendLen * 2);
+    }
+    if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "\"}", 2);
+    count++;
   }
+  if (ret == ESP_OK) {
+    char tail[48];
+    int n = snprintf(tail, sizeof(tail), "],\"time\":%lld}", (long long)HttpServer_NowUs());
+    if (n < 0 || (size_t)n >= sizeof(tail)) ret = ESP_ERR_INVALID_SIZE;
+    else ret = HttpServer_SendChunk(ctx, tail, (size_t)n);
+  }
+  esp_err_t endRet = HttpServer_SendChunkDone(ctx);
+  ESP_LOGI(tag, "Resp rest/%s %s %s -> 200 spi_events=%u", HttpServer_GetFrom(ctx),
+           HttpServer_MethodName(HttpServer_GetMethod(ctx)), HttpServer_GetUri(ctx), count);
   return ret == ESP_OK ? endRet : ret;
 }
 
@@ -474,7 +396,7 @@ static esp_err_t Route_SpiPostTransceiveHandler(HttpServer_Context* ctx)
     rx = NULL;
   }
   Lock_Touch(lockId);
-  esp_err_t sent = Route_SpiSendJson(ctx, Route_SpiAppendMasterJson, rx, rxLen, "spi_bytes", (unsigned)rxLen);
+  esp_err_t sent = Route_SpiSendMasterData(ctx, rx, rxLen);
   free(rx);
   return sent;
 }
@@ -497,13 +419,8 @@ static esp_err_t Route_SpiGetSlaveReceiveHandler(HttpServer_Context* ctx)
   uint8_t* storage = malloc(CONFIG_SPI_SLAVE_EVENT_BYTES);
   if (storage == NULL) return HttpServer_SendError(ctx, 500, "internal");
   size_t len = SpiCtrl_TakeSlaveEvents(id, storage, CONFIG_SPI_SLAVE_EVENT_BYTES);
-  unsigned events = Route_SpiEventCount(storage, len);
-  if (len == 0) {
-    free(storage);
-    storage = NULL;
-  }
   Lock_Touch(lockId);
-  esp_err_t sent = Route_SpiSendJson(ctx, Route_SpiAppendSlaveJson, storage, len, "spi_events", events);
+  esp_err_t sent = Route_SpiSendSlaveEvents(ctx, storage, len);
   free(storage);
   return sent;
 }
