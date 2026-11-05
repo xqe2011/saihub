@@ -11,6 +11,7 @@
 #include "gpio_ctrl.h"
 #include "http_server.h"
 #include "lock.h"
+#include "i2c_ctrl.h"
 #include "spi_ctrl.h"
 #include "system.h"
 #include "tool.h"
@@ -1121,6 +1122,377 @@ static ToolCall_Result ToolCall_SpiSlaveReceive(cJSON* args)
   return ToolCall_Ok(root);
 }
 
+static cJSON* ToolCall_I2cStateJson(int id, const I2cCtrl_Config* cfg)
+{
+  cJSON* item = cJSON_CreateObject();
+  cJSON_AddNumberToObject(item, "id", id);
+  cJSON_AddBoolToObject(item, "enable", cfg->enable);
+  cJSON_AddStringToObject(item, "role", I2cCtrl_RoleToString(cfg->role));
+  cJSON_AddBoolToObject(item, "pullUp", cfg->pullUp);
+  cJSON_AddNumberToObject(item, "addressBits", cfg->addressBits);
+  if (cfg->role == I2C_CTRL_ROLE_MASTER) {
+    cJSON_AddNumberToObject(item, "clockHz", cfg->clockHz);
+    cJSON_AddNumberToObject(item, "sclWaitUs", cfg->sclWaitUs);
+  }
+  if (cfg->role == I2C_CTRL_ROLE_SLAVE) cJSON_AddNumberToObject(item, "address", cfg->address);
+  cJSON* pins = cJSON_CreateObject();
+  ToolCall_AddOptionalPin(pins, "sda", cfg->sdaPin);
+  ToolCall_AddOptionalPin(pins, "scl", cfg->sclPin);
+  cJSON_AddItemToObject(item, "pins", pins);
+  return item;
+}
+
+static bool ToolCall_ParseI2cId(cJSON* args, int* idOut, char* reason, size_t reasonLen)
+{
+  cJSON* idItem = cJSON_GetObjectItem(args, "id");
+  if (!cJSON_IsNumber(idItem) || !I2cCtrl_IsValidId(idItem->valueint)) {
+    snprintf(reason, reasonLen, "id is invalid. Use an id from list_i2cs.");
+    return false;
+  }
+  *idOut = idItem->valueint;
+  return true;
+}
+
+static int ToolCall_ParseI2cPin(cJSON* pinsObj, const char* key, int* pinOut, char* reason, size_t reasonLen)
+{
+  cJSON* item = cJSON_GetObjectItem(pinsObj, key);
+  if (item == NULL || cJSON_IsNull(item)) {
+    *pinOut = -1;
+    return 0;
+  }
+  if (!cJSON_IsNumber(item)) {
+    snprintf(reason, reasonLen, "pins.%s must be an integer pin, null, or omitted.", key);
+    return -1;
+  }
+  *pinOut = item->valueint;
+  return 0;
+}
+
+static bool ToolCall_ParseI2cConfig(cJSON* args, I2cCtrl_Config* cfg, char* reason, size_t reasonLen)
+{
+  cJSON* enableItem = cJSON_GetObjectItem(args, "enable");
+  cJSON* roleItem = cJSON_GetObjectItem(args, "role");
+  cJSON* clockItem = cJSON_GetObjectItem(args, "clockHz");
+  cJSON* addressItem = cJSON_GetObjectItem(args, "address");
+  cJSON* addressBitsItem = cJSON_GetObjectItem(args, "addressBits");
+  cJSON* pullUpItem = cJSON_GetObjectItem(args, "pullUp");
+  cJSON* sclWaitItem = cJSON_GetObjectItem(args, "sclWaitUs");
+  cJSON* pinsItem = cJSON_GetObjectItem(args, "pins");
+  memset(cfg, 0, sizeof(*cfg));
+  if (!cJSON_IsBool(enableItem)) {
+    snprintf(reason, reasonLen, "enable must be boolean.");
+    return false;
+  }
+  if (!cJSON_IsString(roleItem) || !I2cCtrl_RoleFromString(roleItem->valuestring, &cfg->role)) {
+    snprintf(reason, reasonLen, "role must be one of: master, slave.");
+    return false;
+  }
+  if (!cJSON_IsBool(pullUpItem)) {
+    snprintf(reason, reasonLen, "pullUp must be boolean.");
+    return false;
+  }
+  if (!cJSON_IsNumber(addressBitsItem) || (addressBitsItem->valueint != 7 && addressBitsItem->valueint != 10)) {
+    snprintf(reason, reasonLen, "addressBits must be 7 or 10.");
+    return false;
+  }
+  cfg->pullUp = cJSON_IsTrue(pullUpItem);
+  cfg->addressBits = addressBitsItem->valueint;
+  if (cfg->role == I2C_CTRL_ROLE_SLAVE) {
+    if (clockItem != NULL) {
+      snprintf(reason, reasonLen, "clockHz is not supported when role is slave.");
+      return false;
+    }
+    if (sclWaitItem != NULL) {
+      snprintf(reason, reasonLen, "sclWaitUs is not supported when role is slave.");
+      return false;
+    }
+    if (!cJSON_IsNumber(addressItem)) {
+      snprintf(reason, reasonLen, "address must be an integer from 0 to %d.", cfg->addressBits == 10 ? 1023 : 127);
+      return false;
+    }
+    cfg->clockHz = 0;
+    cfg->sclWaitUs = 0;
+    cfg->address = addressItem->valueint;
+  } else {
+    if (addressItem != NULL) {
+      snprintf(reason, reasonLen, "address is not supported when role is master.");
+      return false;
+    }
+    if (!cJSON_IsNumber(clockItem)) {
+      snprintf(reason, reasonLen, "clockHz must be an integer from %d to %d.", CONFIG_I2C_CLOCK_HZ_MIN, CONFIG_I2C_CLOCK_HZ_MAX);
+      return false;
+    }
+    if (!cJSON_IsNumber(sclWaitItem)) {
+      snprintf(reason, reasonLen, "sclWaitUs must be an integer from 0 to %d.", CONFIG_I2C_SCL_WAIT_US_MAX);
+      return false;
+    }
+    cfg->clockHz = clockItem->valueint;
+    cfg->sclWaitUs = sclWaitItem->valueint;
+    cfg->address = 0;
+  }
+  if (!cJSON_IsObject(pinsItem)) {
+    snprintf(reason, reasonLen, "pins must be an object with sda and scl.");
+    return false;
+  }
+  cfg->enable = cJSON_IsTrue(enableItem);
+  if (ToolCall_ParseI2cPin(pinsItem, "sda", &cfg->sdaPin, reason, reasonLen) != 0) return false;
+  if (ToolCall_ParseI2cPin(pinsItem, "scl", &cfg->sclPin, reason, reasonLen) != 0) return false;
+  return true;
+}
+
+static ToolCall_Result ToolCall_ListI2cs(void)
+{
+  cJSON* root = cJSON_CreateObject();
+  cJSON* arr = cJSON_CreateArray();
+  int count = I2cCtrl_GetCount();
+  for (int i = 0; i < count; i++) {
+    I2cCtrl_Config cfg;
+    I2cCtrl_GetConfig(i, &cfg);
+    cJSON_AddItemToArray(arr, ToolCall_I2cStateJson(i, &cfg));
+  }
+  cJSON_AddItemToObject(root, "i2cs", arr);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_ConfigureI2c(cJSON* args)
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseI2cId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_I2C, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  I2cCtrl_Config cfg;
+  if (!ToolCall_ParseI2cConfig(args, &cfg, reason, sizeof(reason))) return ToolCall_Err(reason);
+  esp_err_t ret = I2cCtrl_SetConfig(id, &cfg, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_ARG) return ToolCall_Err(reason);
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(409, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  Lock_Touch(lockId);
+  return ToolCall_OkEmpty();
+}
+
+static ToolCall_Result ToolCall_I2cMasterTransceive(cJSON* args)
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseI2cId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_I2C, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  cJSON* addressItem = cJSON_GetObjectItem(args, "address");
+  cJSON* writeItem = cJSON_GetObjectItem(args, "write");
+  cJSON* readLenItem = cJSON_GetObjectItem(args, "readLen");
+  cJSON* timeoutItem = cJSON_GetObjectItem(args, "timeoutMs");
+  if (!cJSON_IsNumber(addressItem)) return ToolCall_Err("address must be an integer.");
+  if (!cJSON_IsString(writeItem) || writeItem->valuestring == NULL || (strlen(writeItem->valuestring) & 1U) != 0) {
+    return ToolCall_Err("write must be an even-length hex string.");
+  }
+  if (!cJSON_IsNumber(readLenItem) || readLenItem->valueint < 0 ||
+      readLenItem->valueint > (int)CONFIG_I2C_MAX_TRANSFER_BYTES) {
+    snprintf(reason, sizeof(reason), "readLen must be an integer from 0 to %u.", (unsigned)CONFIG_I2C_MAX_TRANSFER_BYTES);
+    return ToolCall_Err(reason);
+  }
+  int timeoutMs = -1;
+  if (timeoutItem != NULL) {
+    if (!cJSON_IsNumber(timeoutItem)) {
+      snprintf(reason, sizeof(reason), "timeoutMs must be an integer from %d to %d.", CONFIG_I2C_TRANSFER_TIMEOUT_MS_MIN,
+               CONFIG_I2C_TRANSFER_TIMEOUT_MS_MAX);
+      return ToolCall_Err(reason);
+    }
+    timeoutMs = timeoutItem->valueint;
+  }
+  int address = addressItem->valueint;
+  size_t n = strlen(writeItem->valuestring) / 2;
+  if (n > CONFIG_I2C_MAX_TRANSFER_BYTES) {
+    snprintf(reason, sizeof(reason), "write is too large. Send at most %u bytes per request.",
+             (unsigned)CONFIG_I2C_MAX_TRANSFER_BYTES);
+    return ToolCall_Err(reason);
+  }
+  size_t readLen = (size_t)readLenItem->valueint;
+  uint8_t* tx = NULL;
+  uint8_t* rx = NULL;
+  if (n > 0) {
+    tx = malloc(n);
+    if (tx == NULL) return ToolCall_Fail(500, "internal");
+    size_t decoded = 0;
+    if (!Tool_HexDecode(writeItem->valuestring, tx, n, &decoded)) {
+      free(tx);
+      return ToolCall_Err("write must be an even-length hex string.");
+    }
+  }
+  if (readLen > 0) {
+    rx = malloc(readLen);
+    if (rx == NULL) {
+      free(tx);
+      return ToolCall_Fail(500, "internal");
+    }
+  }
+  size_t rxLen = 0;
+  esp_err_t ret = I2cCtrl_MasterTransceive(id, address, tx, n, rx, readLen, timeoutMs, &rxLen, reason, sizeof(reason));
+  free(tx);
+  if (ret != ESP_OK) {
+    free(rx);
+    if (ret == ESP_ERR_INVALID_STATE || ret == ESP_ERR_TIMEOUT || ret == ESP_ERR_NOT_FOUND ||
+        ret == ESP_ERR_INVALID_RESPONSE) {
+      return ToolCall_Fail(422, reason);
+    }
+    if (ret == ESP_ERR_INVALID_SIZE || ret == ESP_ERR_INVALID_ARG) return ToolCall_Err(reason);
+    return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  }
+  Lock_Touch(lockId);
+  cJSON* root = cJSON_CreateObject();
+  char* data = malloc(rxLen * 2 + 1);
+  if (data == NULL) {
+    free(rx);
+    cJSON_Delete(root);
+    return ToolCall_Fail(500, "internal");
+  }
+  Tool_HexEncode(rx, rxLen, data);
+  free(rx);
+  cJSON_AddStringToObject(root, "data", data);
+  free(data);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  return ToolCall_Ok(root);
+}
+
+static esp_err_t ToolCall_ParseI2cMapBytes(cJSON* item, const char* field, int index, uint8_t* out, size_t* lenOut,
+                                           char* reason, size_t reasonLen)
+{
+  if (!cJSON_IsString(item) || item->valuestring == NULL) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
+  }
+  size_t chars = strlen(item->valuestring);
+  if ((chars & 1U) != 0) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (chars / 2 > CONFIG_I2C_MAX_TRANSFER_BYTES) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must contain at most %u bytes.", index, field,
+             (unsigned)CONFIG_I2C_MAX_TRANSFER_BYTES);
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!Tool_HexDecode(item->valuestring, out, CONFIG_I2C_MAX_TRANSFER_BYTES, lenOut)) {
+    snprintf(reason, reasonLen, "mapping[%d].%s must be an even-length hex string.", index, field);
+    return ESP_ERR_INVALID_ARG;
+  }
+  return ESP_OK;
+}
+
+static ToolCall_Result ToolCall_I2cSlaveTransmit(cJSON* args)
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseI2cId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_I2C, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  cJSON* mapping = cJSON_GetObjectItem(args, "mapping");
+  if (!cJSON_IsArray(mapping)) return ToolCall_Err("mapping must be an array.");
+  uint8_t* packed = malloc(CONFIG_I2C_SLAVE_MAP_BYTES);
+  if (packed == NULL) return ToolCall_Fail(500, "internal");
+  size_t used = 0;
+  int n = cJSON_GetArraySize(mapping);
+  for (int i = 0; i < n; i++) {
+    cJSON* entry = cJSON_GetArrayItem(mapping, i);
+    if (!cJSON_IsObject(entry)) {
+      free(packed);
+      snprintf(reason, sizeof(reason), "mapping[%d] must be an object.", i);
+      return ToolCall_Err(reason);
+    }
+    cJSON* typeItem = cJSON_GetObjectItem(entry, "type");
+    I2cCtrl_MapType type;
+    if (!cJSON_IsString(typeItem) || typeItem->valuestring == NULL ||
+        (strcmp(typeItem->valuestring, "exact") != 0 && strcmp(typeItem->valuestring, "prefix") != 0)) {
+      free(packed);
+      snprintf(reason, sizeof(reason), "mapping[%d].type must be one of: exact, prefix.", i);
+      return ToolCall_Err(reason);
+    }
+    type = strcmp(typeItem->valuestring, "exact") == 0 ? I2C_CTRL_MAP_EXACT : I2C_CTRL_MAP_PREFIX;
+    uint8_t receive[CONFIG_I2C_MAX_TRANSFER_BYTES];
+    uint8_t send[CONFIG_I2C_MAX_TRANSFER_BYTES];
+    size_t receiveLen = 0;
+    size_t sendLen = 0;
+    if (ToolCall_ParseI2cMapBytes(cJSON_GetObjectItem(entry, "receive"), "receive", i, receive, &receiveLen, reason,
+                                  sizeof(reason)) != ESP_OK ||
+        ToolCall_ParseI2cMapBytes(cJSON_GetObjectItem(entry, "send"), "send", i, send, &sendLen, reason, sizeof(reason)) !=
+            ESP_OK) {
+      free(packed);
+      return ToolCall_Err(reason);
+    }
+    esp_err_t pack = I2cCtrl_PackMapAppend(packed, CONFIG_I2C_SLAVE_MAP_BYTES, &used, i, type, receive, receiveLen, send,
+                                           sendLen, reason, sizeof(reason));
+    if (pack != ESP_OK) {
+      free(packed);
+      return ToolCall_Err(reason);
+    }
+  }
+  esp_err_t ret = I2cCtrl_SetSlaveMap(id, packed, used, reason, sizeof(reason));
+  free(packed);
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
+  if (ret == ESP_ERR_INVALID_ARG || ret == ESP_ERR_INVALID_SIZE) return ToolCall_Err(reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  Lock_Touch(lockId);
+  return ToolCall_OkEmpty();
+}
+
+ToolCall_Result ToolCall_I2cSlaveCapture(cJSON* args, uint8_t** storageOut, size_t* lenOut)
+{
+  *storageOut = NULL;
+  *lenOut = 0;
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseI2cId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_I2C, id, LOCK_METHOD_READ, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  esp_err_t ret = I2cCtrl_CheckSlaveReceive(id, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+
+  uint8_t* storage = malloc(CONFIG_I2C_SLAVE_EVENT_BYTES);
+  if (storage == NULL) return ToolCall_Fail(500, "internal");
+  size_t len = I2cCtrl_TakeSlaveEvents(id, storage, CONFIG_I2C_SLAVE_EVENT_BYTES);
+  Lock_Touch(lockId);
+  if (len == 0) {
+    free(storage);
+    storage = NULL;
+  }
+  *storageOut = storage;
+  *lenOut = len;
+  return ToolCall_Ok(NULL);
+}
+
+static ToolCall_Result ToolCall_I2cSlaveReceive(cJSON* args)
+{
+  uint8_t* storage = NULL;
+  size_t len = 0;
+  ToolCall_Result result = ToolCall_I2cSlaveCapture(args, &storage, &len);
+  if (!result.ok) return result;
+  cJSON* root = cJSON_CreateObject();
+  cJSON* events = cJSON_CreateArray();
+  size_t offset = 0;
+  I2cCtrl_Event ev;
+  while (I2cCtrl_NextSlaveEvent(storage, len, &offset, &ev)) {
+    cJSON* item = cJSON_CreateObject();
+    cJSON_AddNumberToObject(item, "startTime", (double)ev.startUs);
+    cJSON_AddNumberToObject(item, "endTime", (double)ev.endUs);
+    char receive[CONFIG_I2C_MAX_TRANSFER_BYTES * 2 + 1];
+    char send[CONFIG_I2C_MAX_TRANSFER_BYTES * 2 + 1];
+    Tool_HexEncode(ev.recv, ev.recvLen, receive);
+    Tool_HexEncode(ev.send, ev.sendLen, send);
+    cJSON_AddStringToObject(item, "receive", receive);
+    cJSON_AddStringToObject(item, "send", send);
+    cJSON_AddItemToArray(events, item);
+  }
+  free(storage);
+  cJSON_AddItemToObject(root, "events", events);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  return ToolCall_Ok(root);
+}
+
 static const char* ToolCall_ArgStr(const cJSON* args, const char* key)
 {
   cJSON* it = cJSON_GetObjectItem(args, key);
@@ -1238,6 +1610,20 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
                   ToolCall_ArgStr(args, "lockId"));
   } else if (strcmp(name, "spi_slave_transmit") == 0) {
     TOOL_CALL_LOG("%s spi_slave_transmit(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "list_i2cs") == 0) {
+    TOOL_CALL_LOG("%s list_i2cs()", via);
+  } else if (strcmp(name, "configure_i2c") == 0) {
+    TOOL_CALL_LOG("%s configure_i2c(id=%d, enable=%s, role=%s, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgBool(args, "enable"), ToolCall_ArgStr(args, "role"), ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "i2c_master_transceive") == 0) {
+    TOOL_CALL_LOG("%s i2c_master_transceive(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "i2c_slave_receive") == 0) {
+    TOOL_CALL_LOG("%s i2c_slave_receive(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "i2c_slave_transmit") == 0) {
+    TOOL_CALL_LOG("%s i2c_slave_transmit(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
                   ToolCall_ArgStr(args, "lockId"));
   } else if (strcmp(name, "play_buzzer") == 0) {
     TOOL_CALL_LOG("%s play_buzzer(sequence=%s)", via, ToolCall_ArgStr(args, "sequence"));
@@ -1386,6 +1772,16 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
     r = ToolCall_SpiSlaveTransmit(args);
   else if (strcmp(name, "spi_slave_receive") == 0)
     r = ToolCall_SpiSlaveReceive(args);
+  else if (strcmp(name, "list_i2cs") == 0)
+    r = ToolCall_ListI2cs();
+  else if (strcmp(name, "configure_i2c") == 0)
+    r = ToolCall_ConfigureI2c(args);
+  else if (strcmp(name, "i2c_master_transceive") == 0)
+    r = ToolCall_I2cMasterTransceive(args);
+  else if (strcmp(name, "i2c_slave_transmit") == 0)
+    r = ToolCall_I2cSlaveTransmit(args);
+  else if (strcmp(name, "i2c_slave_receive") == 0)
+    r = ToolCall_I2cSlaveReceive(args);
   else if (strcmp(name, "play_buzzer") == 0)
     r = ToolCall_PlayBuzzer(args);
   else if (strcmp(name, "get_cloud_status") == 0)
