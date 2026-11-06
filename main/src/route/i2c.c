@@ -51,7 +51,7 @@ static esp_err_t Route_I2cIdError(HttpServer_Context* ctx, int pr)
   return HttpServer_SendError(ctx, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
 }
 
-static void Route_AddOptionalPin(cJSON* pins, const char* key, int pin)
+static void Route_I2cAddOptionalPin(cJSON* pins, const char* key, int pin)
 {
   if (pin < 0) cJSON_AddNullToObject(pins, key);
   else cJSON_AddNumberToObject(pins, key, pin);
@@ -71,13 +71,13 @@ static cJSON* Route_I2cConfigToJson(int id, const I2cCtrl_Config* cfg)
   }
   if (cfg->role == I2C_CTRL_ROLE_SLAVE) cJSON_AddNumberToObject(item, "address", cfg->address);
   cJSON* pins = cJSON_CreateObject();
-  Route_AddOptionalPin(pins, "sda", cfg->sdaPin);
-  Route_AddOptionalPin(pins, "scl", cfg->sclPin);
+  Route_I2cAddOptionalPin(pins, "sda", cfg->sdaPin);
+  Route_I2cAddOptionalPin(pins, "scl", cfg->sclPin);
   cJSON_AddItemToObject(item, "pins", pins);
   return item;
 }
 
-static int Route_ParseOptionalPin(cJSON* pinsObj, const char* key, int* pinOut, char* reason, size_t reasonLen)
+static int Route_ParseI2cOptionalPin(cJSON* pinsObj, const char* key, int* pinOut, char* reason, size_t reasonLen)
 {
   cJSON* item = cJSON_GetObjectItem(pinsObj, key);
   if (item == NULL || cJSON_IsNull(item)) {
@@ -160,12 +160,12 @@ static esp_err_t Route_ParseI2cConfigBody(cJSON* body, I2cCtrl_Config* cfg, char
     return ESP_ERR_INVALID_ARG;
   }
   cfg->enable = cJSON_IsTrue(enableItem);
-  if (Route_ParseOptionalPin(pinsItem, "sda", &cfg->sdaPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
-  if (Route_ParseOptionalPin(pinsItem, "scl", &cfg->sclPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseI2cOptionalPin(pinsItem, "sda", &cfg->sdaPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseI2cOptionalPin(pinsItem, "scl", &cfg->sclPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
   return ESP_OK;
 }
 
-static esp_err_t Route_ParseByteArray(cJSON* item, const char* field, int index, uint8_t* out, size_t* lenOut, char* reason,
+static esp_err_t Route_ParseI2cByteArray(cJSON* item, const char* field, int index, uint8_t* out, size_t* lenOut, char* reason,
                                       size_t reasonLen)
 {
   if (!cJSON_IsString(item) || item->valuestring == NULL) {
@@ -189,7 +189,7 @@ static esp_err_t Route_ParseByteArray(cJSON* item, const char* field, int index,
   return ESP_OK;
 }
 
-static esp_err_t Route_ParseSlaveMap(cJSON* body, uint8_t* packed, size_t* usedOut, char* reason, size_t reasonLen)
+static esp_err_t Route_ParseI2cSlaveMap(cJSON* body, uint8_t* packed, size_t* usedOut, char* reason, size_t reasonLen)
 {
   cJSON* mapping = cJSON_GetObjectItem(body, "mapping");
   if (!cJSON_IsArray(mapping)) {
@@ -220,11 +220,11 @@ static esp_err_t Route_ParseSlaveMap(cJSON* body, uint8_t* packed, size_t* usedO
     uint8_t send[CONFIG_I2C_MAX_TRANSFER_BYTES];
     size_t receiveLen = 0;
     size_t sendLen = 0;
-    if (Route_ParseByteArray(cJSON_GetObjectItem(entry, "receive"), "receive", i, receive, &receiveLen, reason, reasonLen) !=
+    if (Route_ParseI2cByteArray(cJSON_GetObjectItem(entry, "receive"), "receive", i, receive, &receiveLen, reason, reasonLen) !=
         ESP_OK) {
       return ESP_ERR_INVALID_ARG;
     }
-    if (Route_ParseByteArray(cJSON_GetObjectItem(entry, "send"), "send", i, send, &sendLen, reason, reasonLen) != ESP_OK) {
+    if (Route_ParseI2cByteArray(cJSON_GetObjectItem(entry, "send"), "send", i, send, &sendLen, reason, reasonLen) != ESP_OK) {
       return ESP_ERR_INVALID_ARG;
     }
     esp_err_t err = I2cCtrl_PackMapAppend(packed, CONFIG_I2C_SLAVE_MAP_BYTES, &used, i, type, receive, receiveLen, send,
@@ -498,7 +498,7 @@ static esp_err_t Route_I2cPostSlaveTransmitHandler(HttpServer_Context* ctx)
     return HttpServer_SendError(ctx, 500, "internal");
   }
   size_t used = 0;
-  esp_err_t parse = Route_ParseSlaveMap(body, packed, &used, reason, sizeof(reason));
+  esp_err_t parse = Route_ParseI2cSlaveMap(body, packed, &used, reason, sizeof(reason));
   cJSON_Delete(body);
   if (parse != ESP_OK) {
     free(packed);
