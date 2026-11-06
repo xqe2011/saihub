@@ -1,0 +1,42 @@
+{
+  "blockers": [
+    "BOOT"
+  ],
+  "groups": [
+    1,
+    0
+  ],
+  "width": 0.18,
+  "path": [
+    [
+      7.6,
+      2.4125,
+      0
+    ],
+    [
+      7.3625,
+      2.65,
+      0
+    ],
+    [
+      6.675,
+      2.65,
+      0
+    ],
+    [
+      6.4,
+      2.65,
+      0
+    ],
+    [
+      6.1625,
+      2.4125,
+      0
+    ]
+  ],
+  "unconnected": 0,
+  "length_mm": 1.6342514421272198,
+  "board_sha256": "3dc1394879f61277a4e52349fca5bc77ab97ce85757a362c23e9ea1e69204853",
+  "description": "Short front-layer ground stitch below header pin 3 connects both header ground contacts to the ground planes.",
+  "limitation": "CAD connectivity only; include ground-return voltage drop and temperature in load qualification."
+}

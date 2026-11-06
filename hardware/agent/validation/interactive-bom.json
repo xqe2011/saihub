@@ -1,0 +1,15 @@
+{
+  "status": "passed",
+  "html_sha256": "96a59e042ae1f28f14c03e33a76c4fab674cd6f2500fca1f5bffe5a6d1752233",
+  "footprints": 64,
+  "front": 64,
+  "back": 0,
+  "placement_matches_design": true,
+  "copper_and_nets_included": true,
+  "led_resistors": "R19-R22: one 660-ohm BOM group",
+  "protection_arrays": "U6/U7/U10: one TPD4E05U06DQAR BOM group",
+  "D2_retained": true,
+  "C21_absent": true,
+  "test_pads_excluded_from_procurement": true,
+  "board_sha256": "3dc1394879f61277a4e52349fca5bc77ab97ce85757a362c23e9ea1e69204853"
+}

@@ -158,8 +158,8 @@ metadata just to refresh these documents.
 The four top-side LEDs remain together at board x=30.3 mm, y=5.2/8.4/11.6/14.8 mm.
 The shell takes these positions directly from `agent/design.json`. Each has a
 1.5 mm circular viewing opening and a separate 2.2 mm outside-diameter light well,
-with 0.4 mm clearance above the nominal 0.55 mm LED body. Recessed labels read
+with 0.4 mm clearance above the nominal 0.6 mm LED body. Recessed labels read
 `3V3 OUT`, `5V OUT`, `5V IN`, and `STATUS`; the first two are green, then red and blue.
-The QR sticker area remains blank. The eight bottom resistors fit inside the
-existing solder-tail allowance. Verify visibility, light bleed and resistor/solder
-clearance on a physical prototype.
+The QR sticker area remains blank. All resistors and test pads are on the front, with the other components. The
+bottom allowance is for connector tails and solder. Verify visibility, light
+bleed and component/solder clearance on a physical prototype.
