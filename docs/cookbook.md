@@ -34,7 +34,7 @@ Empty boards often enumerate in download mode already — try connecting first, 
 
 ## 2. Join Wi-Fi
 
-1. After a normal boot, **click BOOT once**. The board raises an open access point named `SAIHUB-` plus the last three bytes of its MAC, for example `SAIHUB-a1b2c3`.
+1. With no saved network, pairing starts on its own after boot and the status indicator blinks slowly until a join succeeds. When a network is already saved, **click BOOT once** to open pairing again. The open access point is named `SAIHUB-` plus the last three bytes of its MAC, for example `SAIHUB-a1b2c3`.
 2. Connect your phone or laptop to that AP (no password).
 3. A captive-portal page should open. If it does not, browse to [http://192.168.4.1/wifi/page](http://192.168.4.1/wifi/page).
 4. Pick your network, enter the password, tap **Connect**. Wait until it shows **Device IP**.
@@ -43,6 +43,17 @@ Empty boards often enumerate in download mode already — try connecting first, 
 <img src="assets/wifi-pairing.webp" alt="SAIHub Wi-Fi pairing page" style="display:block;max-height:720px;width:auto;margin:0 auto">
 
 The board reconnects to the saved network on later boots. Click BOOT any time you need to change Wi-Fi.
+
+### Status indicator
+
+The blue **STATUS** indicator on the top of the board repeats one pattern:
+
+| Pattern | Meaning |
+| --- | --- |
+| Slow blink | Wi-Fi pairing. With no saved network this starts at boot and stays up until a join succeeds. |
+| Three fast blinks, then off for 1 second | Joining a saved Wi-Fi network |
+| Two fast blinks, then off for 1 second | On Wi-Fi. Connecting to the cloud relay, or the relay is disabled. |
+| One fast blink, then off for 1 second | Connected to the cloud relay |
 
 On the LAN you now have:
 

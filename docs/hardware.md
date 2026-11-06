@@ -67,7 +67,7 @@ SW1 is TS-2435VS (C47734518), a side-push switch without locating posts. The act
 
 ## Other onboard parts
 
-- Four indicators in one column: green **3V3 OUT** and **5V OUT** monitor switched outputs, red **5V IN** monitors input power after the fuse, and blue **STATUS** connects to control pin 26. STATUS requires firmware control; this hardware change assigns no behavior.
+- Four indicators in one column: green **3V3 OUT** and **5V OUT** monitor switched outputs, red **5V IN** monitors input power after the fuse, and blue **STATUS** is driven active-high from control pin 26. It blinks slowly during Wi-Fi pairing, three fast blinks then 1 s off while joining Wi-Fi, two fast blinks then 1 s off when Wi-Fi is up, and one fast blink then 1 s off when the cloud relay is connected.
 - Passive 5020 buzzer on GPIO12 (driven at 4 kHz / 50 % duty).
 - Native USB on GPIO13 / GPIO14 (D- / D+), with USBLC6-2SC6 ESD protection.
 - 16 × 24 mm module with built-in PCB antenna and 4 MB flash.

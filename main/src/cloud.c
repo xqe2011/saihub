@@ -9,6 +9,7 @@
 #include "http_server.h"
 #include "ntp.h"
 #include "nvs.h"
+#include "tool.h"
 #include "wifi.h"
 
 #include <esp_app_desc.h>
@@ -508,6 +509,29 @@ static atomic_bool authenticated;
 static atomic_bool restart;
 static bool relayStarted;
 static char lastRestartReason[192];
+static Cloud_ConnectedCallback connectedCallbacks[4];
+static Cloud_DisconnectedCallback disconnectedCallbacks[4];
+
+static void Cloud_SetAuthenticated(bool connected)
+{
+  bool was = atomic_exchange(&authenticated, connected);
+  if (was == connected) return;
+  if (connected) {
+    TOOL_EXECUTE_CALLBACKS(connectedCallbacks);
+  } else {
+    TOOL_EXECUTE_CALLBACKS(disconnectedCallbacks);
+  }
+}
+
+esp_err_t Cloud_RegisterConnectedCallback(Cloud_ConnectedCallback callback)
+{
+  TOOL_REGISTER_CALLBACK(connectedCallbacks, callback, "connected");
+}
+
+esp_err_t Cloud_RegisterDisconnectedCallback(Cloud_DisconnectedCallback callback)
+{
+  TOOL_REGISTER_CALLBACK(disconnectedCallbacks, callback, "disconnected");
+}
 
 static void Cloud_ClearRestartReason(void)
 {
@@ -889,7 +913,7 @@ static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* e
   (void)base;
   if (event == WEBSOCKET_EVENT_CONNECTED || event == WEBSOCKET_EVENT_DISCONNECTED || event == WEBSOCKET_EVENT_CLOSED) {
     atomic_fetch_add(&generation, 1);
-    atomic_store(&authenticated, false);
+    Cloud_SetAuthenticated(false);
     Cloud_ResetReceive();
     if (event == WEBSOCKET_EVENT_CLOSED) Cloud_RequestRestart("Cloud connection closed.");
     return;
@@ -942,7 +966,7 @@ static void Cloud_RelayTask(void* arg)
   for (;;) {
     bool ready = Wifi_IsConnected() && !Wifi_IsPairing() && Ntp_IsSynced();
     if (running && (!ready || atomic_load(&restart))) {
-      atomic_store(&authenticated, false);
+      Cloud_SetAuthenticated(false);
       atomic_fetch_add(&generation, 1);
       /* Writers notice the generation change and release their fragment lock. */
       xSemaphoreTake(sendMutex, portMAX_DELAY);
@@ -971,7 +995,7 @@ static void Cloud_RelayTask(void* arg)
       if (strcmp(type->valuestring, "authRequest") == 0 && !atomic_load(&authenticated)) Cloud_Authenticate(root, message.generation);
       else if (strcmp(type->valuestring, "authResult") == 0) {
         bool success = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "success"));
-        atomic_store(&authenticated, success);
+        Cloud_SetAuthenticated(success);
         if (!success) Cloud_RequestRestart("Cloud authentication rejected.");
         if (success) {
           Cloud_ClearRestartReason();

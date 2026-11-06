@@ -43,8 +43,10 @@ static void Button_Task(void* arg)
         pairingHoldFired = false;
         if (!Cloud_PairingSessionIsLive()) {
           if (Wifi_IsPairing()) {
-            ESP_LOGI(tag, "Button: stop pairing");
-            Wifi_StopPairing();
+            if (Wifi_HasCredentials()) {
+              ESP_LOGI(tag, "Button: stop pairing");
+              Wifi_StopPairing();
+            }
           } else {
             ESP_LOGI(tag, "Button: start pairing");
             Wifi_StartPairing();

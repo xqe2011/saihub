@@ -18,6 +18,7 @@
 #include <lwip/ip4_addr.h>
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <freertos/timers.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +32,7 @@ static const char* tag = "SAIHub-Wifi";
 static bool allowReconnect = true;
 static bool isConnected = false;
 static bool isPairing = false;
+static bool hasCredentials = false;
 static bool portalConnectInFlight = false;
 static bool ignorePairingStaLeave = false;
 static Wifi_PairState pairState = WIFI_PAIR_STATE_IDLE;
@@ -41,6 +43,7 @@ static char lastRequestConnectPassword[65] = {0};
 static char pairingApSsid[32] = {0};
 static Wifi_ConnectedCallback connectedCallbacks[4];
 static Wifi_DisconnectedCallback disconnectedCallbacks[4];
+static Wifi_ConnectingCallback connectingCallbacks[4];
 static Wifi_PairingStartedCallback pairingStartedCallbacks[4];
 static Wifi_PairingStoppedCallback pairingStoppedCallbacks[4];
 static TimerHandle_t reconnectTimer;
@@ -59,6 +62,11 @@ bool Wifi_IsPairing(void)
   return isPairing;
 }
 
+bool Wifi_HasCredentials(void)
+{
+  return hasCredentials;
+}
+
 esp_err_t Wifi_RegisterConnectedCallback(Wifi_ConnectedCallback callback)
 {
   TOOL_REGISTER_CALLBACK(connectedCallbacks, callback, "connected");
@@ -67,6 +75,11 @@ esp_err_t Wifi_RegisterConnectedCallback(Wifi_ConnectedCallback callback)
 esp_err_t Wifi_RegisterDisconnectedCallback(Wifi_DisconnectedCallback callback)
 {
   TOOL_REGISTER_CALLBACK(disconnectedCallbacks, callback, "disconnected");
+}
+
+esp_err_t Wifi_RegisterConnectingCallback(Wifi_ConnectingCallback callback)
+{
+  TOOL_REGISTER_CALLBACK(connectingCallbacks, callback, "connecting");
 }
 
 esp_err_t Wifi_RegisterPairingStartedCallback(Wifi_PairingStartedCallback callback)
@@ -129,6 +142,7 @@ esp_err_t Wifi_ConnectWifi(const char* ssid, const char* password)
   esp_wifi_disconnect();
   TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_connect(), "wifi connect request failed");
   ESP_LOGI(tag, "Connecting to SSID: %s", ssid);
+  TOOL_EXECUTE_CALLBACKS(connectingCallbacks);
   return ESP_OK;
 }
 
@@ -163,6 +177,7 @@ esp_err_t Wifi_ConnectWifiAsync(const char* ssid, const char* password)
     return err;
   }
   ESP_LOGI(tag, "Async connecting to SSID: %s", ssid);
+  TOOL_EXECUTE_CALLBACKS(connectingCallbacks);
   return ESP_OK;
 }
 
@@ -314,6 +329,10 @@ esp_err_t Wifi_StartPairing(void)
 esp_err_t Wifi_StopPairing(void)
 {
   if (!isPairing) return ESP_OK;
+  if (!hasCredentials) {
+    ESP_LOGI(tag, "Pairing stays up until a network is saved");
+    return ESP_OK;
+  }
   Wifi_FinishPairingStop();
   allowReconnect = true;
   return ESP_OK;
@@ -324,6 +343,7 @@ static void Wifi_ReconnectCallback(TimerHandle_t timer)
   (void)timer;
   if (allowReconnect && !portalConnectInFlight) {
     esp_wifi_connect();
+    TOOL_EXECUTE_CALLBACKS(connectingCallbacks);
   }
 }
 
@@ -331,6 +351,7 @@ static void Wifi_OnGotIp(void)
 {
   Nvs_SetString("wifi.ssid", lastRequestConnectSSID);
   Nvs_SetString("wifi.password", lastRequestConnectPassword);
+  hasCredentials = true;
   isConnected = true;
 
   esp_netif_ip_info_t ipInfo;
@@ -357,6 +378,15 @@ static void Wifi_OnGotIp(void)
   TOOL_EXECUTE_CALLBACKS(connectedCallbacks);
 }
 
+static void Wifi_AutoPairTask(void* arg)
+{
+  (void)arg;
+  if (Wifi_StartPairing() != ESP_OK) {
+    ESP_LOGE(tag, "Auto pairing failed");
+  }
+  vTaskDelete(NULL);
+}
+
 static void Wifi_EventHandler(void* arg, esp_event_base_t eventBase, int32_t eventId, void* eventData)
 {
   (void)arg;
@@ -367,11 +397,17 @@ static void Wifi_EventHandler(void* arg, esp_event_base_t eventBase, int32_t eve
       char password[65] = {0};
       if (Nvs_GetString("wifi.ssid", ssid, sizeof(ssid)) == ESP_OK &&
           Nvs_GetString("wifi.password", password, sizeof(password)) == ESP_OK) {
+        hasCredentials = true;
         Wifi_ConnectWifi(ssid, password);
       } else if (strcmp(CONFIG_WIFI_SSID, "CHANGE_ME") != 0) {
+        hasCredentials = true;
         Wifi_ConnectWifi(CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD);
       } else {
-        ESP_LOGW(tag, "No WiFi credentials in NVS or config.h");
+        hasCredentials = false;
+        ESP_LOGW(tag, "No WiFi credentials; starting pairing");
+        if (xTaskCreate(Wifi_AutoPairTask, "wifi-pair", 4096, NULL, 5, NULL) != pdPASS) {
+          ESP_LOGE(tag, "Auto pairing task failed");
+        }
       }
     } else if (eventId == WIFI_EVENT_STA_DISCONNECTED) {
       wifi_event_sta_disconnected_t* disc = (wifi_event_sta_disconnected_t*)eventData;

@@ -32,6 +32,10 @@ All board-specific pins live in `main/include/config.h`:
 #define CONFIG_GPIO_POWER_3V3_PIN 8     /* 3V3_SW load-switch enable */
 #define CONFIG_GPIO_POWER_5V_PIN 9      /* 5V_SW load-switch enable */
 #define CONFIG_BUZZER_PIN 12
+#define CONFIG_LED_PIN 26               /* status indicator, active high */
+#define CONFIG_LED_FAST_MS 100          /* fast blink on and off */
+#define CONFIG_LED_SLOW_MS 500          /* slow blink on and off */
+#define CONFIG_LED_PAUSE_MS 1000        /* off time after a fast burst */
 #define CONFIG_CLOUD_URL "wss://…"      /* relay origin; empty disables the relay */
 #define CONFIG_WIFI_SSID "CHANGE_ME"    /* optional Wi-Fi seed, see above */
 #define CONFIG_WIFI_PASSWORD "CHANGE_ME"

@@ -37,6 +37,11 @@ const char* Cloud_GetLandingPageUrl(void);
 /** Live cloud relay status for GET /cloud/status and get_cloud_status. */
 void Cloud_GetStatus(Cloud_Status* out);
 
+typedef void (*Cloud_ConnectedCallback)(void);
+typedef void (*Cloud_DisconnectedCallback)(void);
+esp_err_t Cloud_RegisterConnectedCallback(Cloud_ConnectedCallback callback);
+esp_err_t Cloud_RegisterDisconnectedCallback(Cloud_DisconnectedCallback callback);
+
 /* Signs SHA-256(CLOUD_AUTH_DOMAIN || NUL || challenge); signature is raw r || s. */
 esp_err_t Cloud_SignChallenge(const uint8_t* challenge, size_t challengeLen,
                               uint8_t signature[CLOUD_SIGNATURE_BYTES], size_t* signatureLenOut);
