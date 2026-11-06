@@ -9,7 +9,6 @@ const PWM_PROBE_PIN = OUTPUT_B;
 const PWM_SLOT_FREQUENCIES = [500, 2000, 10000, 50000] as const;
 const UART_ID = 0;
 const SPI_PINS = { miso: 0, mosi: 1, clk: 2, cs: 3 } as const;
-const I2C_PINS = { sda: 0, scl: 1 } as const;
 const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_REQUEST_TIMEOUT_MS ?? "5000", 10);
 const UART_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_UART_TIMEOUT_MS ?? "1500", 10);
 const SPI_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_SPI_TIMEOUT_MS ?? "1500", 10);
@@ -35,11 +34,6 @@ const EXPECTED_MCP_TOOLS = [
   "spi_master_transceive",
   "spi_slave_receive",
   "spi_slave_transmit",
-  "list_i2cs",
-  "configure_i2c",
-  "i2c_master_transceive",
-  "i2c_slave_receive",
-  "i2c_slave_transmit",
   "play_buzzer",
   "create_lock",
   "renew_lock",
@@ -78,17 +72,6 @@ type SpiConfig = {
   clockHz?: number;
   pins: { mosi: number | null; miso: number | null; clk: number | null; cs: number | null };
 };
-type I2cConfig = {
-  id?: number;
-  enable: boolean;
-  role: "master" | "slave";
-  pullUp: boolean;
-  addressBits: 7 | 10;
-  clockHz?: number;
-  sclWaitUs?: number;
-  address?: number;
-  pins: { sda: number | null; scl: number | null };
-};
 type HttpResult = { status: number; headers: Headers; text: string };
 type McpEnvelope = { jsonrpc?: string; id?: number; result?: JsonObject; error?: JsonObject };
 
@@ -97,7 +80,6 @@ type Snapshot = {
   pwm: Map<number, PwmState>;
   uart: UartConfig;
   spi: SpiConfig;
-  i2c: I2cConfig;
   power: Record<"3v3" | "5v", boolean>;
 };
 
@@ -107,7 +89,6 @@ const createdMcpLocks = new Set<string>();
 let snapshot: Snapshot | undefined;
 let mutationStarted = false;
 let spiTouched = false;
-let i2cTouched = false;
 const deferredFailures: string[] = [];
 
 function fail(message: string): never {
@@ -279,19 +260,9 @@ function spiBody(config: SpiConfig, enable = config.enable): JsonObject {
   return { ...body, enable };
 }
 
-function i2cBody(config: I2cConfig, enable = config.enable): JsonObject {
-  const { id, ...body } = config;
-  return { ...body, enable };
-}
-
 const disabledSpi: SpiConfig = {
   enable: false, role: "master", cpol: 0, cpha: 0, bitOrder: "msb", clockHz: 1000000,
   pins: { mosi: null, miso: null, clk: null, cs: null },
-};
-
-const disabledI2c: I2cConfig = {
-  enable: false, role: "master", pullUp: true, addressBits: 7, clockHz: 100000, sclWaitUs: 0,
-  pins: { sda: null, scl: null },
 };
 
 const disabledUart: UartConfig = {
@@ -341,11 +312,6 @@ async function captureSnapshot(): Promise<Snapshot> {
   for (const pin of Object.values(SPI_PINS)) {
     assert(pins.get(pin)?.mode === "disable", `Open-end SPI test requires idle pin ${pin}`);
   }
-  const i2cList = await requestJson<{ i2cs: I2cConfig[]; time: number }>("GET", "/i2c/");
-  assert(Array.isArray(i2cList.i2cs) && i2cList.i2cs.length === 1, "REST I2C inventory must contain I2C 0");
-  assert(i2cList.i2cs[0]?.id === 0, "REST I2C inventory omitted I2C 0");
-  const i2c = i2cList.i2cs[0]!;
-  assert(!i2c.enable, "I2C must be disabled before the smoke test");
   const uart = uartList.uarts[0];
   assert(uart !== undefined && uart.id === UART_ID, "REST UART inventory omitted UART 0");
   if (uart.enable) {
@@ -355,7 +321,7 @@ async function captureSnapshot(): Promise<Snapshot> {
 
   const power3v3 = await requestJson<{ enable: boolean; time: number }>("GET", "/power/3v3");
   const power5v = await requestJson<{ enable: boolean; time: number }>("GET", "/power/5v");
-  return { pins, pwm, uart, spi, i2c, power: { "3v3": power3v3.enable, "5v": power5v.enable } };
+  return { pins, pwm, uart, spi, power: { "3v3": power3v3.enable, "5v": power5v.enable } };
 }
 
 async function testRestMetadata(): Promise<void> {
@@ -427,11 +393,9 @@ async function testInventorySurfaces(state: Snapshot): Promise<void> {
   const mcpPins = await mcpTool<{ pins: PinState[] }>("list_pins", {});
   const mcpUarts = await mcpTool<{ uarts: UartConfig[] }>("list_uarts", {});
   const mcpSpis = await mcpTool<{ spis: Array<{ id: number }> }>("list_spis", {});
-  const mcpI2cs = await mcpTool<{ i2cs: Array<{ id: number }> }>("list_i2cs", {});
   assert(mcpPins.pins.length === 8, "MCP list_pins did not return eight pins");
   assert(mcpUarts.uarts.length === 1, "MCP list_uarts did not return UART 0");
   assert(mcpSpis.spis.length === 1 && mcpSpis.spis[0]?.id === 0, "MCP list_spis did not return SPI 0");
-  assert(mcpI2cs.i2cs.length === 1 && mcpI2cs.i2cs[0]?.id === 0, "MCP list_i2cs did not return I2C 0");
   for (const rail of ["3v3", "5v"] as const) {
     const power = await mcpTool<{ enable: boolean }>("get_output_power_state", { rail });
     assert(power.enable === state.power[rail], `MCP ${rail} power state disagrees with REST`);
@@ -955,73 +919,6 @@ async function disableTestSpi(): Promise<void> {
   for (const pin of Object.values(SPI_PINS)) await configureRestPin(pin, "disable");
 }
 
-async function testOpenEndI2c(): Promise<void> {
-  log("open-end I2C master NACK and non-blocking slave APIs over REST/MCP");
-  const promptly = async <T>(label: string, action: () => Promise<T>): Promise<T> => {
-    const started = performance.now();
-    const result = await action();
-    const elapsed = performance.now() - started;
-    assert(elapsed < SPI_TIMEOUT_MS, `${label} took ${Math.round(elapsed)} ms without a peer`);
-    return result;
-  };
-  const expectMasterNack = async (label: string, body: JsonObject, mcp: boolean): Promise<void> => {
-    await promptly(label, async () => {
-      if (!mcp) {
-        await expectStatus("POST", "/i2c/0/master/transceive", 422, body);
-        return;
-      }
-      const envelope = await mcpRequest("tools/call", { name: "i2c_master_transceive", arguments: { id: 0, ...body } });
-      const result = envelope?.result;
-      assert(isObject(result), "MCP open-end I2C master omitted result");
-      assert(result.isError === true, "MCP open-end I2C master did not report an error");
-      const content = result.content;
-      assert(Array.isArray(content) && content.length > 0 && isObject(content[0]) && typeof content[0].text === "string",
-        "MCP open-end I2C master returned invalid error content");
-      const payload = JSON.parse(content[0].text) as JsonObject;
-      assert(typeof payload.reason === "string" && payload.reason.length > 0, "MCP open-end I2C master omitted reason");
-    });
-  };
-  const master: I2cConfig = { ...disabledI2c, enable: true, pins: I2C_PINS };
-  const slave: I2cConfig = { enable: true, role: "slave", pullUp: true, addressBits: 7, address: 0x42, pins: I2C_PINS };
-  i2cTouched = true;
-  await promptly("REST I2C master enable", () => requestJson<void>("POST", "/i2c/0/config", i2cBody(master), 204));
-  for (const mcp of [false, true]) {
-    // No peer on the bus: probe / write / read / write-read all NACK (422).
-    await expectMasterNack("Open-end probe NACK", { address: 0x42, write: "", readLen: 0 }, mcp);
-    await expectMasterNack("Open-end write NACK", { address: 0x42, write: "01", readLen: 0 }, mcp);
-    await expectMasterNack("Open-end read NACK", { address: 0x42, write: "", readLen: 1 }, mcp);
-    await expectMasterNack("Open-end write-read NACK", { address: 0x42, write: "01", readLen: 1 }, mcp);
-  }
-  await expectStatus("POST", "/i2c/0/master/transceive", 400, { address: 0x42, write: "00".repeat(256), readLen: 0 });
-  await expectStatus("GET", "/i2c/0/slave/receive", 422);
-  await promptly("REST I2C master disable", () => requestJson<void>("POST", "/i2c/0/config", i2cBody(disabledI2c), 204));
-
-  for (const mcp of [false, true]) {
-    await promptly("I2C slave enable", () => mcp
-      ? mcpTool("configure_i2c", { id: 0, ...i2cBody(slave) })
-      : requestJson<void>("POST", "/i2c/0/config", i2cBody(slave), 204));
-    for (const mapping of [[{ type: "prefix", receive: "", send: "010203" }], []]) {
-      await promptly("I2C slave map update", () => mcp
-        ? mcpTool("i2c_slave_transmit", { id: 0, mapping })
-        : requestJson<void>("POST", "/i2c/0/slave/transmit", { mapping }, 204));
-      const result = await promptly("Idle I2C slave receive", () => mcp
-        ? mcpTool<{ events: unknown[] }>("i2c_slave_receive", { id: 0 })
-        : requestJson<{ events: unknown[] }>("GET", "/i2c/0/slave/receive"));
-      assert(Array.isArray(result.events), "Open-end I2C slave returned an invalid event array");
-    }
-    await expectStatus("POST", "/i2c/0/master/transceive", 422, { address: 0x42, write: "01", readLen: 0 });
-    await promptly("I2C slave disable", () => mcp
-      ? mcpTool("configure_i2c", { id: 0, ...i2cBody(slave, false) })
-      : requestJson<void>("POST", "/i2c/0/config", i2cBody(slave, false), 204));
-  }
-}
-
-async function disableTestI2c(): Promise<void> {
-  if (!i2cTouched) return;
-  await requestJson<void>("POST", "/i2c/0/config", i2cBody(disabledI2c), 204);
-  for (const pin of Object.values(I2C_PINS)) await configureRestPin(pin, "disable");
-}
-
 function hardwareScript(output: number, input: number, marker: string): string {
   return [
     `configure_pins{pins={${output}}, mode="digitalOutput", openDrain=false, pullUp=false, pullDown=false}`,
@@ -1396,11 +1293,6 @@ async function cleanup(): Promise<void> {
     await attempt("restore SPI config", () =>
       requestJson<void>("POST", "/spi/0/config", spiBody(snapshot!.spi), 204));
   }
-  if (i2cTouched) {
-    await attempt("disable I2C", disableTestI2c);
-    await attempt("restore I2C config", () =>
-      requestJson<void>("POST", "/i2c/0/config", i2cBody(snapshot!.i2c), 204));
-  }
   await attempt("disable UART", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
   for (const id of createdRestLocks) {
     await attempt(`delete REST lock ${id}`, () => requestJson<void>("DELETE", `/lock/${encodeURIComponent(id)}`, undefined, 204));
@@ -1458,7 +1350,6 @@ async function main(): Promise<void> {
   await runSection("UART payloads and races", testUartPayloadsAndRaces);
   await runSection("reset after UART stress", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
   await runSection("open-end SPI", testOpenEndSpi, disableTestSpi);
-  await runSection("open-end I2C", testOpenEndI2c, disableTestI2c);
   await runSection("buzzer", testBuzzer);
   await runSection("scripts", testScripts);
   await runSection("concurrency", testConcurrency, releaseTestLocks);

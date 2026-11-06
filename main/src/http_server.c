@@ -24,12 +24,10 @@
 #include <strings.h>
 #include <sys/time.h>
 
-#define HTTP_SERVER_MAX_URI_HANDLERS 64
-
 static const char* tag = "SAIHub-Http";
 static httpd_handle_t server = NULL;
 static bool pairingServer = false;
-static const HttpServer_Route* cloudRoutes[HTTP_SERVER_MAX_URI_HANDLERS];
+static const HttpServer_Route* cloudRoutes[48];
 static size_t cloudRouteCount;
 static bool HttpServer_UriMatch(const char* tpl, const char* uri, size_t match_upto);
 
@@ -370,7 +368,7 @@ esp_err_t HttpServer_RegisterRoutes(const HttpServer_Route* routes, size_t count
     bool registered = false;
     for (size_t j = 0; j < cloudRouteCount; j++) if (cloudRoutes[j] == &routes[i]) registered = true;
     if (!registered) {
-      if (cloudRouteCount >= HTTP_SERVER_MAX_URI_HANDLERS) return ESP_ERR_NO_MEM;
+      if (cloudRouteCount >= 48) return ESP_ERR_NO_MEM;
       cloudRoutes[cloudRouteCount++] = &routes[i];
     }
   }
@@ -683,7 +681,7 @@ esp_err_t HttpServer_ParseLockResources(cJSON* resourcesArr, Lock_Resource* out,
     cJSON* idsItem = cJSON_GetObjectItem(item, "ids");
     cJSON* methodsItem = cJSON_GetObjectItem(item, "method");
     if (!cJSON_IsString(typeItem) || typeItem->valuestring == NULL) {
-      snprintf(reason, reasonLen, "resources[%d].type must be pin, power, uart, spi, or i2c.", g);
+      snprintf(reason, reasonLen, "resources[%d].type must be pin, power, uart, or spi.", g);
       return ESP_ERR_INVALID_ARG;
     }
     uint8_t bits = 0;
@@ -790,32 +788,8 @@ esp_err_t HttpServer_ParseLockResources(cJSON* resourcesArr, Lock_Resource* out,
         out[count].methods = bits;
         count++;
       }
-    } else if (strcmp(typeItem->valuestring, "i2c") == 0) {
-      if (pinsItem != NULL || railsItem != NULL) {
-        snprintf(reason, reasonLen, "resources[%d] with type i2c must not include pins or rails.", g);
-        return ESP_ERR_INVALID_ARG;
-      }
-      if (!cJSON_IsArray(idsItem) || cJSON_GetArraySize(idsItem) == 0) {
-        snprintf(reason, reasonLen, "resources[%d].ids must be a non-empty array of I2C ids from GET /i2c/.", g);
-        return ESP_ERR_INVALID_ARG;
-      }
-      for (int s = 0; s < cJSON_GetArraySize(idsItem); s++) {
-        if (count >= maxOut) {
-          snprintf(reason, reasonLen, "resources expand to too many lock entries (max %u).", (unsigned)maxOut);
-          return ESP_ERR_INVALID_ARG;
-        }
-        cJSON* idVal = cJSON_GetArrayItem(idsItem, s);
-        if (!cJSON_IsNumber(idVal) || !Lock_IsValidI2cId(idVal->valueint)) {
-          snprintf(reason, reasonLen, "resources[%d].ids[%d] is invalid. Use an id from GET /i2c/.", g, s);
-          return ESP_ERR_INVALID_ARG;
-        }
-        out[count].kind = LOCK_KIND_I2C;
-        out[count].pin = idVal->valueint;
-        out[count].methods = bits;
-        count++;
-      }
     } else {
-      snprintf(reason, reasonLen, "resources[%d].type must be pin, power, uart, spi, or i2c.", g);
+      snprintf(reason, reasonLen, "resources[%d].type must be pin, power, uart, or spi.", g);
       return ESP_ERR_INVALID_ARG;
     }
   }
@@ -867,24 +841,13 @@ cJSON* HttpServer_SerializeLockResources(const Lock_Resource* resources, size_t 
         used[j] = true;
       }
       cJSON_AddItemToObject(r, "ids", ids);
-    } else if (resources[i].kind == LOCK_KIND_I2C) {
-      cJSON_AddStringToObject(r, "type", "i2c");
-      cJSON* ids = cJSON_CreateArray();
-      for (size_t j = i; j < count; j++) {
-        if (used[j]) continue;
-        if (resources[j].kind != LOCK_KIND_I2C || resources[j].methods != methods) continue;
-        cJSON_AddItemToArray(ids, cJSON_CreateNumber(resources[j].pin));
-        used[j] = true;
-      }
-      cJSON_AddItemToObject(r, "ids", ids);
     } else {
       cJSON_AddStringToObject(r, "type", "power");
       cJSON* rails = cJSON_CreateArray();
       for (size_t j = i; j < count; j++) {
         if (used[j]) continue;
         if (resources[j].kind == LOCK_KIND_GPIO || resources[j].kind == LOCK_KIND_UART ||
-            resources[j].kind == LOCK_KIND_SPI || resources[j].kind == LOCK_KIND_I2C ||
-            resources[j].methods != methods)
+            resources[j].kind == LOCK_KIND_SPI || resources[j].methods != methods)
           continue;
         cJSON_AddItemToArray(rails, cJSON_CreateString(Lock_KindToString(resources[j].kind)));
         used[j] = true;
@@ -1168,7 +1131,7 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
   config.stack_size = 8192;
   config.server_port = 80;
   config.uri_match_fn = HttpServer_UriMatch;
-  config.max_uri_handlers = HTTP_SERVER_MAX_URI_HANDLERS;
+  config.max_uri_handlers = 48;
   config.lru_purge_enable = true;
   config.recv_wait_timeout = 65;
   config.send_wait_timeout = 65;
@@ -1188,7 +1151,6 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(), "pin routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_UartRegister(), "uart routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_SpiRegister(), "spi routes failed");
-    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_I2cRegister(), "i2c routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(), "lock routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PowerRegister(), "power routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_ScriptRegister(), "script routes failed");

@@ -50,8 +50,6 @@ const char* Lock_KindToString(Lock_Kind kind)
       return "uart";
     case LOCK_KIND_SPI:
       return "spi";
-    case LOCK_KIND_I2C:
-      return "i2c";
     default:
       return "gpio";
   }
@@ -83,12 +81,6 @@ bool Lock_IsValidSpiId(int id)
   return id >= 0 && id < (int)TOOL_GET_ARRAY_LENGTH(map);
 }
 
-bool Lock_IsValidI2cId(int id)
-{
-  static const int map[] = CONFIG_I2C_ID_TO_PORT;
-  return id >= 0 && id < (int)TOOL_GET_ARRAY_LENGTH(map);
-}
-
 static void Lock_MakeId(char* out, size_t outLen)
 {
   uint32_t a = esp_random();
@@ -107,11 +99,6 @@ static void Lock_OwnerToLabel(const char* owner, char* out, size_t outLen)
   unsigned spiId = 0;
   if (sscanf(owner, "spi:%u", &spiId) == 1) {
     snprintf(out, outLen, "SPI %u", spiId);
-    return;
-  }
-  unsigned i2cId = 0;
-  if (sscanf(owner, "i2c:%u", &i2cId) == 1) {
-    snprintf(out, outLen, "I2C %u", i2cId);
     return;
   }
   snprintf(out, outLen, "%s", owner);
@@ -194,7 +181,7 @@ static Lock_Entry* Lock_FindById(const char* id)
 
 static bool Lock_ResourceNeedsPin(Lock_Kind kind)
 {
-  return kind == LOCK_KIND_GPIO || kind == LOCK_KIND_UART || kind == LOCK_KIND_SPI || kind == LOCK_KIND_I2C;
+  return kind == LOCK_KIND_GPIO || kind == LOCK_KIND_UART || kind == LOCK_KIND_SPI;
 }
 
 static bool Lock_ResourceEqualKey(const Lock_Resource* a, const Lock_Resource* b)

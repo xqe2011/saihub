@@ -10,7 +10,6 @@
 #include "ntp.h"
 #include "nvs.h"
 #include "script.h"
-#include "i2c_ctrl.h"
 #include "spi_ctrl.h"
 #include "uart_ctrl.h"
 #include "wifi.h"
@@ -34,7 +33,6 @@ void app_main(void)
   MAIN_LOAD_MODULE(Lock_Init(), "Lock");
   MAIN_LOAD_MODULE(UartCtrl_Init(), "Uart");
   MAIN_LOAD_MODULE(SpiCtrl_Init(), "Spi");
-  MAIN_LOAD_MODULE(I2cCtrl_Init(), "I2c");
   MAIN_LOAD_MODULE(Script_Init(), "Script");
   MAIN_LOAD_MODULE(Ntp_Init(), "Ntp");
   MAIN_LOAD_MODULE(HttpServer_Init(), "HttpServer");

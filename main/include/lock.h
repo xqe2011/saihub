@@ -24,7 +24,6 @@ typedef enum {
   LOCK_KIND_POWER_5V,
   LOCK_KIND_UART,
   LOCK_KIND_SPI,
-  LOCK_KIND_I2C,
 } Lock_Kind;
 
 typedef struct {
@@ -77,7 +76,6 @@ const char* Lock_KindToString(Lock_Kind kind);
 bool Lock_PowerFromString(const char* s, Lock_Kind* out);
 bool Lock_IsValidUartId(int id);
 bool Lock_IsValidSpiId(int id);
-bool Lock_IsValidI2cId(int id);
 
 /**
  * Acquire a no-TTL peripheral hold over resources. owner e.g. "uart:0".

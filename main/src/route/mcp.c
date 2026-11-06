@@ -7,10 +7,8 @@
 
 #include "config.h"
 #include "http_server.h"
-#include "i2c_ctrl.h"
 #include "lock.h"
 #include "script.h"
-#include "spi_ctrl.h"
 #include "system.h"
 #include "tool.h"
 #include "tool_call.h"
@@ -272,14 +270,12 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
   cJSON_AddItemToObject(result, "serverInfo", info);
   cJSON_AddStringToObject(
       result, "instructions",
-      "SAIHub: logical pins 0-7, UART ids from list_uarts, SPI ids from list_spis, I2C ids from list_i2cs, times in "
-      "microseconds, optional lockId for contested resources. Use plural pin tools (configure_pins, get_pin_levels, …) "
-      "and always pass pins even for one pin (pins:[1]). Power tools use rail=3v3|5v. UART tools use configure_uart, "
-      "uart_transmit, uart_receive, uart_flush. SPI tools use configure_spi, spi_master_transceive, spi_slave_receive, "
-      "spi_slave_transmit. I2C tools use configure_i2c, i2c_master_transceive, i2c_slave_receive, i2c_slave_transmit. "
+      "SAIHub: logical pins 0-7, UART ids from list_uarts, SPI ids from list_spis, times in microseconds, optional lockId "
+      "for contested resources. Use plural pin tools (configure_pins, get_pin_levels, …) and always pass pins even for "
+      "one pin (pins:[1]). Power tools use rail=3v3|5v. UART tools use configure_uart, uart_transmit, uart_receive, "
+      "uart_flush. SPI tools use configure_spi, spi_master_transceive, spi_slave_receive, spi_slave_transmit. "
       "play_buzzer plays a Morse-style sequence of . and - and blocks until it finishes (one at a time). "
-      "create_lock resources use type pin with pins, type power with rails, type uart with ids, type spi with ids, or "
-      "type i2c with ids. "
+      "create_lock resources use type pin with pins, type power with rails, type uart with ids, or type spi with ids. "
       "System tools: get_system_info, check_system_ota, get_system_ota, upgrade_system_ota (url+sha256 required). "
       "While a firmware update runs, non-system tools return 503. "
       "For multi-step on-device work, use run_script with a Lua script that calls the same tools.");
@@ -443,109 +439,11 @@ static esp_err_t Route_McpDispatchSpiSlaveReceive(HttpServer_Context* ctx, cJSON
 
   esp_err_t ret = HttpServer_SendChunkBegin(ctx, 200, "application/json", NULL);
   if (ret == ESP_OK) {
-    ret = HttpServer_SendChunk(
-        ctx, "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"events\\\":[",
-        sizeof("{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"events\\\":[") - 1);
+    ret = HttpServer_SendChunk(ctx, "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"",
+                               sizeof("{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"") - 1);
   }
-  size_t offset = 0;
-  SpiCtrl_Event ev;
-  unsigned count = 0;
-  char hex[CONFIG_SPI_MAX_TRANSFER_BYTES * 2 + 1];
-  char head[96];
-  while (ret == ESP_OK && SpiCtrl_NextSlaveEvent(storage, len, &offset, &ev)) {
-    int n = snprintf(head, sizeof(head), "%s{\\\"startTime\\\":%lld,\\\"endTime\\\":%lld,\\\"receive\\\":\\\"",
-                     count == 0 ? "" : ",", (long long)ev.startUs, (long long)ev.endUs);
-    if (n < 0 || (size_t)n >= sizeof(head)) {
-      ret = ESP_ERR_INVALID_SIZE;
-      break;
-    }
-    ret = HttpServer_SendChunk(ctx, head, (size_t)n);
-    if (ret == ESP_OK) {
-      Tool_HexEncode(ev.recv, ev.recvLen, hex);
-      ret = HttpServer_SendChunk(ctx, hex, ev.recvLen * 2);
-    }
-    if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "\\\",\\\"send\\\":\\\"", sizeof("\\\",\\\"send\\\":\\\"") - 1);
-    if (ret == ESP_OK) {
-      Tool_HexEncode(ev.send, ev.sendLen, hex);
-      ret = HttpServer_SendChunk(ctx, hex, ev.sendLen * 2);
-    }
-    if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "\\\"}", 3);
-    count++;
-  }
-  if (ret == ESP_OK) {
-    char tail[64];
-    int n = snprintf(tail, sizeof(tail), "],\\\"time\\\":%lld}\"}]},\"id\":", (long long)HttpServer_NowUs());
-    if (n < 0 || (size_t)n >= sizeof(tail)) ret = ESP_ERR_INVALID_SIZE;
-    else ret = HttpServer_SendChunk(ctx, tail, (size_t)n);
-  }
-  char* printedId = ret == ESP_OK && id != NULL ? cJSON_PrintUnformatted(id) : NULL;
-  if (ret == ESP_OK && id != NULL && printedId == NULL) ret = ESP_ERR_NO_MEM;
-  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, printedId != NULL ? printedId : "null", printedId != NULL ? strlen(printedId) : 4);
-  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "}", 1);
-  free(printedId);
-  free(storage);
-  esp_err_t endRet = HttpServer_SendChunkDone(ctx);
-  return ret == ESP_OK ? endRet : ret;
-}
-
-static esp_err_t Route_McpDispatchI2cSlaveReceive(HttpServer_Context* ctx, cJSON* id, cJSON* params)
-{
-  if (!cJSON_IsObject(params)) {
-    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr("params are required.")));
-  }
-  cJSON* args = cJSON_GetObjectItem(params, "arguments");
-  if (args != NULL && !cJSON_IsObject(args)) {
-    return Route_McpSendJsonRpc(ctx, 200,
-                                Route_McpJsonRpcResult(id, Route_McpToolResultErr("arguments must be an object.")));
-  }
-  if (args == NULL) args = cJSON_CreateObject();
-  bool ownedArgs = cJSON_GetObjectItem(params, "arguments") == NULL;
-  uint8_t* storage = NULL;
-  size_t len = 0;
-  ToolCall_Result result = ToolCall_I2cSlaveCapture(args, &storage, &len);
-  if (ownedArgs) cJSON_Delete(args);
-  if (!result.ok) {
-    free(storage);
-    return Route_McpSendJsonRpc(ctx, 200, Route_McpJsonRpcResult(id, Route_McpToolResultErr(result.reason)));
-  }
-
-  esp_err_t ret = HttpServer_SendChunkBegin(ctx, 200, "application/json", NULL);
-  if (ret == ESP_OK) {
-    ret = HttpServer_SendChunk(
-        ctx, "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"events\\\":[",
-        sizeof("{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"events\\\":[") - 1);
-  }
-  size_t offset = 0;
-  I2cCtrl_Event ev;
-  unsigned count = 0;
-  char hex[CONFIG_I2C_MAX_TRANSFER_BYTES * 2 + 1];
-  char head[96];
-  while (ret == ESP_OK && I2cCtrl_NextSlaveEvent(storage, len, &offset, &ev)) {
-    int n = snprintf(head, sizeof(head), "%s{\\\"startTime\\\":%lld,\\\"endTime\\\":%lld,\\\"receive\\\":\\\"",
-                     count == 0 ? "" : ",", (long long)ev.startUs, (long long)ev.endUs);
-    if (n < 0 || (size_t)n >= sizeof(head)) {
-      ret = ESP_ERR_INVALID_SIZE;
-      break;
-    }
-    ret = HttpServer_SendChunk(ctx, head, (size_t)n);
-    if (ret == ESP_OK) {
-      Tool_HexEncode(ev.recv, ev.recvLen, hex);
-      ret = HttpServer_SendChunk(ctx, hex, ev.recvLen * 2);
-    }
-    if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "\\\",\\\"send\\\":\\\"", sizeof("\\\",\\\"send\\\":\\\"") - 1);
-    if (ret == ESP_OK) {
-      Tool_HexEncode(ev.send, ev.sendLen, hex);
-      ret = HttpServer_SendChunk(ctx, hex, ev.sendLen * 2);
-    }
-    if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "\\\"}", 3);
-    count++;
-  }
-  if (ret == ESP_OK) {
-    char tail[64];
-    int n = snprintf(tail, sizeof(tail), "],\\\"time\\\":%lld}\"}]},\"id\":", (long long)HttpServer_NowUs());
-    if (n < 0 || (size_t)n >= sizeof(tail)) ret = ESP_ERR_INVALID_SIZE;
-    else ret = HttpServer_SendChunk(ctx, tail, (size_t)n);
-  }
+  if (ret == ESP_OK) ret = Route_SpiAppendSlaveJson(ctx, storage, len, true);
+  if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, "\"}]},\"id\":", sizeof("\"}]},\"id\":") - 1);
   char* printedId = ret == ESP_OK && id != NULL ? cJSON_PrintUnformatted(id) : NULL;
   if (ret == ESP_OK && id != NULL && printedId == NULL) ret = ESP_ERR_NO_MEM;
   if (ret == ESP_OK) ret = HttpServer_SendChunk(ctx, printedId != NULL ? printedId : "null", printedId != NULL ? strlen(printedId) : 4);
@@ -639,7 +537,6 @@ static esp_err_t Route_McpDispatch(HttpServer_Context* ctx, cJSON* msg)
         if (strcmp(toolName, "run_script") == 0) return Route_McpDispatchRunScript(ctx, id, params);
         if (strcmp(toolName, "trace_pins") == 0) return Route_McpDispatchTrace(ctx, id, params);
         if (strcmp(toolName, "spi_slave_receive") == 0) return Route_McpDispatchSpiSlaveReceive(ctx, id, params);
-        if (strcmp(toolName, "i2c_slave_receive") == 0) return Route_McpDispatchI2cSlaveReceive(ctx, id, params);
         if (strcmp(toolName, "play_buzzer") == 0) return Route_McpDispatchBuzzer(ctx, id, params);
       }
     } else if (System_OtaIsUpgrading()) {

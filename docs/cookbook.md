@@ -110,11 +110,9 @@ UART: `list_uarts`, `configure_uart`, `uart_transmit`, `uart_receive`, `uart_flu
 
 SPI: `list_spis`, `configure_spi`, `spi_master_transceive`, `spi_slave_receive`, `spi_slave_transmit`.
 
-I2C: `list_i2cs`, `configure_i2c`, `i2c_master_transceive`, `i2c_slave_receive`, `i2c_slave_transmit`.
-
 Buzzer: `play_buzzer`.
 
-Scripts: `run_script` — sandboxed Lua 5.4 with the same pin, power, UART, SPI, and I2C tools plus `sleep(us)`.
+Scripts: `run_script` — sandboxed Lua 5.4 with the same pin, power, UART, and SPI tools plus `sleep(us)`.
 
 Full schemas: [`mcp.json`](../mcp.json). REST twin: [`openapi.json`](../openapi.json).
 

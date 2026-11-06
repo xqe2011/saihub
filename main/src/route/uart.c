@@ -54,7 +54,7 @@ static esp_err_t Route_UartIdError(HttpServer_Context* ctx, int pr)
   return HttpServer_SendError(ctx, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
 }
 
-static void Route_UartAddOptionalPin(cJSON* pins, const char* key, int pin)
+static void Route_AddOptionalPin(cJSON* pins, const char* key, int pin)
 {
   if (pin < 0) {
     cJSON_AddNullToObject(pins, key);
@@ -84,13 +84,13 @@ static cJSON* Route_UartConfigToJson(int id, const UartCtrl_Config* cfg)
   cJSON_AddNumberToObject(item, "stopBits", cfg->stopBits);
   cJSON_AddStringToObject(item, "encoding", UartCtrl_EncodingToString(cfg->encoding));
   cJSON* pins = cJSON_CreateObject();
-  Route_UartAddOptionalPin(pins, "rx", cfg->rxPin);
-  Route_UartAddOptionalPin(pins, "tx", cfg->txPin);
+  Route_AddOptionalPin(pins, "rx", cfg->rxPin);
+  Route_AddOptionalPin(pins, "tx", cfg->txPin);
   cJSON_AddItemToObject(item, "pins", pins);
   return item;
 }
 
-static int Route_ParseUartOptionalPin(cJSON* pinsObj, const char* key, int* pinOut, char* reason, size_t reasonLen)
+static int Route_ParseOptionalPin(cJSON* pinsObj, const char* key, int* pinOut, char* reason, size_t reasonLen)
 {
   cJSON* item = cJSON_GetObjectItem(pinsObj, key);
   if (item == NULL || cJSON_IsNull(item)) {
@@ -148,8 +148,8 @@ static esp_err_t Route_ParseUartConfigBody(cJSON* body, UartCtrl_Config* cfg, ch
   cfg->baudRate = baudItem->valueint;
   cfg->dataBits = dataBitsItem->valueint;
   cfg->stopBits = stopBitsItem->valueint;
-  if (Route_ParseUartOptionalPin(pinsItem, "rx", &cfg->rxPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
-  if (Route_ParseUartOptionalPin(pinsItem, "tx", &cfg->txPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseOptionalPin(pinsItem, "rx", &cfg->rxPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseOptionalPin(pinsItem, "tx", &cfg->txPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
   return ESP_OK;
 }
 
