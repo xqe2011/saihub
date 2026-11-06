@@ -2701,6 +2701,10 @@
           "enable": {
             "type": "boolean"
           },
+          "reason": {
+            "type": "string",
+            "description": "Present after overcurrent, overtemperature, or reverse-voltage turns the output off. Example: \"Overcurrent, overtemperature, or reverse-voltage detected at 2026-11-06T14:30:15Z. Output disabled.\" Omitted after the rail is enabled again."
+          },
           "time": {
             "$ref": "#/components/schemas/TimeUs"
           }

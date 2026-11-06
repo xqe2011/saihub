@@ -16,8 +16,10 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
+#include <time.h>
 
 static const char* tag = "SAIHub-Gpio";
 
@@ -41,10 +43,21 @@ typedef struct {
   int64_t startTimeUs;
 } TraceContext;
 
+typedef struct {
+  int enablePin;
+  int faultPin;
+  bool enable;
+  bool faulted;
+  int64_t faultTimeUs;
+} GpioCtrl_PowerRuntime;
+
 static int logicalToHw[] = CONFIG_GPIO_LOGICAL_TO_HW;
 static GpioPinRuntime pins[TOOL_GET_ARRAY_LENGTH(logicalToHw)];
-static bool powerEnable3v3 = false;
-static bool powerEnable5v = false;
+static GpioCtrl_PowerRuntime power[] = {
+    [GPIO_CTRL_POWER_3V3] = {.enablePin = CONFIG_GPIO_POWER_3V3_PIN, .faultPin = CONFIG_GPIO_POWER_3V3_FAULT_PIN},
+    [GPIO_CTRL_POWER_5V] = {.enablePin = CONFIG_GPIO_POWER_5V_PIN, .faultPin = CONFIG_GPIO_POWER_5V_FAULT_PIN},
+};
+static portMUX_TYPE powerMux = portMUX_INITIALIZER_UNLOCKED;
 static TraceContext* traceOwners[TOOL_GET_ARRAY_LENGTH(logicalToHw)];
 static portMUX_TYPE traceMux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -66,12 +79,6 @@ static int GpioCtrl_Hw(int logicalPin)
 int GpioCtrl_GetHwPin(int logicalPin)
 {
   return GpioCtrl_Hw(logicalPin);
-}
-
-static int GpioCtrl_PowerHw(GpioCtrl_PowerRail rail)
-{
-  if (rail == GPIO_CTRL_POWER_3V3) return CONFIG_GPIO_POWER_3V3_PIN;
-  return CONFIG_GPIO_POWER_5V_PIN;
 }
 
 const char* GpioCtrl_ModeToString(GpioCtrl_Mode mode)
@@ -242,6 +249,29 @@ static int64_t GpioCtrl_NowUs(void)
   return (int64_t)tv.tv_sec * 1000000LL + (int64_t)tv.tv_usec;
 }
 
+static bool GpioCtrl_IsPowerRail(GpioCtrl_PowerRail rail)
+{
+  return rail == GPIO_CTRL_POWER_3V3 || rail == GPIO_CTRL_POWER_5V;
+}
+
+static void GpioCtrl_PowerFaultIsr(void* arg)
+{
+  GpioCtrl_PowerRail rail = (GpioCtrl_PowerRail)(intptr_t)arg;
+  if (!GpioCtrl_IsPowerRail(rail)) return;
+
+  int64_t now = GpioCtrl_NowUs();
+  bool on = false;
+  portENTER_CRITICAL_ISR(&powerMux);
+  on = power[rail].enable;
+  if (on) {
+    power[rail].enable = false;
+    power[rail].faulted = true;
+    power[rail].faultTimeUs = now;
+  }
+  portEXIT_CRITICAL_ISR(&powerMux);
+  if (on) gpio_set_level(power[rail].enablePin, 0);
+}
+
 static void IRAM_ATTR GpioCtrl_IsrHandler(void* arg)
 {
   int logicalPin = (int)(intptr_t)arg;
@@ -267,14 +297,25 @@ static void IRAM_ATTR GpioCtrl_IsrHandler(void* arg)
   portEXIT_CRITICAL_ISR(&traceMux);
 }
 
-static esp_err_t GpioCtrl_InitPowerRail(int hwPin, bool* enableOut)
+static esp_err_t GpioCtrl_InitPowerRail(GpioCtrl_PowerRail rail)
 {
-  gpio_reset_pin(hwPin);
-  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(hwPin, 0));
-  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_output_enable(hwPin));
-  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_pull_mode(hwPin, GPIO_FLOATING));
-  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(hwPin, 0));
-  *enableOut = false;
+  GpioCtrl_PowerRuntime* p = &power[rail];
+  gpio_reset_pin(p->enablePin);
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(p->enablePin, 0));
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_output_enable(p->enablePin));
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_pull_mode(p->enablePin, GPIO_FLOATING));
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(p->enablePin, 0));
+  p->enable = false;
+  p->faulted = false;
+  p->faultTimeUs = 0;
+
+  gpio_reset_pin(p->faultPin);
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_input_enable(p->faultPin));
+  gpio_output_disable(p->faultPin);
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_pull_mode(p->faultPin, GPIO_PULLUP_ONLY));
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_isr_handler_add(p->faultPin, GpioCtrl_PowerFaultIsr, (void*)(intptr_t)rail));
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_intr_type(p->faultPin, GPIO_INTR_NEGEDGE));
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_intr_enable(p->faultPin));
   return ESP_OK;
 }
 
@@ -347,8 +388,8 @@ esp_err_t GpioCtrl_Init(void)
     TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_SyncPad(i));
   }
 
-  TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_InitPowerRail(CONFIG_GPIO_POWER_3V3_PIN, &powerEnable3v3));
-  TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_InitPowerRail(CONFIG_GPIO_POWER_5V_PIN, &powerEnable5v));
+  TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_InitPowerRail(GPIO_CTRL_POWER_3V3));
+  TOOL_CHECK_ESP_OK_OR_RETURN(GpioCtrl_InitPowerRail(GPIO_CTRL_POWER_5V));
   return ESP_OK;
 }
 
@@ -462,29 +503,70 @@ esp_err_t GpioCtrl_GetPwm(int logicalPin, double* frequencyHz, double* dutyPerce
 
 esp_err_t GpioCtrl_GetPowerEnable(GpioCtrl_PowerRail rail, bool* enable)
 {
-  if (enable == NULL) return ESP_ERR_INVALID_ARG;
-  if (rail == GPIO_CTRL_POWER_3V3) {
-    *enable = powerEnable3v3;
+  if (enable == NULL || !GpioCtrl_IsPowerRail(rail)) return ESP_ERR_INVALID_ARG;
+  portENTER_CRITICAL(&powerMux);
+  *enable = power[rail].enable;
+  portEXIT_CRITICAL(&powerMux);
+  return ESP_OK;
+}
+
+esp_err_t GpioCtrl_GetPowerReason(GpioCtrl_PowerRail rail, char* reason, size_t reasonLen)
+{
+  if (reason == NULL || reasonLen == 0 || !GpioCtrl_IsPowerRail(rail)) return ESP_ERR_INVALID_ARG;
+  bool faulted = false;
+  int64_t faultTimeUs = 0;
+  portENTER_CRITICAL(&powerMux);
+  faulted = power[rail].faulted;
+  faultTimeUs = power[rail].faultTimeUs;
+  portEXIT_CRITICAL(&powerMux);
+  if (!faulted) {
+    reason[0] = '\0';
     return ESP_OK;
   }
-  if (rail == GPIO_CTRL_POWER_5V) {
-    *enable = powerEnable5v;
+  time_t sec = (time_t)(faultTimeUs / 1000000LL);
+  struct tm tmNow;
+  gmtime_r(&sec, &tmNow);
+  if (tmNow.tm_year + 1900 >= 2024) {
+    snprintf(reason, reasonLen,
+             "Overcurrent, overtemperature, or reverse-voltage detected at %04d-%02d-%02dT%02d:%02d:%02dZ. Output disabled.",
+             tmNow.tm_year + 1900, tmNow.tm_mon + 1, tmNow.tm_mday, tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec);
     return ESP_OK;
   }
-  return ESP_ERR_INVALID_ARG;
+  snprintf(reason, reasonLen, "Overcurrent, overtemperature, or reverse-voltage detected at %lld us. Output disabled.",
+           (long long)faultTimeUs);
+  return ESP_OK;
 }
 
 esp_err_t GpioCtrl_SetPowerEnable(GpioCtrl_PowerRail rail, bool enable)
 {
-  int hw = GpioCtrl_PowerHw(rail);
-  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(hw, enable ? 1 : 0));
-  if (rail == GPIO_CTRL_POWER_3V3) {
-    powerEnable3v3 = enable;
-  } else if (rail == GPIO_CTRL_POWER_5V) {
-    powerEnable5v = enable;
-  } else {
-    return ESP_ERR_INVALID_ARG;
+  if (!GpioCtrl_IsPowerRail(rail)) return ESP_ERR_INVALID_ARG;
+  GpioCtrl_PowerRuntime* p = &power[rail];
+  if (enable) {
+    portENTER_CRITICAL(&powerMux);
+    p->enable = false;
+    p->faulted = false;
+    p->faultTimeUs = 0;
+    portEXIT_CRITICAL(&powerMux);
+    TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(p->enablePin, 1));
+    portENTER_CRITICAL(&powerMux);
+    p->enable = true;
+    portEXIT_CRITICAL(&powerMux);
+    if (gpio_get_level(p->faultPin) == 0) {
+      int64_t now = GpioCtrl_NowUs();
+      portENTER_CRITICAL(&powerMux);
+      p->enable = false;
+      p->faulted = true;
+      p->faultTimeUs = now;
+      portEXIT_CRITICAL(&powerMux);
+      TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(p->enablePin, 0));
+    }
+    return ESP_OK;
   }
+
+  TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(p->enablePin, 0));
+  portENTER_CRITICAL(&powerMux);
+  p->enable = false;
+  portEXIT_CRITICAL(&powerMux);
   return ESP_OK;
 }
 

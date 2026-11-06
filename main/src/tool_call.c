@@ -427,9 +427,14 @@ static ToolCall_Result ToolCall_GetOutputPowerState(cJSON* args)
   int lockSt = HttpServer_LockStatusId(lockId, ToolCall_PowerLockKind(rail), 0, LOCK_METHOD_READ, reason, sizeof(reason));
   if (lockSt) return ToolCall_Fail(lockSt, reason);
   bool enable = false;
-  if (GpioCtrl_GetPowerEnable(rail, &enable) != ESP_OK) return ToolCall_Fail(500, "internal");
+  char faultReason[160];
+  if (GpioCtrl_GetPowerEnable(rail, &enable) != ESP_OK ||
+      GpioCtrl_GetPowerReason(rail, faultReason, sizeof(faultReason)) != ESP_OK) {
+    return ToolCall_Fail(500, "internal");
+  }
   cJSON* root = cJSON_CreateObject();
   cJSON_AddBoolToObject(root, "enable", enable);
+  if (faultReason[0] != '\0') cJSON_AddStringToObject(root, "reason", faultReason);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
   Lock_Touch(lockId);
   return ToolCall_Ok(root);

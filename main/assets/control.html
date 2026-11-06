@@ -205,30 +205,104 @@ body{
 @media (min-width:640px){
   .three-col-grid{grid-template-columns:repeat(3, minmax(0, 1fr))}
 }
-.rail{
+.power-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:.75rem;
+  align-items:start;
+}
+@media (min-width:600px){
+  .power-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}
+}
+.rail-card{
+  padding:1.1rem 1.15rem;
+  border-radius:var(--md-sys-shape-corner-large);
+  background:var(--md-sys-color-surface-container);
+  border:1px solid transparent;
+  display:flex;
+  flex-direction:column;
+  gap:.75rem;
+  min-width:0;
+  transition:background .15s, border-color .15s;
+}
+.rail-card.faulted{border-color:rgba(186,26,26,.35)}
+.rail-header{
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:1rem;
-  padding:1rem;
-  border-radius:var(--md-sys-shape-corner-large);
-  background:var(--md-sys-color-surface-container);
+  gap:.75rem;
+}
+.rail-title-group{
+  display:flex;
+  flex-direction:column;
+  gap:.2rem;
   min-width:0;
 }
-.rail-text{min-width:0}
+.rail-title-row{
+  display:flex;
+  align-items:center;
+  gap:.55rem;
+}
 .rail-name{
-  display:block;
-  font-weight:650;
-  font-size:1rem;
+  margin:0;
+  font-weight:700;
+  font-size:1.15rem;
+  letter-spacing:-.01em;
 }
 .rail-sub{
-  display:block;
-  margin-top:.15rem;
-  font-size:.78rem;
+  font-size:.8rem;
   color:var(--md-sys-color-on-surface-variant);
+}
+.rail-action{
+  display:flex;
+  align-items:center;
+  flex:none;
+}
+.rail-alert{
+  display:flex;
+  align-items:flex-start;
+  gap:.65rem;
+  padding:.75rem .85rem;
+  border-radius:var(--md-sys-shape-corner-medium);
+  background:var(--md-sys-color-error-container);
+  color:var(--md-sys-color-on-error-container);
+  border:1px solid rgba(186,26,26,.2);
+}
+.rail-alert[hidden]{display:none!important}
+.rail-alert-icon{
+  flex:none;
+  width:1.2rem;
+  height:1.2rem;
+  margin-top:.1rem;
+  color:var(--md-sys-color-error);
+}
+.rail-alert-body{
+  flex:1;
+  min-width:0;
+}
+.rail-alert-title{
+  font-weight:700;
+  font-size:.8rem;
+  letter-spacing:.02em;
+  margin-bottom:.2rem;
+  color:var(--md-sys-color-on-error-container);
+}
+.rail-alert-msg{
+  font-size:.78rem;
+  line-height:1.45;
+  word-break:break-word;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+.rail-alert-hint{
+  margin-top:.35rem;
+  font-size:.72rem;
+  line-height:1.35;
+  color:var(--md-sys-color-on-error-container);
+  opacity:.85;
 }
 .switch{
   position:relative;
+  display:block;
   width:3.25rem;
   height:1.9rem;
   flex:none;
@@ -701,7 +775,7 @@ body{
 
   <section class="sheet panel" id="panel-power" aria-label="Power" role="tabpanel" data-i18n-aria="tab.power">
     <h2 class="section-label" data-i18n="tab.power">Power</h2>
-    <div class="card-grid" id="rails"></div>
+    <div class="power-grid" id="rails"></div>
   </section>
 
   <section class="sheet panel active" id="panel-pins" aria-label="Pins" role="tabpanel" data-i18n-aria="tab.pins">
@@ -821,6 +895,9 @@ const I18N={
     'footer.api':'API for agents:',
     'mode.off':'Off','mode.input':'Input','mode.output':'Output','mode.inout':'In-Out','mode.pwm':'PWM',
     'rail.logic':'Logic rail','rail.peripheral':'Peripheral rail',
+    'rail.active':'Active','rail.off':'Off','rail.fault':'Fault',
+    'rail.faultTitle':'Protection Triggered',
+    'rail.faultHint':'Flip switch to clear protection and retry.',
     high:'High',low:'Low',pullUp:'Pull-up',pullDown:'Pull-down',openDrain:'Open-drain',
     'level.output':'Output level','level.live':'Live level',
     'pwm.freq':'Frequency (Hz)',duty:'Duty','pwm.apply':'Apply PWM',
@@ -856,6 +933,9 @@ const I18N={
     'footer.api':'供智能体使用的 API：',
     'mode.off':'关闭','mode.input':'输入','mode.output':'输出','mode.inout':'输入输出','mode.pwm':'PWM',
     'rail.logic':'逻辑电源','rail.peripheral':'外设电源',
+    'rail.active':'已供电','rail.off':'已关闭','rail.fault':'故障',
+    'rail.faultTitle':'保护已触发',
+    'rail.faultHint':'拨动开关可清除保护并重试。',
     high:'高',low:'低',pullUp:'上拉',pullDown:'下拉',openDrain:'开漏',
     'level.output':'输出电平','level.live':'实时电平',
     'pwm.freq':'频率 (Hz)',duty:'占空比','pwm.apply':'应用 PWM',
@@ -975,6 +1055,61 @@ function switchHtml(id,checked,disabled){
     '<span class="track"></span><span class="thumb"></span></label>';
 }
 
+const powerRev={'3v3':0,'5v':0};
+const powerSettled={'3v3':0,'5v':0};
+const powerSeenUs={'3v3':0,'5v':0};
+
+function railReason(state){
+  return state&&typeof state.reason==='string'?state.reason:'';
+}
+function powerSampleUs(state){
+  const t=Number(state&&state.time);
+  return Number.isFinite(t)?t:0;
+}
+function powerSampleCurrent(key,state,seenRev){
+  if(powerRev[key]!==seenRev||powerSettled[key]!==seenRev) return false;
+  const t=powerSampleUs(state);
+  return !(t&&powerSeenUs[key]&&t<powerSeenUs[key]);
+}
+function rememberPower(key,state){
+  if(!lastRails) lastRails={};
+  lastRails[key]=state;
+  const t=powerSampleUs(state);
+  if(t>powerSeenUs[key]) powerSeenUs[key]=t;
+}
+function syncRail(key,state){
+  const on=!!(state&&state.enable);
+  const reason=railReason(state);
+  const faulted=reason.length>0;
+
+  const inputEl=document.getElementById('rail-'+key);
+  if(inputEl) inputEl.checked=on;
+
+  const cardEl=document.getElementById('rail-card-'+key);
+  if(cardEl) cardEl.classList.toggle('faulted',faulted);
+
+  const pillEl=document.getElementById('rail-pill-'+key);
+  const pillTextEl=document.getElementById('rail-pill-text-'+key);
+  if(pillEl&&pillTextEl){
+    pillEl.classList.remove('high','offline');
+    if(faulted){
+      pillEl.classList.add('offline');
+      pillTextEl.textContent=t('rail.fault');
+    }else if(on){
+      pillEl.classList.add('high');
+      pillTextEl.textContent=t('rail.active');
+    }else{
+      pillTextEl.textContent=t('rail.off');
+    }
+  }
+
+  const alertEl=document.getElementById('rail-alert-'+key);
+  const reasonEl=document.getElementById('rail-reason-'+key);
+  if(alertEl&&reasonEl){
+    reasonEl.textContent=reason;
+    alertEl.hidden=!faulted;
+  }
+}
 function renderRails(power){
   lastRails=power;
   const items=[
@@ -982,19 +1117,72 @@ function renderRails(power){
     {key:'5v',label:'5V',sub:t('rail.peripheral')}
   ];
   railsEl.innerHTML=items.map(r=>{
-    const on=!!(power[r.key]&&power[r.key].enable);
-    return '<div class="rail">'+
-      '<div class="rail-text"><span class="rail-name">'+r.label+'</span><span class="rail-sub">'+r.sub+'</span></div>'+
-      switchHtml('rail-'+r.key,on,false)+
-      '</div>';
+    const state=power&&power[r.key];
+    const on=!!(state&&state.enable);
+    const reason=railReason(state);
+    const faulted=reason.length>0;
+    let pillClass='';
+    let pillText=t('rail.off');
+    if(faulted){
+      pillClass=' offline';
+      pillText=t('rail.fault');
+    }else if(on){
+      pillClass=' high';
+      pillText=t('rail.active');
+    }
+    return '<article class="rail-card'+(faulted?' faulted':'')+'" id="rail-card-'+r.key+'">'+
+      '<div class="rail-header">'+
+        '<div class="rail-title-group">'+
+          '<div class="rail-title-row">'+
+            '<h3 class="rail-name">'+r.label+'</h3>'+
+            '<span class="level-pill'+pillClass+'" id="rail-pill-'+r.key+'">'+
+              '<span class="dot"></span><span id="rail-pill-text-'+r.key+'">'+pillText+'</span>'+
+            '</span>'+
+          '</div>'+
+          '<span class="rail-sub" id="rail-sub-'+r.key+'">'+r.sub+'</span>'+
+        '</div>'+
+        '<div class="rail-action">'+
+          switchHtml('rail-'+r.key,on,false)+
+        '</div>'+
+      '</div>'+
+      '<div class="rail-alert" id="rail-alert-'+r.key+'"'+(faulted?'':' hidden')+'>'+
+        '<svg class="rail-alert-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'+
+          '<path d="M12 2L1 21h22L12 2zm0 3.5L20.3 19H3.7L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>'+
+        '</svg>'+
+        '<div class="rail-alert-body">'+
+          '<div class="rail-alert-title">'+escapeHtml(t('rail.faultTitle'))+'</div>'+
+          '<div class="rail-alert-msg" id="rail-reason-'+r.key+'">'+escapeHtml(reason)+'</div>'+
+          '<div class="rail-alert-hint">'+escapeHtml(t('rail.faultHint'))+'</div>'+
+        '</div>'+
+      '</div>'+
+    '</article>';
   }).join('');
   items.forEach(r=>{
     const el=document.getElementById('rail-'+r.key);
+    if(!el) return;
     el.onchange=async()=>{
+      const targetState=el.checked;
+      const seen=++powerRev[r.key];
+      const pillEl=document.getElementById('rail-pill-'+r.key);
+      const pillTextEl=document.getElementById('rail-pill-text-'+r.key);
+      if(pillEl&&pillTextEl){
+        pillEl.classList.toggle('high',targetState);
+        pillEl.classList.remove('offline');
+        pillTextEl.textContent=targetState?t('rail.active'):t('rail.off');
+      }
       try{
-        await api('POST','/power/'+r.key,{enable:el.checked});
+        await api('POST','/power/'+r.key,{enable:targetState});
+        const latest=await api('GET','/power/'+r.key);
+        if(powerRev[r.key]!==seen) return;
+        powerSettled[r.key]=seen;
+        rememberPower(r.key,latest);
+        syncRail(r.key,latest);
       }catch(e){
-        el.checked=!el.checked;
+        if(powerRev[r.key]!==seen) return;
+        powerSettled[r.key]=seen;
+        el.checked=!targetState;
+        if(lastRails&&lastRails[r.key]) syncRail(r.key,lastRails[r.key]);
+        else syncRail(r.key,{enable:!targetState});
         showError(e.message);
       }
     };
@@ -1280,23 +1468,32 @@ async function refresh(force){
       else await pollAboutOta();
       return;
     }
+    const seenRev={'3v3':powerRev['3v3'],'5v':powerRev['5v']};
     const [pinRes,p3,p5,uartRes]=await Promise.all([
       api('GET','/pin/'),
       api('GET','/power/3v3'),
       api('GET','/power/5v'),
       api('GET','/uart/')
     ]);
+    const fresh3=powerSampleCurrent('3v3',p3,seenRev['3v3']);
+    const fresh5=powerSampleCurrent('5v',p5,seenRev['5v']);
+    if(!railsEl.children.length){
+      if(fresh3&&fresh5){
+        renderRails({'3v3':p3,'5v':p5});
+        rememberPower('3v3',p3);
+        rememberPower('5v',p5);
+      }
+    }else{
+      if(fresh3){rememberPower('3v3',p3);syncRail('3v3',p3);}
+      if(fresh5){rememberPower('5v',p5);syncRail('5v',p5);}
+    }
     const pins=pinRes.pins||[];
     await loadPwm(pins);
-    if(force||editing.size===0||!pinsEl.children.length){
-      renderRails({'3v3':p3,'5v':p5});
+    const pinStructureChanged=pins.some((p,i)=>!lastPins[i]||p.mode!==lastPins[i].mode);
+    if(force||!pinsEl.children.length||(pinStructureChanged&&editing.size===0)){
       renderPins(pins);
     }else{
       updateLiveLevels(pins);
-      const r3=document.getElementById('rail-3v3');
-      const r5=document.getElementById('rail-5v');
-      if(r3&&document.activeElement!==r3) r3.checked=!!p3.enable;
-      if(r5&&document.activeElement!==r5) r5.checked=!!p5.enable;
     }
     if(force||!uartEditing||!uartsEl.children.length){
       renderUarts(uartRes.uarts||[]);
