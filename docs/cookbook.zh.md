@@ -34,7 +34,7 @@ SAIHub-Mini 采用原生 USB，BOOT 键（GPIO28）位于 USB-C 旁边，板上�
 
 ## 2. 连接 Wi-Fi
 
-1. 正常开机后，**按一下 BOOT**。板子会开出一个无密码热点，名称为 `SAIHUB-` 加 MAC 地址后三字节，例如 `SAIHUB-a1b2c3`。
+1. 如果还没有保存网络，开机后会自动开始配对，状态灯一直慢闪，直到连接成功。已经保存过网络时，**按一下 BOOT** 可以重新打开配对。热点无密码，名称为 `SAIHUB-` 加 MAC 地址后三字节，例如 `SAIHUB-a1b2c3`。
 2. 用手机或电脑连接这个热点。
 3. 连接后通常会自动弹出配网页面；如果没有，请在浏览器打开 [http://192.168.4.1/wifi/page](http://192.168.4.1/wifi/page)。
 4. 选择你的 Wi-Fi，输入密码，点 **Connect**，等页面显示出 **Device IP**。
@@ -43,6 +43,17 @@ SAIHub-Mini 采用原生 USB，BOOT 键（GPIO28）位于 USB-C 旁边，板上�
 <img src="assets/wifi-pairing.webp" alt="SAIHub Wi-Fi 配对页" style="display:block;max-height:720px;width:auto;margin:0 auto">
 
 之后每次开机都会自动重连已保存的网络。需要更换 Wi-Fi 时，随时按一下 BOOT。
+
+### 状态灯
+
+板顶的蓝色 **STATUS** 指示灯会重复下面其中一种节奏：
+
+| 节奏 | 含义 |
+| --- | --- |
+| 慢闪 | 正在进行 Wi-Fi 配对。没有保存网络时，开机即进入配对，直到连接成功。 |
+| 快闪三下，然后灭 1 秒 | 正在连接已保存的 Wi-Fi |
+| 快闪两下，然后灭 1 秒 | 已连上 Wi-Fi。正在连接云中继，或中继已禁用。 |
+| 快闪一下，然后灭 1 秒 | 已连上云中继 |
 
 此时局域网内可访问：
 

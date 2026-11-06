@@ -22,6 +22,7 @@ idf.py merge-bin   # 生成网页烧录器使用的合并镜像（烧到 0x0）
 | --- | --- |
 | `CONFIG_GPIO_LOGICAL_TO_HW` | 逻辑引脚 IO0–IO7 → 芯片 GPIO 的映射；数组长度即暴露的引脚数 |
 | `CONFIG_BUTTON_PIN` | BOOT 按键（按一下 = Wi-Fi 配对） |
+| `CONFIG_LED_PIN` | 状态灯。`CONFIG_LED_FAST_MS` 和 `CONFIG_LED_SLOW_MS` 是闪烁时间，`CONFIG_LED_PAUSE_MS` 是快闪一轮后的熄灭时间 |
 | `CONFIG_GPIO_POWER_3V3_PIN` / `CONFIG_GPIO_POWER_5V_PIN` | 3V3 / 5V 两路负载开关的使能脚 |
 | `CONFIG_BUZZER_PIN` | 蜂鸣器 |
 | `CONFIG_CLOUD_URL` | 中继源站，`ws://` 或 `wss://` 开头、不带路径；留空则禁用中继。自行部署时必须修改并重新编译 |

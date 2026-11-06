@@ -37,7 +37,7 @@ Agents drive these through the MCP / REST tools; the mapping lives in firmware `
 
 - **Input**: 5 V / 3 A over USB-C, protected by a 3 A fast fuse and TVS. No PD, no OTG, no source-current detection — just 5.1 kΩ CC pulldowns.
 - **3.3 V rail**: SGM6232 buck converter; also feeds an always-on 3.3 V at TP4.
-- **Switched outputs**: two TPS2553 power switches feed **3V3_SW** and **5V_SW**. GPIO8 / GPIO9 enable them; both default off and the agent toggles them with `set_output_power_state`.
+- **Switched outputs**: two TPS2553 power switches feed **3V3_SW** and **5V_SW**. GPIO8 / GPIO9 enable them; both default off and the agent toggles them with `set_output_power_state`. A fault input turns that output off and `get_output_power_state` includes `reason` until the rail is enabled again.
 - **Output protection**: 26.1 kΩ ILIM resistors set a nominal ~1 A limit per channel (0.989 A calculated, 0.908–1.081 A including resistor tolerance). This is a protection threshold, **not a guaranteed continuous 1 A rating**.
 - **5V_SW** follows the USB input voltage minus fuse, trace, and switch losses.
 - Use a **5 V / 3 A adapter and cable** for external loads; keep outputs off on unqualified USB ports.
@@ -67,7 +67,7 @@ SW1 is TS-2435VS (C47734518), a side-push switch without locating posts. The act
 
 ## Other onboard parts
 
-- Four indicators in one column: green **3V3 OUT** and **5V OUT** monitor switched outputs, red **5V IN** monitors input power after the fuse, and blue **STATUS** connects to control pin 26. STATUS requires firmware control; this hardware change assigns no behavior.
+- Four indicators in one column: green **3V3 OUT** and **5V OUT** monitor switched outputs, red **5V IN** monitors input power after the fuse, and blue **STATUS** is driven active-high from control pin 26. It blinks slowly during Wi-Fi pairing, three fast blinks then 1 s off while joining Wi-Fi, two fast blinks then 1 s off when Wi-Fi is up, and one fast blink then 1 s off when the cloud relay is connected.
 - Passive 5020 buzzer on GPIO12 (driven at 4 kHz / 50 % duty).
 - Native USB on GPIO13 / GPIO14 (D- / D+), with USBLC6-2SC6 ESD protection.
 - 16 × 24 mm module with built-in PCB antenna and 4 MB flash.

@@ -69,6 +69,7 @@ const char* GpioCtrl_EdgeToString(GpioCtrl_Edge edge);
 
 esp_err_t GpioCtrl_GetPowerEnable(GpioCtrl_PowerRail rail, bool* enable);
 esp_err_t GpioCtrl_SetPowerEnable(GpioCtrl_PowerRail rail, bool enable);
+esp_err_t GpioCtrl_GetPowerReason(GpioCtrl_PowerRail rail, char* reason, size_t reasonLen);
 bool GpioCtrl_PowerRailFromString(const char* s, GpioCtrl_PowerRail* out);
 const char* GpioCtrl_PowerRailToString(GpioCtrl_PowerRail rail);
 

@@ -353,8 +353,10 @@ async function captureSnapshot(): Promise<Snapshot> {
     assert(assigned.every((pin) => pin === OUTPUT_A || pin === OUTPUT_B), "Refusing to disturb an enabled UART using pins other than 6 and 7");
   }
 
-  const power3v3 = await requestJson<{ enable: boolean; time: number }>("GET", "/power/3v3");
-  const power5v = await requestJson<{ enable: boolean; time: number }>("GET", "/power/5v");
+  const power3v3 = await requestJson<{ enable: boolean; time: number; reason?: string }>("GET", "/power/3v3");
+  const power5v = await requestJson<{ enable: boolean; time: number; reason?: string }>("GET", "/power/5v");
+  assert(power3v3.reason === undefined, "3v3 power reason must be absent");
+  assert(power5v.reason === undefined, "5v power reason must be absent");
   return { pins, pwm, uart, spi, i2c, power: { "3v3": power3v3.enable, "5v": power5v.enable } };
 }
 
@@ -443,11 +445,13 @@ async function testPower(state: Snapshot): Promise<void> {
   for (const rail of ["3v3", "5v"] as const) {
     const original = state.power[rail];
     await requestJson<void>("POST", `/power/${rail}`, { enable: !original }, 204);
-    const restChanged = await requestJson<{ enable: boolean }>("GET", `/power/${rail}`);
+    const restChanged = await requestJson<{ enable: boolean; reason?: string }>("GET", `/power/${rail}`);
     assert(restChanged.enable === !original, `REST ${rail} power output did not toggle`);
+    assert(restChanged.reason === undefined, `REST ${rail} power reason must be absent`);
     await mcpTool("set_output_power_state", { rail, enable: original });
-    const mcpRestored = await mcpTool<{ enable: boolean }>("get_output_power_state", { rail });
+    const mcpRestored = await mcpTool<{ enable: boolean; reason?: string }>("get_output_power_state", { rail });
     assert(mcpRestored.enable === original, `MCP ${rail} power output did not restore`);
+    assert(mcpRestored.reason === undefined, `MCP ${rail} power reason must be absent`);
     await mcpTool("set_output_power_state", { rail, enable: !original });
     const mcpChanged = await requestJson<{ enable: boolean }>("GET", `/power/${rail}`);
     assert(mcpChanged.enable === !original, `MCP ${rail} power output did not toggle`);

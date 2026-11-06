@@ -54,12 +54,15 @@ static esp_err_t Route_PowerGetHandler(HttpServer_Context* ctx)
   if (st) return HttpServer_SendError(ctx, st, reason);
 
   bool enable = false;
-  if (GpioCtrl_GetPowerEnable(rail, &enable) != ESP_OK) {
+  char faultReason[160];
+  if (GpioCtrl_GetPowerEnable(rail, &enable) != ESP_OK ||
+      GpioCtrl_GetPowerReason(rail, faultReason, sizeof(faultReason)) != ESP_OK) {
     return HttpServer_SendError(ctx, 500, "internal");
   }
   Lock_Touch(lockId[0] ? lockId : NULL);
   cJSON* root = cJSON_CreateObject();
   cJSON_AddBoolToObject(root, "enable", enable);
+  if (faultReason[0] != '\0') cJSON_AddStringToObject(root, "reason", faultReason);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
   return HttpServer_SendJson(ctx, 200, root);
 }

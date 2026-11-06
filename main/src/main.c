@@ -6,6 +6,7 @@
 #include "gpio_ctrl.h"
 #include "http_server.h"
 #include "pwm_ctrl.h"
+#include "led.h"
 #include "lock.h"
 #include "ntp.h"
 #include "nvs.h"
@@ -39,6 +40,7 @@ void app_main(void)
   MAIN_LOAD_MODULE(Ntp_Init(), "Ntp");
   MAIN_LOAD_MODULE(HttpServer_Init(), "HttpServer");
   MAIN_LOAD_MODULE(Wifi_Init(), "Wifi");
+  MAIN_LOAD_MODULE(Led_Init(), "Led");
   MAIN_LOAD_MODULE(Button_Init(), "Button");
 
   if (someModuleFailed) {

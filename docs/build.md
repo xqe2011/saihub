@@ -22,6 +22,7 @@ Board-specific configuration is concentrated in `main/include/config.h`:
 | --- | --- |
 | `CONFIG_GPIO_LOGICAL_TO_HW` | Logical IO0–IO7 → chip GPIO map; array length = number of exposed pins |
 | `CONFIG_BUTTON_PIN` | BOOT button (click = Wi-Fi pairing) |
+| `CONFIG_LED_PIN` | Status indicator. `CONFIG_LED_FAST_MS` and `CONFIG_LED_SLOW_MS` are the blink times, `CONFIG_LED_PAUSE_MS` is the off time after a fast burst |
 | `CONFIG_GPIO_POWER_3V3_PIN` / `CONFIG_GPIO_POWER_5V_PIN` | Load-switch enables for the 3V3 / 5V rails |
 | `CONFIG_BUZZER_PIN` | Buzzer |
 | `CONFIG_CLOUD_URL` | Relay origin, `ws://` or `wss://` without a path; empty disables the relay. Self-hosting requires changing it and rebuilding |

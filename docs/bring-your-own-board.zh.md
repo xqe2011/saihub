@@ -32,6 +32,10 @@
 #define CONFIG_GPIO_POWER_3V3_PIN 8     /* 3V3_SW 负载开关使能 */
 #define CONFIG_GPIO_POWER_5V_PIN 9      /* 5V_SW 负载开关使能 */
 #define CONFIG_BUZZER_PIN 12
+#define CONFIG_LED_PIN 26               /* 状态灯，高电平点亮 */
+#define CONFIG_LED_FAST_MS 100          /* 快闪的亮、灭时间 */
+#define CONFIG_LED_SLOW_MS 500          /* 慢闪的亮、灭时间 */
+#define CONFIG_LED_PAUSE_MS 1000        /* 快闪一轮后的熄灭时间 */
 #define CONFIG_CLOUD_URL "wss://…"      /* 中继源站；留空则禁用中继 */
 #define CONFIG_WIFI_SSID "CHANGE_ME"    /* 可选的 Wi-Fi 凭据种子，见上 */
 #define CONFIG_WIFI_PASSWORD "CHANGE_ME"
