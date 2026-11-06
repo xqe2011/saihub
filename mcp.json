@@ -1058,8 +1058,193 @@
       }
     },
     {
+      "name": "list_i2cs",
+      "description": "List I2C ids with enable, role, pullUp, addressBits, pins, clockHz and sclWaitUs when role is master, and address when role is slave.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "configure_i2c",
+      "description": "Configure one I2C controller by id. role is master or slave. pullUp and addressBits (7 or 10) are required. clockHz and sclWaitUs are required for master and must be omitted for slave. address is required for slave and must be omitted for master. sda and scl are required when enable is true.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["id", "enable", "role", "pullUp", "addressBits", "clockHz", "sclWaitUs", "pins"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/i2cId" },
+              "enable": { "type": "boolean" },
+              "role": { "type": "string", "const": "master" },
+              "pullUp": { "type": "boolean", "description": "Weak internal pull-ups on sda and scl. External pull-ups are still recommended." },
+              "addressBits": { "type": "integer", "enum": [7, 10] },
+              "clockHz": { "type": "integer", "minimum": 10000, "maximum": 1000000 },
+              "sclWaitUs": { "type": "integer", "minimum": 0, "maximum": 1000000, "description": "Master wait for slave SCL stretch, in microseconds. 0 uses the driver default." },
+              "pins": { "$ref": "#/$defs/i2cPins" },
+              "lockId": { "$ref": "#/$defs/lockId" }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["id", "enable", "role", "pullUp", "addressBits", "address", "pins"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/i2cId" },
+              "enable": { "type": "boolean" },
+              "role": { "type": "string", "const": "slave" },
+              "pullUp": { "type": "boolean", "description": "Weak internal pull-ups on sda and scl. External pull-ups are still recommended." },
+              "addressBits": { "type": "integer", "enum": [7, 10] },
+              "address": { "type": "integer", "minimum": 0, "maximum": 1023, "description": "Slave address. Max 127 when addressBits is 7, max 1023 when addressBits is 10." },
+              "pins": { "$ref": "#/$defs/i2cPins" },
+              "lockId": { "$ref": "#/$defs/lockId" }
+            }
+          }
+        ],
+        "$defs": {
+          "i2cId": { "type": "integer", "minimum": 0, "maximum": 0 },
+          "i2cPins": {
+            "type": "object",
+            "required": ["sda", "scl"],
+            "additionalProperties": false,
+            "properties": {
+              "sda": { "$ref": "#/$defs/i2cPin" },
+              "scl": { "$ref": "#/$defs/i2cPin" }
+            }
+          },
+          "i2cPin": { "type": ["integer", "null"], "minimum": 0, "maximum": 7 },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "i2c_master_transceive",
+      "description": "Transfer on an enabled master. address range follows bus addressBits (0-127 for 7, 0-1023 for 10). write is even-length hex (0-255 bytes). readLen is 0-255. timeoutMs is optional (default 1000, range 1-60000). Empty write with readLen 0 probes the address. write then read uses a repeated start.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": ["id", "address", "write", "readLen"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "$ref": "#/$defs/i2cId" },
+          "address": { "type": "integer", "minimum": 0, "maximum": 1023, "description": "Device address. Max 127 when bus addressBits is 7, max 1023 when addressBits is 10." },
+          "write": {
+            "type": "string",
+            "pattern": "^([0-9a-fA-F]{2})*$",
+            "maxLength": 510,
+            "description": "Even-length hexadecimal bytes. An empty string is zero bytes."
+          },
+          "readLen": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 60000, "description": "Transfer wait timeout in milliseconds. Default 1000 when omitted." },
+          "lockId": { "$ref": "#/$defs/lockId" }
+        },
+        "$defs": {
+          "i2cId": { "type": "integer", "minimum": 0, "maximum": 0 },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "i2c_slave_receive",
+      "description": "Drain events from an enabled slave. Each event has startTime, endTime, receive, and send. When the buffer is full, the oldest events are discarded.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "$ref": "#/$defs/i2cId" },
+          "lockId": { "$ref": "#/$defs/lockId" }
+        },
+        "$defs": {
+          "i2cId": { "type": "integer", "minimum": 0, "maximum": 0 },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "i2c_slave_transmit",
+      "description": "Replace the slave response map. type is exact or prefix. Match exact first, then the longest prefix. An empty prefix matches every receive. Requires an enabled slave.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": ["id", "mapping"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "$ref": "#/$defs/i2cId" },
+          "mapping": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["type", "receive", "send"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "type": "string", "enum": ["exact", "prefix"] },
+                "receive": {
+                  "type": "string",
+                  "pattern": "^([0-9a-fA-F]{2})*$",
+                  "maxLength": 510,
+                  "description": "Even-length hexadecimal bytes. An empty string is zero bytes."
+                },
+                "send": {
+                  "type": "string",
+                  "pattern": "^([0-9a-fA-F]{2})*$",
+                  "maxLength": 510,
+                  "description": "Even-length hexadecimal bytes. An empty string is zero bytes."
+                }
+              }
+            }
+          },
+          "lockId": { "$ref": "#/$defs/lockId" }
+        },
+        "$defs": {
+          "i2cId": { "type": "integer", "minimum": 0, "maximum": 0 },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
       "name": "create_lock",
-      "description": "Create a lock. Each resource is type pin with pins, type power with rails, type uart with ids, or type spi with ids.",
+      "description": "Create a lock. Each resource is type pin with pins, type power with rails, type uart with ids, type spi with ids, or type i2c with ids.",
       "annotations": {
         "readOnlyHint": false,
         "idempotentHint": false,
@@ -1171,6 +1356,32 @@
                       "$ref": "#/$defs/lockMethod"
                     }
                   }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "ids",
+                    "method"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "i2c"
+                    },
+                    "ids": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 1,
+                      "items": {
+                        "$ref": "#/$defs/i2cId"
+                      }
+                    },
+                    "method": {
+                      "$ref": "#/$defs/lockMethod"
+                    }
+                  }
                 }
               ]
             }
@@ -1225,6 +1436,11 @@
             "maximum": 0
           },
           "spiId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "i2cId": {
             "type": "integer",
             "minimum": 0,
             "maximum": 0

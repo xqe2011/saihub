@@ -3,7 +3,7 @@
   "info": {
     "title": "SAIHub REST API",
     "version": "1.0.0",
-    "description": "JSON REST API for logical pins 0-7, PWM, UART, SPI, power rails (3v3/5v), the onboard buzzer, edge tracing, resource locks, on-device Lua 5.4 scripts, system info / firmware update, and cloud management. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}. While a firmware update is in progress, non-system routes return 503."
+    "description": "JSON REST API for logical pins 0-7, PWM, UART, SPI, I2C, power rails (3v3/5v), the onboard buzzer, edge tracing, resource locks, on-device Lua 5.4 scripts, system info / firmware update, and cloud management. All time fields are microseconds. JSON keys are camelCase. Error bodies are {\"reason\":\"...\"}. While a firmware update is in progress, non-system routes return 503."
   },
   "servers": [
     {
@@ -27,6 +27,9 @@
     },
     {
       "name": "spi"
+    },
+    {
+      "name": "i2c"
     },
     {
       "name": "lock"
@@ -332,7 +335,7 @@
           "meta"
         ],
         "summary": "MCP Streamable HTTP endpoint (JSON-RPC 2.0)",
-        "description": "Stateless MCP Streamable HTTP transport. POST a single JSON-RPC request or notification. Responses are application/json (no SSE). Notifications and client responses return 202. Pin tools are plural and take pins arrays; create_lock resources use type pin+pins, type power+rails, type uart+ids, or type spi+ids. See tools/list.",
+        "description": "Stateless MCP Streamable HTTP transport. POST a single JSON-RPC request or notification. Responses are application/json (no SSE). Notifications and client responses return 202. Pin tools are plural and take pins arrays; create_lock resources use type pin+pins, type power+rails, type uart+ids, type spi+ids, or type i2c+ids. See tools/list.",
         "parameters": [
           {
             "name": "Accept",
@@ -1925,6 +1928,239 @@
         }
       }
     },
+    "/i2c/": {
+      "get": {
+        "tags": [
+          "i2c"
+        ],
+        "summary": "List all I2C ids",
+        "responses": {
+          "200": {
+            "description": "I2C inventory. clockHz and sclWaitUs are present only when role is master. address is present only when role is slave. pullUp and addressBits are always present.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "i2cs",
+                    "time"
+                  ],
+                  "properties": {
+                    "i2cs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/I2cState"
+                      }
+                    },
+                    "time": {
+                      "$ref": "#/components/schemas/TimeUs"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/i2c/{id}/config": {
+      "post": {
+        "tags": [
+          "i2c"
+        ],
+        "summary": "Configure an I2C controller",
+        "description": "One role at a time. sda and scl are required integers when enable is true, and may be null when enable is false. Duplicate pins are rejected. pullUp enables weak internal pull-ups; external pull-ups are still recommended. addressBits is 7 or 10. A slave body must include address and must not include clockHz or sclWaitUs. A master body must include clockHz and sclWaitUs (0 uses the driver default) and must not include address.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/I2cPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/I2cConfigBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Configured"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/i2c/{id}/master/transceive": {
+      "post": {
+        "tags": [
+          "i2c"
+        ],
+        "summary": "Run a master transfer",
+        "description": "Blocks until the transfer finishes. address range follows the bus addressBits (0-127 for 7, 0-1023 for 10). write is an even-length hex string of 0-255 bytes. readLen is 0-255. timeoutMs is optional (default 1000, range 1-60000). Empty write with readLen 0 probes the address. Non-empty write with readLen > 0 uses a repeated start. Response data length equals readLen.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/I2cPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/I2cMasterTransceiveBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bytes read, or an empty string when readLen is 0",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/I2cMasterTransceiveState"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/i2c/{id}/slave/receive": {
+      "get": {
+        "tags": [
+          "i2c"
+        ],
+        "summary": "Drain slave transfer events",
+        "description": "Requires an enabled slave. Drains the event buffer. An empty buffer returns events []. When the buffer is full, the oldest events are discarded.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/I2cPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Drained slave events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/I2cSlaveReceiveState"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/i2c/{id}/slave/transmit": {
+      "post": {
+        "tags": [
+          "i2c"
+        ],
+        "summary": "Store the slave response map",
+        "description": "Does not wait for a master. Requires an enabled slave. mapping replaces the previous map. An empty array clears it. Match exact entries first, then the longest prefix. An empty prefix matches every receive. The stored map is used for the read after the receive already in flight.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/I2cPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/I2cSlaveTransmitBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Map stored"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
     "/lock": {
       "post": {
         "tags": [
@@ -2212,6 +2448,17 @@
           "maximum": 0
         },
         "description": "SPI id from GET /spi/"
+      },
+      "I2cPath": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 0
+        },
+        "description": "I2C id from GET /i2c/"
       }
     },
     "schemas": {
@@ -2564,6 +2811,33 @@
               }
             },
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "ids",
+              "method"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "i2c"
+              },
+              "ids": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 0
+                }
+              },
+              "method": {
+                "$ref": "#/components/schemas/LockMethod"
+              }
+            }
           }
         ]
       },
@@ -3117,6 +3391,359 @@
           }
         },
         "additionalProperties": false
+      },
+      "I2cBytes": {
+        "type": "string",
+        "pattern": "^([0-9a-fA-F]{2})*$",
+        "maxLength": 510,
+        "description": "Even-length hexadecimal bytes. An empty string is zero bytes."
+      },
+      "I2cPins": {
+        "type": "object",
+        "required": [
+          "sda",
+          "scl"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "sda": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 7
+          },
+          "scl": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 7
+          }
+        }
+      },
+      "I2cConfigBody": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "enable",
+              "role",
+              "pullUp",
+              "addressBits",
+              "clockHz",
+              "sclWaitUs",
+              "pins"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "enable": {
+                "type": "boolean"
+              },
+              "role": {
+                "type": "string",
+                "const": "master"
+              },
+              "pullUp": {
+                "type": "boolean",
+                "description": "Weak internal pull-ups on sda and scl. External pull-ups are still recommended."
+              },
+              "addressBits": {
+                "type": "integer",
+                "enum": [
+                  7,
+                  10
+                ]
+              },
+              "clockHz": {
+                "type": "integer",
+                "minimum": 10000,
+                "maximum": 1000000
+              },
+              "sclWaitUs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000,
+                "description": "Master wait for slave SCL stretch, in microseconds. 0 uses the driver default."
+              },
+              "pins": {
+                "$ref": "#/components/schemas/I2cPins"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "enable",
+              "role",
+              "pullUp",
+              "addressBits",
+              "address",
+              "pins"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "enable": {
+                "type": "boolean"
+              },
+              "role": {
+                "type": "string",
+                "const": "slave"
+              },
+              "pullUp": {
+                "type": "boolean",
+                "description": "Weak internal pull-ups on sda and scl. External pull-ups are still recommended."
+              },
+              "addressBits": {
+                "type": "integer",
+                "enum": [
+                  7,
+                  10
+                ]
+              },
+              "address": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1023,
+                "description": "Slave address. Max 127 when addressBits is 7, max 1023 when addressBits is 10."
+              },
+              "pins": {
+                "$ref": "#/components/schemas/I2cPins"
+              }
+            }
+          }
+        ]
+      },
+      "I2cState": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "enable",
+              "role",
+              "pullUp",
+              "addressBits",
+              "clockHz",
+              "sclWaitUs",
+              "pins"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 0
+              },
+              "enable": {
+                "type": "boolean"
+              },
+              "role": {
+                "type": "string",
+                "const": "master"
+              },
+              "pullUp": {
+                "type": "boolean"
+              },
+              "addressBits": {
+                "type": "integer",
+                "enum": [
+                  7,
+                  10
+                ]
+              },
+              "clockHz": {
+                "type": "integer",
+                "minimum": 10000,
+                "maximum": 1000000
+              },
+              "sclWaitUs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              },
+              "pins": {
+                "$ref": "#/components/schemas/I2cPins"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "enable",
+              "role",
+              "pullUp",
+              "addressBits",
+              "address",
+              "pins"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 0
+              },
+              "enable": {
+                "type": "boolean"
+              },
+              "role": {
+                "type": "string",
+                "const": "slave"
+              },
+              "pullUp": {
+                "type": "boolean"
+              },
+              "addressBits": {
+                "type": "integer",
+                "enum": [
+                  7,
+                  10
+                ]
+              },
+              "address": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1023
+              },
+              "pins": {
+                "$ref": "#/components/schemas/I2cPins"
+              }
+            }
+          }
+        ]
+      },
+      "I2cMasterTransceiveBody": {
+        "type": "object",
+        "required": [
+          "address",
+          "write",
+          "readLen"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1023,
+            "description": "Device address. Max 127 when bus addressBits is 7, max 1023 when addressBits is 10."
+          },
+          "write": {
+            "$ref": "#/components/schemas/I2cBytes"
+          },
+          "readLen": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60000,
+            "description": "Transfer wait timeout in milliseconds. Default 1000 when omitted."
+          }
+        }
+      },
+      "I2cMasterTransceiveState": {
+        "type": "object",
+        "required": [
+          "data",
+          "time"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/I2cBytes"
+          },
+          "time": {
+            "$ref": "#/components/schemas/TimeUs"
+          }
+        }
+      },
+      "I2cSlaveEvent": {
+        "type": "object",
+        "required": [
+          "startTime",
+          "endTime",
+          "receive",
+          "send"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "startTime": {
+            "$ref": "#/components/schemas/TimeUs"
+          },
+          "endTime": {
+            "$ref": "#/components/schemas/TimeUs"
+          },
+          "receive": {
+            "$ref": "#/components/schemas/I2cBytes"
+          },
+          "send": {
+            "$ref": "#/components/schemas/I2cBytes"
+          }
+        }
+      },
+      "I2cSlaveReceiveState": {
+        "type": "object",
+        "required": [
+          "events",
+          "time"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/I2cSlaveEvent"
+            }
+          },
+          "time": {
+            "$ref": "#/components/schemas/TimeUs"
+          }
+        }
+      },
+      "I2cSlaveMapEntry": {
+        "type": "object",
+        "required": [
+          "type",
+          "receive",
+          "send"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "prefix"
+            ]
+          },
+          "receive": {
+            "$ref": "#/components/schemas/I2cBytes"
+          },
+          "send": {
+            "$ref": "#/components/schemas/I2cBytes"
+          }
+        }
+      },
+      "I2cSlaveTransmitBody": {
+        "type": "object",
+        "required": [
+          "mapping"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "mapping": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/I2cSlaveMapEntry"
+            }
+          }
+        }
       }
     },
     "responses": {
@@ -3141,7 +3768,7 @@
         }
       },
       "NotFound": {
-        "description": "Unknown URL, pin in path out of 0-7, UART id missing from GET /uart/, SPI id missing from GET /spi/, or lock id missing on PUT",
+        "description": "Unknown URL, pin in path out of 0-7, UART id missing from GET /uart/, SPI id missing from GET /spi/, I2C id missing from GET /i2c/, or lock id missing on PUT",
         "content": {
           "application/json": {
             "schema": {
@@ -3201,7 +3828,7 @@
         }
       },
       "Unprocessable": {
-        "description": "Pin mode cannot perform the operation, PWM resources exhausted, UART not enabled / missing direction pin, or SPI not enabled / wrong role / missing data pin",
+        "description": "Pin mode cannot perform the operation, PWM resources exhausted, UART not enabled / missing direction pin, SPI not enabled / wrong role / missing data pin, or I2C not enabled / wrong role / NACK / transfer timeout",
         "content": {
           "application/json": {
             "schema": {
@@ -3211,7 +3838,7 @@
         }
       },
       "Locked": {
-        "description": "Resource+method held by a different live lock, or reserved by a peripheral such as UART or SPI",
+        "description": "Resource+method held by a different live lock, or reserved by a peripheral such as UART, SPI, or I2C",
         "content": {
           "application/json": {
             "schema": {

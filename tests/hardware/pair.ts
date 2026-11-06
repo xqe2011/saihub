@@ -2,9 +2,9 @@ import { URL } from "node:url";
 
 type Json = Record<string, any>;
 type PinState = { pin: number; mode: string; openDrain: boolean; pullUp: boolean; pullDown: boolean };
-type SpiEvent = { receive: number[]; send: number[]; startTime: number; endTime: number };
+type TransferEvent = { receive: number[]; send: number[]; startTime: number; endTime: number };
 type TraceEvent = { pin: number; edge: string; level: number; time: number };
-type Snapshot = { pins: PinState[]; uart: Json; spi: Json };
+type Snapshot = { pins: PinState[]; uart: Json; spi: Json; i2c: Json };
 type Result = { status: number; body: any; text: string };
 type Check = { name: string; passed: boolean; detail?: string };
 
@@ -16,6 +16,8 @@ const rounds = Number(process.env.TEST_ROUNDS ?? 1);
 const soak = Number(process.env.TEST_SOAK_ITERATIONS ?? 8);
 // Drain regularly during payload tests.
 const SPI_DRAIN_BATCH = 3;
+const I2C_MATRIX_SECTION = "I2C probes, clocks and 1-255-byte write/read payloads";
+const I2C_FEATURES_SECTION = "I2C mapped responses, NACK recovery, MCP and soak";
 const reportPath = process.env.TEST_REPORT;
 const testFilter = process.env.TEST_SECTIONS ? new RegExp(process.env.TEST_SECTIONS, "i") : undefined;
 const checks: Check[] = [];
@@ -27,6 +29,7 @@ let sequence = 1;
 const seed = Number(process.env.TEST_SEED ?? 20261101);
 let randomState = seed >>> 0;
 let stopping = false;
+let sectionDepth = 0;
 process.on("SIGINT", () => { stopping = true; });
 process.on("SIGTERM", () => { stopping = true; });
 
@@ -80,12 +83,14 @@ class Board {
   uart: Json = { enable: false, baudRate: 115200, dataBits: 8, parity: "none", stopBits: 1,
     encoding: "byte", pins: { rx: null, tx: null } };
   spi: Json;
+  i2c: Json;
   touched = false;
 
   constructor(address: string, row: number[]) {
     this.url = new URL(address.includes("://") ? address : "http://" + address);
     this.row = row;
     this.spi = this.spiConfig("master", 0, "msb", 1000000, false);
+    this.i2c = this.i2cConfig("master", 100000, 0x42, false);
   }
 
   get name(): string { return this.url.host; }
@@ -186,7 +191,20 @@ class Board {
     this.uart = config;
   }
 
+  i2cConfig(role: string, hz = 100000, address = 0x42, enable = true): Json {
+    return { enable, role, pullUp: true, addressBits: 7,
+      ...(role === "master" ? { clockHz: hz, sclWaitUs: 10000 } : { address }),
+      pins: { sda: this.row[0], scl: this.row[1] } };
+  }
+
+  async configureI2c(config: Json, mcp = false): Promise<void> {
+    if (mcp) await this.tool("configure_i2c", { id: 0, ...config });
+    else await this.rest("POST", "/i2c/0/config", config, 204);
+    this.i2c = config;
+  }
+
   async release(): Promise<void> {
+    if (this.i2c.enable) await this.configureI2c({ ...this.i2c, enable: false });
     if (this.spi.enable) await this.configureSpi({ ...this.spi, enable: false });
     if (this.uart.enable) await this.configureUart({ ...this.uart, enable: false });
     await this.configurePins(this.row, "disable");
@@ -199,7 +217,7 @@ class Board {
     return fromHex(result.data);
   }
 
-  async events(mcp = false): Promise<SpiEvent[]> {
+  async events(mcp = false): Promise<TransferEvent[]> {
     const result = mcp ? await this.tool("spi_slave_receive", { id: 0 })
       : await this.rest("GET", "/spi/0/slave/receive");
     return (result.events as Json[]).map((event) => ({
@@ -217,6 +235,44 @@ class Board {
     else await this.rest("POST", "/spi/0/slave/transmit", { mapping: encoded }, 204);
   }
 
+  async i2cTransfer(write: number[], readLen = 0, mcp = false, address = 0x42): Promise<number[]> {
+    const body = { address, write: toHex(write), readLen, timeoutMs: 1000 };
+    let result: any;
+    try {
+      result = mcp ? await this.tool("i2c_master_transceive", { id: 0, ...body })
+        : await this.rest("POST", "/i2c/0/master/transceive", body);
+    } catch (error) {
+      throw new Error("I2C " + this.name + " " + this.i2c.clockHz + "Hz address " + address
+        + " write=" + write.length + " read=" + readLen + " via " + (mcp ? "MCP" : "REST") + ": " + error);
+    }
+    assert(typeof result.data === "string" && /^([0-9a-fA-F]{2})*$/.test(result.data), "I2C response hex bytes");
+    const data = fromHex(result.data);
+    equal(data.length, readLen, "I2C response length");
+    report.i2cTransfers = (report.i2cTransfers ?? 0) + 1;
+    return data;
+  }
+
+  async i2cEvents(mcp = false): Promise<TransferEvent[]> {
+    const result = mcp ? await this.tool("i2c_slave_receive", { id: 0 })
+      : await this.rest("GET", "/i2c/0/slave/receive");
+    assert(Array.isArray(result.events), "I2C slave event array");
+    return (result.events as Json[]).map((event) => {
+      for (const key of ["receive", "send"]) {
+        assert(typeof event[key] === "string" && /^([0-9a-fA-F]{2})*$/.test(event[key]), "I2C event hex " + key);
+      }
+      return { startTime: event.startTime, endTime: event.endTime,
+        receive: fromHex(event.receive), send: fromHex(event.send) };
+    });
+  }
+
+  async i2cMapping(mapping: Json[], mcp = false): Promise<void> {
+    const encoded = mapping.map((entry) => ({
+      ...entry, receive: wireData(entry.receive), send: wireData(entry.send),
+    }));
+    if (mcp) await this.tool("i2c_slave_transmit", { id: 0, mapping: encoded });
+    else await this.rest("POST", "/i2c/0/slave/transmit", { mapping: encoded }, 204);
+  }
+
   async trace(pin: number, edge = "both", duration = 20000, mcp = false): Promise<TraceEvent[]> {
     const result = mcp ? await this.tool("trace_pins", { pins: [pin], edge, duration })
       : await this.rest("GET", "/pin/" + pin + "/trace?edge=" + edge + "&duration=" + duration);
@@ -229,20 +285,29 @@ async function releaseAll(): Promise<void> {
   for (const board of boards) await board.release();
 }
 
-async function section(name: string, action: () => Promise<void>, release = true): Promise<boolean> {
+async function section(name: string, action: () => Promise<void>, release = true, minPins = 2): Promise<boolean> {
   const preflight = name === "GPIO wiring matrix, both directions";
-  if (testFilter && !preflight && !testFilter.test(name)) {
+  // Selecting a section also selects its nested cases, including with an anchored regex.
+  if (testFilter && sectionDepth === 0 && !preflight && !testFilter.test(name)) {
     report.skipped ??= [];
     report.skipped.push(name);
     return true;
   }
+  if (pinRows.some((row) => row.length < minPins)) {
+    report.skipped ??= [];
+    report.skipped.push(name);
+    log("SKIP " + name + ": requires " + minPins + " connected pins per board");
+    return true;
+  }
   log(name);
   let passed = true;
+  sectionDepth++;
   try { await action(); } catch (error) {
     failures.push(name + ": " + (error instanceof Error ? error.message : String(error)));
     log("FAIL " + failures.at(-1));
     passed = false;
   } finally {
+    sectionDepth--;
     if (release) {
       try { await releaseAll(); } catch (error) { throw new Error("Cannot safely release test pins: " + error); }
     }
@@ -262,12 +327,13 @@ async function preflight(): Promise<void> {
     const pins = (await board.rest("GET", "/pin/")).pins as PinState[];
     const uart = (await board.rest("GET", "/uart/")).uarts[0];
     const spi = (await board.rest("GET", "/spi/")).spis[0];
-    assert(!uart.enable && !spi.enable, board.name + " UART and SPI must initially be disabled");
+    const i2c = (await board.rest("GET", "/i2c/")).i2cs[0];
+    assert(!uart.enable && !spi.enable && !i2c.enable, board.name + " UART, SPI and I2C must initially be disabled");
     for (const pin of board.row) {
       assert(pins.find((state) => state.pin === pin)?.mode === "disable",
         board.name + " pin " + pin + " must initially be disabled");
     }
-    board.snapshot = { pins, uart, spi };
+    board.snapshot = { pins, uart, spi, i2c };
     report.boards.at(-1).snapshot = board.snapshot;
   }
   for (const board of boards) board.touched = true;
@@ -426,6 +492,140 @@ async function uart(): Promise<void> {
   equal(observed.sort(), chunks.map((chunk) => JSON.stringify(chunk)).sort(), "Concurrent UART intact chunks");
 }
 
+async function i2cSetup(master: Board, slave: Board, hz = 100000, mcp = false, address = 0x42): Promise<void> {
+  await releaseAll();
+  await slave.configureI2c(slave.i2cConfig("slave", hz, address), mcp);
+  await master.configureI2c(master.i2cConfig("master", hz), mcp);
+  for (const board of [master, slave]) {
+    const inventory = mcp ? await board.tool("list_i2cs") : await board.rest("GET", "/i2c/");
+    equal(bodyConfig(inventory.i2cs[0]), board.i2c, board.name + " I2C configuration round-trip");
+  }
+}
+
+async function i2cEvents(slave: Board, receive: number[], send: number[], mcp = false): Promise<void> {
+  const observed: TransferEvent[] = [];
+  const deadline = Date.now() + 2000;
+  do {
+    observed.push(...await slave.i2cEvents(mcp));
+    if (observed.length > 0) break;
+    await Bun.sleep(10);
+  } while (Date.now() < deadline);
+  equal(observed.length, 1, "I2C slave event count");
+  const event = observed[0]!;
+  equal(event.receive, receive, "I2C slave received exact bytes");
+  equal(event.send, send, "I2C slave sent exact bytes");
+  assert(event.startTime > 0 && event.startTime <= event.endTime, "I2C event timestamps");
+  equal(await slave.i2cEvents(!mcp), [], "I2C events drained exactly once");
+}
+
+async function i2cMatrix(): Promise<void> {
+  const frequencies = JSON.parse(process.env.TEST_I2C_HZ ?? "[10000,100000]") as number[];
+  assert(Array.isArray(frequencies) && frequencies.length > 0
+    && frequencies.every((hz) => Number.isInteger(hz) && hz >= 10000 && hz <= 1000000), "TEST_I2C_HZ");
+  report.settings.i2cHz = frequencies;
+  for (let round = 0; round < rounds; round++) {
+    const pair = round % 2 ? boards.toReversed() : boards;
+    for (const [master, slave] of [pair, pair.toReversed()]) {
+      for (const [frequencyIndex, hz] of frequencies.entries()) {
+        const label = master!.name + "->" + slave!.name + " round " + (round + 1) + " " + hz + "Hz";
+        await section(I2C_MATRIX_SECTION + " " + label,
+          () => i2cPayloads(master!, slave!, hz, (round + frequencyIndex) % 2 === 1, label));
+      }
+    }
+  }
+}
+
+async function i2cPayloads(master: Board, slave: Board, hz: number, mcpConfig: boolean, label: string): Promise<void> {
+  const lengths = [1, 2, 3, 4, 7, 16, 31, 32, 63, 64, 65, 127, 128, 129, 254, 255];
+  await i2cSetup(master, slave, hz, mcpConfig);
+  for (const mcp of [false, true]) {
+    equal(await master.i2cTransfer([], 0, mcp), [], "I2C address probe ACK");
+  }
+  await slave.i2cEvents();
+  for (const [index, length] of lengths.entries()) {
+    const mcp = index % 2 === 1;
+    const command = bytes(length);
+    const reply = bytes(length);
+    await slave.i2cMapping([], mcp);
+    equal(await master.i2cTransfer(command, 0, mcp), [], "I2C " + label + "/" + length + " write-only");
+    await i2cEvents(slave, command, [], !mcp);
+    await slave.i2cMapping([{ type: "prefix", receive: [], send: reply }], !mcp);
+    equal(await master.i2cTransfer([], length, !mcp), reply, "I2C " + label + "/" + length + " read-only");
+    await i2cEvents(slave, [], reply, mcp);
+    equal(await master.i2cTransfer(command, length, mcp), reply,
+      "I2C " + label + "/" + length + " repeated-start write/read");
+    await i2cEvents(slave, command, reply, !mcp);
+    report.i2cPayloads = (report.i2cPayloads ?? 0) + 3;
+  }
+  log("I2C " + label + " passed");
+}
+
+async function i2cFeatures(): Promise<void> {
+  for (const [master, slave] of [boards, boards.toReversed()]) {
+    await section(I2C_FEATURES_SECTION + " " + master!.name + "->" + slave!.name,
+      () => i2cMappedResponses(master!, slave!));
+  }
+}
+
+async function i2cMappedResponses(master: Board, slave: Board): Promise<void> {
+  const address = 0x53;
+  await i2cSetup(master, slave, 100000, true, address);
+  for (const mcp of [false, true]) {
+    const body = { address: address + 1, write: "", readLen: 0, timeoutMs: 1000 };
+    if (mcp) {
+      const result = await master.rpc("tools/call", {
+        name: "i2c_master_transceive", arguments: { id: 0, ...body },
+      });
+      assert(result.isError === true, "I2C missing address reports MCP error");
+      const error = JSON.parse(result.content[0].text);
+      assert(typeof error.reason === "string" && error.reason.length > 0, "I2C MCP NACK reason");
+    } else {
+      const error = await master.rest("POST", "/i2c/0/master/transceive", body, 422);
+      assert(typeof error.reason === "string" && error.reason.length > 0, "I2C REST NACK reason");
+    }
+    equal(await master.i2cTransfer([], 0, mcp, address), [], "I2C recovers after missing address");
+  }
+  await slave.i2cEvents();
+  const rules = [
+    { type: "prefix", receive: [], send: [9, 8, 7, 6] },
+    { type: "prefix", receive: [0xA1], send: [1, 2, 3, 4] },
+    { type: "prefix", receive: [0xA1, 0xB2], send: [4, 5, 6, 7] },
+    { type: "exact", receive: [0xA1, 0xB2, 0xC3], send: [10, 20, 30, 40] },
+  ];
+  for (const mcp of [false, true]) {
+    await slave.i2cMapping(rules, mcp);
+    for (const [command, reply] of [
+      [[0xA1, 0xB2, 0xC3], [10, 20, 30, 40]],
+      [[0xA1, 0xB2, 0x99], [4, 5, 6, 7]],
+      [[0xA1, 0], [1, 2, 3, 4]],
+      [[0x77], [9, 8, 7, 6]],
+    ]) {
+      equal(await master.i2cTransfer(command!, reply!.length, !mcp, address), reply,
+        "I2C repeated-start exact/longest-prefix priority");
+      await i2cEvents(slave, command!, reply!, mcp);
+    }
+    const command = bytes(255);
+    const reply = bytes(255);
+    await slave.i2cMapping([{ type: "exact", receive: command, send: reply }], mcp);
+    equal(await master.i2cTransfer(command, 0, mcp, address), [], "I2C separate write");
+    equal(await master.i2cTransfer([], reply.length, !mcp, address), reply, "I2C separate read and 255-byte map");
+    await i2cEvents(slave, command, reply, !mcp);
+    await slave.i2cMapping([], mcp);
+    equal(await master.i2cTransfer([0x77], 0, !mcp, address), [], "I2C cleared map accepts writes");
+    await i2cEvents(slave, [0x77], [], mcp);
+    equal(await master.i2cTransfer([], 1, mcp, address), [0], "I2C cleared map returns zero");
+    await i2cEvents(slave, [], [], !mcp);
+  }
+  const reply = bytes(255);
+  await slave.i2cMapping([{ type: "prefix", receive: [], send: reply }]);
+  for (let index = 0; index < soak; index++) {
+    const command = bytes(255);
+    equal(await master.i2cTransfer(command, reply.length, index % 2 === 1, address), reply,
+      "I2C 255-byte soak response");
+    await i2cEvents(slave, command, reply, index % 2 === 0);
+  }
+}
+
 async function spiSetup(master: Board, slave: Board, mode = 0, order = "msb", hz = 1000000): Promise<void> {
   for (const board of boards) {
     const role = board === master ? "master" : "slave";
@@ -576,6 +776,7 @@ async function cleanup(): Promise<void> {
     await attempt(() => board.release());
     await attempt(() => board.configureUart(bodyConfig(board.snapshot!.uart)));
     await attempt(() => board.configureSpi(bodyConfig(board.snapshot!.spi)));
+    await attempt(() => board.configureI2c(bodyConfig(board.snapshot!.i2c)));
     for (const state of board.snapshot.pins.filter((pin) => board.row.includes(pin.pin))) {
       const config = { mode: state.mode, openDrain: state.openDrain, pullUp: state.pullUp, pullDown: state.pullDown };
       await attempt(() => board.rest("PUT", "/pin/" + state.pin, config, 204));
@@ -590,6 +791,8 @@ async function cleanup(): Promise<void> {
       }
       assert(!(await board.rest("GET", "/spi/")).spis[0].enable, "SPI disabled after cleanup");
       assert(!(await board.rest("GET", "/uart/")).uarts[0].enable, "UART disabled after cleanup");
+      equal(bodyConfig((await board.rest("GET", "/i2c/")).i2cs[0]), bodyConfig(board.snapshot!.i2c),
+        "I2C configuration restored after cleanup");
     });
     report.cleanup.push({ board: board.name, restored: errors.length === 0, errors });
     failures.push(...errors.map((error) => board.name + " cleanup: " + error));
@@ -602,13 +805,17 @@ async function main(): Promise<void> {
       + "TEST_PINS='[1,2,4,5]' bun tests/hardware/pair.ts");
     console.log("TEST_PINS='[[1,2,4,5],[0,3,5,6]]' maps corresponding columns between the two boards.");
     console.log("Connect those wires plus GND. "
-      + "Selected pins, UART and SPI must be idle.");
-    console.log("First four columns: MISO, MOSI, clock, select. UART uses the first two columns.");
+      + "Selected pins, UART, SPI and I2C must be idle.");
+    console.log("First four columns: SPI MISO, MOSI, clock, select. UART uses the first two columns.");
+    console.log("I2C uses the first two columns as SDA, SCL, with pull-ups enabled on both boards.");
+    console.log("Two-pin TEST_PINS='[1,2]' is supported; sections requiring four pins are skipped.");
     console.log("Optional: TEST_ROUNDS=1 TEST_SOAK_ITERATIONS=8 TEST_TIMEOUT_MS=15000 TEST_SEED=20261101");
     console.log("Optional: TEST_SPI_HZ='[100000,1000000,5000000,10000000]' TEST_REPORT=/tmp/pair-results.json");
+    console.log("Optional: TEST_I2C_HZ='[10000,100000]' TEST_SECTIONS=I2C selects I2C tests plus wiring preflight.");
     console.log("Optional: TEST_SECTIONS selects section names by regex; wiring preflight always runs.");
-    console.log("All SPI modes/orders/clocks use 1, 128, 129 and 255 bytes; other lengths run once per direction/round.");
-    console.log("Covers cross-board GPIO, PWM/trace/pulse, UART and SPI over REST/MCP. Run smoke.ts first.");
+    console.log("All SPI modes/orders/clocks use 1, 128, 129 and 255 bytes; "
+      + "other lengths run once per direction/round.");
+    console.log("Covers cross-board GPIO, PWM/trace/pulse, UART, SPI and I2C over REST/MCP. Run smoke.ts first.");
     return;
   }
   const addresses = JSON.parse(process.env.TEST_BOARDS ?? "[]") as string[];
@@ -620,9 +827,9 @@ async function main(): Promise<void> {
     ? parsedPins as number[][] : [parsedPins as number[], parsedPins as number[]];
   assert(pinRows.length === 2 && pinRows[0]!.length === pinRows[1]!.length, "TEST_PINS must have two matching rows");
   for (const row of pinRows) {
-    assert(Array.isArray(row) && row.length >= 4 && row.length <= 8 && new Set(row).size === row.length
+    assert(Array.isArray(row) && row.length >= 2 && row.length <= 8 && new Set(row).size === row.length
       && row.every((pin) => Number.isInteger(pin) && pin >= 0 && pin <= 7),
-    "TEST_PINS contains 4-8 unique pins per board");
+    "TEST_PINS contains 2-8 unique pins per board");
   }
   assert(Number.isInteger(rounds) && rounds >= 1 && rounds <= 100, "TEST_ROUNDS must be 1-100");
   assert(Number.isInteger(soak) && soak >= 1 && soak <= 10000, "TEST_SOAK_ITERATIONS must be 1-10000");
@@ -637,9 +844,11 @@ async function main(): Promise<void> {
   }
   await section("PWM, pulse and trace, both directions", pwmTracePulse);
   await section("UART framing, payloads, flush and concurrency", uart);
-  await section("SPI modes, bit orders, clocks and 1-255-byte payloads", spiMatrix);
-  await section("SPI mapped responses, MCP and soak", spiFeatures);
-  await section("GPIO trace after releasing SPI", traceAfterSpi);
+  await section(I2C_MATRIX_SECTION, i2cMatrix);
+  await section(I2C_FEATURES_SECTION, i2cFeatures);
+  await section("SPI modes, bit orders, clocks and 1-255-byte payloads", spiMatrix, true, 4);
+  await section("SPI mapped responses, MCP and soak", spiFeatures, true, 4);
+  await section("GPIO trace after releasing SPI", traceAfterSpi, true, 4);
 }
 
 try {
@@ -660,5 +869,5 @@ if (failures.length) {
 } else if (!help) {
   log("PASS: " + (testFilter ? "selected" : "all paired") + " sections and cleanup; "
     + report.summary.passed + " checks, "
-    + (report.spiPayloads ?? 0) + " SPI matrix payloads");
+    + (report.spiPayloads ?? 0) + " SPI matrix payloads, " + (report.i2cTransfers ?? 0) + " I2C transfers");
 }
