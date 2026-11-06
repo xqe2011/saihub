@@ -468,6 +468,7 @@ esp_err_t Wifi_Init(void)
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &Wifi_EventHandler, NULL));
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  cfg.nvs_enable = 0;
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_wifi_init(&cfg));
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_wifi_set_mode(WIFI_MODE_STA));
   TOOL_CHECK_ESP_OK_OR_RETURN(esp_wifi_start());
