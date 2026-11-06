@@ -51,7 +51,7 @@ static esp_err_t Route_SpiIdError(HttpServer_Context* ctx, int pr)
   return HttpServer_SendError(ctx, 404, "This URL does not exist. Read GET /openapi.json for the available paths.");
 }
 
-static void Route_AddOptionalPin(cJSON* pins, const char* key, int pin)
+static void Route_SpiAddOptionalPin(cJSON* pins, const char* key, int pin)
 {
   if (pin < 0) cJSON_AddNullToObject(pins, key);
   else cJSON_AddNumberToObject(pins, key, pin);
@@ -68,15 +68,15 @@ static cJSON* Route_SpiConfigToJson(int id, const SpiCtrl_Config* cfg)
   cJSON_AddStringToObject(item, "bitOrder", SpiCtrl_BitOrderToString(cfg->bitOrder));
   if (cfg->role == SPI_CTRL_ROLE_MASTER) cJSON_AddNumberToObject(item, "clockHz", cfg->clockHz);
   cJSON* pins = cJSON_CreateObject();
-  Route_AddOptionalPin(pins, "mosi", cfg->mosiPin);
-  Route_AddOptionalPin(pins, "miso", cfg->misoPin);
-  Route_AddOptionalPin(pins, "clk", cfg->clkPin);
-  Route_AddOptionalPin(pins, "cs", cfg->csPin);
+  Route_SpiAddOptionalPin(pins, "mosi", cfg->mosiPin);
+  Route_SpiAddOptionalPin(pins, "miso", cfg->misoPin);
+  Route_SpiAddOptionalPin(pins, "clk", cfg->clkPin);
+  Route_SpiAddOptionalPin(pins, "cs", cfg->csPin);
   cJSON_AddItemToObject(item, "pins", pins);
   return item;
 }
 
-static int Route_ParseOptionalPin(cJSON* pinsObj, const char* key, int* pinOut, char* reason, size_t reasonLen)
+static int Route_ParseSpiOptionalPin(cJSON* pinsObj, const char* key, int* pinOut, char* reason, size_t reasonLen)
 {
   cJSON* item = cJSON_GetObjectItem(pinsObj, key);
   if (item == NULL || cJSON_IsNull(item)) {
@@ -140,14 +140,14 @@ static esp_err_t Route_ParseSpiConfigBody(cJSON* body, SpiCtrl_Config* cfg, char
   cfg->enable = cJSON_IsTrue(enableItem);
   cfg->cpol = cpolItem->valueint;
   cfg->cpha = cphaItem->valueint;
-  if (Route_ParseOptionalPin(pinsItem, "mosi", &cfg->mosiPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
-  if (Route_ParseOptionalPin(pinsItem, "miso", &cfg->misoPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
-  if (Route_ParseOptionalPin(pinsItem, "clk", &cfg->clkPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
-  if (Route_ParseOptionalPin(pinsItem, "cs", &cfg->csPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseSpiOptionalPin(pinsItem, "mosi", &cfg->mosiPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseSpiOptionalPin(pinsItem, "miso", &cfg->misoPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseSpiOptionalPin(pinsItem, "clk", &cfg->clkPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseSpiOptionalPin(pinsItem, "cs", &cfg->csPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
   return ESP_OK;
 }
 
-static esp_err_t Route_ParseByteArray(cJSON* item, const char* field, int index, uint8_t* out, size_t* lenOut, char* reason,
+static esp_err_t Route_ParseSpiByteArray(cJSON* item, const char* field, int index, uint8_t* out, size_t* lenOut, char* reason,
                                       size_t reasonLen)
 {
   if (!cJSON_IsString(item) || item->valuestring == NULL) {
@@ -171,7 +171,7 @@ static esp_err_t Route_ParseByteArray(cJSON* item, const char* field, int index,
   return ESP_OK;
 }
 
-static esp_err_t Route_ParseSlaveMap(cJSON* body, uint8_t* packed, size_t* usedOut, char* reason, size_t reasonLen)
+static esp_err_t Route_ParseSpiSlaveMap(cJSON* body, uint8_t* packed, size_t* usedOut, char* reason, size_t reasonLen)
 {
   *usedOut = 0;
   cJSON* mapping = cJSON_GetObjectItem(body, "mapping");
@@ -203,10 +203,10 @@ static esp_err_t Route_ParseSlaveMap(cJSON* body, uint8_t* packed, size_t* usedO
     uint8_t miso[CONFIG_SPI_MAX_TRANSFER_BYTES];
     size_t mosiLen = 0;
     size_t misoLen = 0;
-    if (Route_ParseByteArray(cJSON_GetObjectItem(entry, "mosi"), "mosi", i, mosi, &mosiLen, reason, reasonLen) != ESP_OK) {
+    if (Route_ParseSpiByteArray(cJSON_GetObjectItem(entry, "mosi"), "mosi", i, mosi, &mosiLen, reason, reasonLen) != ESP_OK) {
       return ESP_ERR_INVALID_ARG;
     }
-    if (Route_ParseByteArray(cJSON_GetObjectItem(entry, "miso"), "miso", i, miso, &misoLen, reason, reasonLen) != ESP_OK) {
+    if (Route_ParseSpiByteArray(cJSON_GetObjectItem(entry, "miso"), "miso", i, miso, &misoLen, reason, reasonLen) != ESP_OK) {
       return ESP_ERR_INVALID_ARG;
     }
     esp_err_t err = SpiCtrl_PackMapAppend(packed, CONFIG_SPI_SLAVE_MAP_BYTES, &used, i, type, mosi, mosiLen, miso, misoLen,
@@ -448,7 +448,7 @@ static esp_err_t Route_SpiPostSlaveTransmitHandler(HttpServer_Context* ctx)
     return HttpServer_SendError(ctx, 500, "internal");
   }
   size_t used = 0;
-  esp_err_t parse = Route_ParseSlaveMap(body, packed, &used, reason, sizeof(reason));
+  esp_err_t parse = Route_ParseSpiSlaveMap(body, packed, &used, reason, sizeof(reason));
   cJSON_Delete(body);
   if (parse != ESP_OK) {
     free(packed);
