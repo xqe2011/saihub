@@ -35,4 +35,7 @@ ToolCall_Result ToolCall_TraceCapture(cJSON* args, GpioCtrl_TraceEvent** eventsO
 /** Drain slave events without constructing JSON. Caller frees *storageOut. *storageOut is NULL when *lenOut is 0. */
 ToolCall_Result ToolCall_SpiSlaveCapture(cJSON* args, uint8_t** storageOut, size_t* lenOut);
 
+/** Drain I2C slave events without constructing JSON. Caller frees *storageOut. *storageOut is NULL when *lenOut is 0. */
+ToolCall_Result ToolCall_I2cSlaveCapture(cJSON* args, uint8_t** storageOut, size_t* lenOut);
+
 #endif
