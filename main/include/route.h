@@ -15,6 +15,7 @@ struct HttpServer_Context;
 esp_err_t Route_OpenApiRegister(void);
 esp_err_t Route_PinRegister(void);
 esp_err_t Route_UartRegister(void);
+esp_err_t Route_DapRegister(void);
 esp_err_t Route_SpiRegister(void);
 esp_err_t Route_I2cRegister(void);
 esp_err_t Route_LockRegister(void);

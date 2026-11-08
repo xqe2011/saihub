@@ -971,6 +971,8 @@ static void Script_OpenSandbox(lua_State* L)
       "i2c_master_transceive",
       "i2c_slave_receive",
       "i2c_slave_transmit",
+      "get_dap_status",
+      "configure_dap",
       "play_buzzer",
       "create_lock",
       "renew_lock",

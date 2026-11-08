@@ -1,4 +1,5 @@
 import { URL } from "node:url";
+import { Dap, testDapFraming } from "./dap.ts";
 
 const DEFAULT_TARGET = "192.168.88.160";
 const OUTPUT_A = 6;
@@ -10,6 +11,8 @@ const PWM_SLOT_FREQUENCIES = [500, 2000, 10000, 50000] as const;
 const UART_ID = 0;
 const SPI_PINS = { miso: 0, mosi: 1, clk: 2, cs: 3 } as const;
 const I2C_PINS = { sda: 0, scl: 1 } as const;
+const DAP_PINS = { swclk: 0, swdio: 1, nreset: 2 } as const;
+const DAP_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_DAP_TIMEOUT_MS ?? "1500", 10);
 const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_REQUEST_TIMEOUT_MS ?? "5000", 10);
 const UART_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_UART_TIMEOUT_MS ?? "1500", 10);
 const SPI_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_SPI_TIMEOUT_MS ?? "1500", 10);
@@ -40,6 +43,8 @@ const EXPECTED_MCP_TOOLS = [
   "i2c_master_transceive",
   "i2c_slave_receive",
   "i2c_slave_transmit",
+  "configure_dap",
+  "get_dap_status",
   "play_buzzer",
   "create_lock",
   "renew_lock",
@@ -89,6 +94,7 @@ type I2cConfig = {
   address?: number;
   pins: { sda: number | null; scl: number | null };
 };
+type DapStatus = { prompt: string; port: number; ip: string };
 type HttpResult = { status: number; headers: Headers; text: string };
 type McpEnvelope = { jsonrpc?: string; id?: number; result?: JsonObject; error?: JsonObject };
 
@@ -108,6 +114,7 @@ let snapshot: Snapshot | undefined;
 let mutationStarted = false;
 let spiTouched = false;
 let i2cTouched = false;
+let dapTouched = false;
 const deferredFailures: string[] = [];
 
 function fail(message: string): never {
@@ -346,6 +353,8 @@ async function captureSnapshot(): Promise<Snapshot> {
   assert(i2cList.i2cs[0]?.id === 0, "REST I2C inventory omitted I2C 0");
   const i2c = i2cList.i2cs[0]!;
   assert(!i2c.enable, "I2C must be disabled before the smoke test");
+  const dapStatus = await rawRequest("GET", "/dap/status");
+  assert(dapStatus.status === 503, "DAP must be disabled before the smoke test");
   const uart = uartList.uarts[0];
   assert(uart !== undefined && uart.id === UART_ID, "REST UART inventory omitted UART 0");
   if (uart.enable) {
@@ -1026,6 +1035,91 @@ async function disableTestI2c(): Promise<void> {
   for (const pin of Object.values(I2C_PINS)) await configureRestPin(pin, "disable");
 }
 
+// No debug target is attached. Exercise adapter behavior without asserting target IDs or memory contents.
+async function testOpenEndDap(): Promise<void> {
+  log("open-end DAP configuration, TCP framing, SWD failure, and pin reservation over REST/MCP");
+  const promptly = async <T>(label: string, action: () => Promise<T>): Promise<T> => {
+    const started = performance.now();
+    const result = await action();
+    assert(performance.now() - started < DAP_TIMEOUT_MS, `${label} did not complete promptly without a target`);
+    return result;
+  };
+  await expectStatus("GET", "/dap/status", 503);
+  const idleConfig = await requestJson<JsonObject>("GET", "/dap/config");
+  assert(idleConfig.enable === false, "DAP config should be disabled before the test");
+  assert(isObject(idleConfig.pins), "DAP config omitted pins");
+  await expectStatus("POST", "/dap/config", 400, { enable: true });
+  await expectStatus("POST", "/dap/config", 400, { enable: true, pins: { swclk: 0, swdio: 0 } });
+  await expectStatus("POST", "/dap/config", 400, { enable: true, pins: { ...DAP_PINS, nreset: 0 } });
+  await expectStatus("POST", "/dap/config", 400, { enable: true, pins: { ...DAP_PINS, swdio: 99 } });
+  dapTouched = true;
+  for (const mcp of [false, true]) {
+    const config = { enable: true, pins: { ...DAP_PINS, nreset: mcp ? null : DAP_PINS.nreset } };
+    await promptly("DAP enable", () => mcp
+      ? mcpTool("configure_dap", config)
+      : requestJson<void>("POST", "/dap/config", config, 204));
+    const status = await requestJson<DapStatus>("GET", "/dap/status");
+    const liveConfig = await requestJson<JsonObject>("GET", "/dap/config");
+    assert(liveConfig.enable === true, "DAP config enable did not stick");
+    assert(isObject(liveConfig.pins) && liveConfig.pins.swclk === config.pins.swclk &&
+      liveConfig.pins.swdio === config.pins.swdio && liveConfig.pins.nreset === config.pins.nreset,
+      "DAP config pins did not match the request");
+    assert(typeof status.prompt === "string" && status.prompt.length > 0, "DAP status omitted connection instructions");
+    assert(Number.isInteger(status.port) && status.port > 0 && status.port <= 65535,
+      "DAP status returned invalid port");
+    assert(typeof status.ip === "string" && status.ip !== "0.0.0.0", "DAP status returned invalid IP");
+    const mcpStatus = await mcpTool<DapStatus>("get_dap_status", {});
+    assert(mcpStatus.port === status.port && mcpStatus.ip === status.ip && mcpStatus.prompt === status.prompt,
+      "REST/MCP DAP status disagreed");
+    await expectStatus("PUT", `/pin/${DAP_PINS.swclk}`, 423, { mode: "digitalOutput" });
+    await expectStatus("POST", "/spi/0/config", 409, spiBody({ ...disabledSpi, enable: true, pins: SPI_PINS }));
+
+    // REST/MCP may use the cloud relay, but DAP TCP needs a directly reachable device address.
+    const host = process.env.SAIHUB_DAP_HOST ?? (target.pathname.includes("/device/") ? status.ip : target.hostname);
+    assert(host.length > 0, "Set SAIHUB_DAP_HOST to the directly reachable DAP address");
+    const dap = await Dap.open(host, status.port, DAP_TIMEOUT_MS);
+    try {
+      await testDapFraming(dap);
+      const command = async (data: number[], expected: number[], label: string): Promise<void> => {
+        const response = await promptly(label, () => dap.command(Buffer.from(data)));
+        assert(response.equals(Buffer.from(expected)), `${label} returned ${response.toString("hex")}`);
+      };
+      await command([2, 1], [2, 1], "SWD adapter connect");
+      await command([0x11, 0x40, 0x42, 0x0f, 0], [0x11, 0], "SWD clock setup");
+      await command([0x13, 0], [0x13, 0], "SWD setup");
+      await command([4, 0, 0, 0, 0, 0], [4, 0], "Disable transfer retries");
+      await command([0x12, 56, ...Array(7).fill(255)], [0x12, 0], "SWD line reset");
+      const transfer = await promptly("Open-end register read", () => dap.command(Buffer.from([5, 0, 1, 2])));
+      assert(transfer.length === 3 && transfer[1] === 0 && [2, 4, 8].includes(transfer[2]!),
+        `Open-end register read did not report a failed transfer: ${transfer.toString("hex")}`);
+      const block = await promptly("Open-end block read", () => dap.command(Buffer.from([6, 0, 4, 0, 2])));
+      assert(block.length === 4 && block.readUInt16LE(1) === 0 && [2, 4, 8].includes(block[3]!),
+        `Open-end block read did not report a failed transfer: ${block.toString("hex")}`);
+      await command([6, 0, 0, 0, 2], [6, 0, 0, 1], "Empty block read");
+      await command([0x11, 0, 0, 0, 0], [0x11, 255], "Reject zero clock");
+      // Control APIs must stay responsive after a failed SWD transaction.
+      await promptly("System read during DAP session", () => requestJson<JsonObject>("GET", "/system"));
+      await command([0, 254], [0, 1, 8], "Info after failed transfers");
+    } finally {
+      await dap.close();
+    }
+    await promptly("DAP disable", () => mcp
+      ? mcpTool("configure_dap", { ...config, enable: false })
+      : requestJson<void>("POST", "/dap/config", { ...config, enable: false }, 204));
+    await expectStatus("GET", "/dap/status", 503);
+    const stoppedConfig = await requestJson<JsonObject>("GET", "/dap/config");
+    assert(stoppedConfig.enable === false, "DAP config stayed enabled after disable");
+    for (const pin of Object.values(DAP_PINS)) await configureRestPin(pin, "disable");
+  }
+}
+
+async function disableTestDap(): Promise<void> {
+  if (!dapTouched) return;
+  await requestJson<void>("POST", "/dap/config", { enable: false, pins: DAP_PINS }, 204);
+  await expectStatus("GET", "/dap/status", 503);
+  for (const pin of Object.values(DAP_PINS)) await configureRestPin(pin, "disable");
+}
+
 function hardwareScript(output: number, input: number, marker: string): string {
   return [
     `configure_pins{pins={${output}}, mode="digitalOutput", openDrain=false, pullUp=false, pullDown=false}`,
@@ -1395,6 +1489,7 @@ async function cleanup(): Promise<void> {
     }
   };
 
+  await attempt("disable DAP", disableTestDap);
   if (spiTouched) {
     await attempt("disable SPI", disableTestSpi);
     await attempt("restore SPI config", () =>
@@ -1433,13 +1528,15 @@ async function main(): Promise<void> {
   if (process.argv.includes("--help")) {
     console.log("SAIHUB_TARGET=192.168.88.160 bun tests/hardware/smoke.ts");
     console.log("Cloud: SAIHUB_TARGET=https://<cloud-host>/device/<device-digest> SAIHUB_ROUTING_TOKEN=<token> bun tests/hardware/smoke.ts");
-    console.log("Pins 6 and 7 must be jumpered. Leave idle pins 0-3 unconnected for open-end SPI; SPI must be disabled.");
-    console.log("Four-channel PWM drives 0-2 plus 6 and probes pin 7. SPI uses 0-3; other tests drive only 6 and 7.");
+    console.log("Jumper pins 6/7. Leave idle pins 0-3 unconnected. SPI, I2C and DAP must be disabled before testing.");
+    console.log("PWM drives 0-2 plus 6 and probes 7. SPI uses 0-3; I2C uses 0/1; DAP uses 0-2; loopback uses 6/7.");
+    console.log("Optional: SAIHUB_DAP_HOST selects the direct DAP address; SAIHUB_DAP_TIMEOUT_MS=1500 bounds operations.");
     console.log("Optional: SAIHUB_SPI_TIMEOUT_MS=1500 bounds each non-blocking SPI operation, including transport time.");
     return;
   }
   assert(Number.isFinite(REQUEST_TIMEOUT_MS) && REQUEST_TIMEOUT_MS > 0, "SAIHUB_REQUEST_TIMEOUT_MS must be positive");
   assert(Number.isFinite(SPI_TIMEOUT_MS) && SPI_TIMEOUT_MS > 0, "SAIHUB_SPI_TIMEOUT_MS must be positive");
+  assert(Number.isFinite(DAP_TIMEOUT_MS) && DAP_TIMEOUT_MS > 0, "SAIHUB_DAP_TIMEOUT_MS must be positive");
   assert(Number.isFinite(UART_TIMEOUT_MS) && UART_TIMEOUT_MS > 0, "SAIHUB_UART_TIMEOUT_MS must be positive");
   assert(Number.isInteger(SOAK_ITERATIONS) && SOAK_ITERATIONS >= 0 && SOAK_ITERATIONS <= 100,
     "SAIHUB_SOAK_ITERATIONS must be an integer from 0 to 100");
@@ -1463,6 +1560,7 @@ async function main(): Promise<void> {
   await runSection("reset after UART stress", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
   await runSection("open-end SPI", testOpenEndSpi, disableTestSpi);
   await runSection("open-end I2C", testOpenEndI2c, disableTestI2c);
+  await runSection("open-end DAP", testOpenEndDap, disableTestDap);
   await runSection("buzzer", testBuzzer);
   await runSection("scripts", testScripts);
   await runSection("concurrency", testConcurrency, releaseTestLocks);
@@ -1493,5 +1591,5 @@ if (failure !== undefined) {
   console.error(failure instanceof Error ? failure.stack ?? failure.message : String(failure));
   process.exitCode = 1;
 } else if (!process.argv.includes("--help")) {
-  log("PASS: REST, MCP, pins 6/7, UART loopback, open-end SPI, buzzer, scripts, locks, trace, PWM, and active power toggles");
+  log("PASS: REST, MCP, pins 6/7, UART, open-end SPI/I2C/DAP, buzzer, scripts, locks, trace, PWM, and power toggles");
 }

@@ -1187,6 +1187,7 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_OpenApiRegister(), "openapi routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(), "pin routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_UartRegister(), "uart routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_DapRegister(), "dap routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_SpiRegister(), "spi routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_I2cRegister(), "i2c routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(), "lock routes failed");

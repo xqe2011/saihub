@@ -145,9 +145,12 @@ body{
   border-radius:var(--md-sys-shape-corner-extra-large);
   background:var(--md-sys-color-surface-container);
   animation:enter .45s .02s cubic-bezier(.2,0,0,1) both;
+  max-width:100%;
+  overflow-x:auto;
 }
 .tab{
-  flex:1;
+  flex:1 0 auto;
+  white-space:nowrap;
   border:0;
   border-radius:var(--md-sys-shape-corner-large);
   padding:.7rem .5rem;
@@ -613,6 +616,23 @@ body{
   color:var(--md-sys-color-on-surface-variant);
   opacity:.7;
 }
+.ocd-wrap{
+  display:flex;
+  flex-direction:column;
+  gap:.7rem;
+}
+.ocd-box{
+  margin:0;
+  overflow:auto;
+  white-space:pre;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:.82rem;
+  line-height:1.45;
+  padding:.85rem 1rem;
+  border-radius:var(--md-sys-shape-corner-medium);
+  background:var(--md-sys-color-surface-container-highest);
+  color:var(--md-sys-color-on-surface);
+}
 .row-actions{
   display:flex;
   flex-wrap:wrap;
@@ -751,7 +771,7 @@ body{
   <header class="top">
     <div class="brand-block">
       <h1 class="brand">SAIHUB</h1>
-      <p class="subtitle" data-i18n="subtitle">Control pins, power, UART, buzzer, cloud grants, and updates.</p>
+      <p class="subtitle" data-i18n="subtitle">Control pins, power, UART, DAP, buzzer, cloud grants, and updates.</p>
     </div>
     <div class="top-actions">
       <select class="lang-select" id="lang" aria-label="Language" title="Language">
@@ -768,6 +788,7 @@ body{
     <button class="tab" type="button" role="tab" data-tab="power" aria-selected="false" data-i18n="tab.power">Power</button>
     <button class="tab active" type="button" role="tab" data-tab="pins" aria-selected="true" data-i18n="tab.pins">Pins</button>
     <button class="tab" type="button" role="tab" data-tab="uart" aria-selected="false" data-i18n="tab.uart">UART</button>
+    <button class="tab" type="button" role="tab" data-tab="dap" aria-selected="false" data-i18n="tab.dap">DAP</button>
     <button class="tab" type="button" role="tab" data-tab="buzzer" aria-selected="false" data-i18n="tab.buzzer">Buzzer</button>
     <button class="tab" type="button" role="tab" data-tab="cloud" aria-selected="false" data-i18n="tab.cloud">Cloud</button>
     <button class="tab" type="button" role="tab" data-tab="about" aria-selected="false" data-i18n="tab.about">About</button>
@@ -786,6 +807,39 @@ body{
   <section class="sheet panel" id="panel-uart" aria-label="UART" role="tabpanel" data-i18n-aria="tab.uart">
     <h2 class="section-label" data-i18n="tab.uart">UART</h2>
     <div class="two-col-grid" id="uarts"></div>
+  </section>
+
+  <section class="sheet panel" id="panel-dap" aria-label="DAP" role="tabpanel" data-i18n-aria="tab.dap">
+    <h2 class="section-label" data-i18n="tab.dap">DAP</h2>
+    <div class="two-col-grid">
+      <article class="pin-card">
+        <div class="pin-head">
+          <h3 class="pin-title">CMSIS-DAP</h3>
+          <label class="switch">
+            <input type="checkbox" id="dap-enable"/>
+            <span class="track"></span><span class="thumb"></span>
+          </label>
+        </div>
+        <div class="uart-grid">
+          <div class="field"><select id="dap-swclk"></select><label data-i18n="dap.swclk">SWCLK</label></div>
+          <div class="field"><select id="dap-swdio"></select><label data-i18n="dap.swdio">SWDIO</label></div>
+          <div class="field" style="grid-column:1 / -1"><select id="dap-nreset"></select><label data-i18n="dap.nreset">nRESET</label></div>
+        </div>
+        <p class="hint" data-i18n="dap.hint">SWCLK and SWDIO are required. Leave nRESET empty when reset is unwired.</p>
+        <button type="button" class="btn btn-filled" id="dap-apply" data-i18n="dap.apply">Apply</button>
+      </article>
+      <article class="pin-card">
+        <div class="pin-head">
+          <h3 class="pin-title" data-i18n="dap.connection">Connection</h3>
+          <span class="level-pill" id="dap-pill"><span class="dot"></span><span id="dap-pill-text" data-i18n="dap.off">Off</span></span>
+        </div>
+        <p class="hint" id="dap-status-hint" data-i18n="dap.offHint">The debug service is off.</p>
+        <div class="ocd-wrap" id="dap-ocd-wrap" hidden>
+          <pre class="ocd-box" id="dap-ocd"></pre>
+          <button class="btn btn-filled" type="button" id="dap-copy" data-i18n="copy">Copy</button>
+        </div>
+      </article>
+    </div>
   </section>
 
   <section class="sheet panel" id="panel-buzzer" aria-label="Buzzer" role="tabpanel" data-i18n-aria="tab.buzzer">
@@ -873,9 +927,15 @@ body{
 <script>
 const I18N={
   en:{
-    subtitle:'Control pins, power, UART, buzzer, cloud grants, and updates.',
+    subtitle:'Control pins, power, UART, DAP, buzzer, cloud grants, and updates.',
     refresh:'Refresh', sections:'Sections', language:'Language',
-    'tab.power':'Power','tab.pins':'Pins','tab.uart':'UART','tab.buzzer':'Buzzer','tab.cloud':'Cloud','tab.about':'About',
+    'tab.power':'Power','tab.pins':'Pins','tab.uart':'UART','tab.dap':'DAP','tab.buzzer':'Buzzer','tab.cloud':'Cloud','tab.about':'About',
+    'dap.swclk':'SWCLK','dap.swdio':'SWDIO','dap.nreset':'nRESET','dap.apply':'Apply','dap.connection':'Connection',
+    'dap.active':'Active','dap.off':'Off',
+    'dap.hint':'SWCLK and SWDIO are required. Leave nRESET empty when reset is unwired.',
+    'dap.running':'CMSIS-DAP over TCP is running. Copy the config below into your OpenOCD configuration.',
+    'dap.offHint':'The debug service is off.',
+    'dap.noIp':'CMSIS-DAP over TCP is running, but this device has no network address yet.',
     'buzzer.ready':'Idle','buzzer.sequence':'Sequence',
     'buzzer.hint':'Morse-style pattern. <code>.</code> is a short beep, <code>-</code> is a long beep, space is an extra gap. Play waits until the sequence finishes.',
     'buzzer.short':'Short','buzzer.double':'Double','buzzer.long':'Long','buzzer.play':'Play','buzzer.playing':'Playing…','buzzer.needSeq':'Enter a sequence of . and -.',
@@ -911,9 +971,15 @@ const I18N={
     'err.generic':'Something went wrong.','err.load':'Could not load device state.','err.request':'Request failed ({status})'
   },
   zh:{
-    subtitle:'控制引脚、电源、UART、蜂鸣器、云授权与更新。',
+    subtitle:'控制引脚、电源、UART、DAP、蜂鸣器、云授权与更新。',
     refresh:'刷新', sections:'分区', language:'语言',
-    'tab.power':'电源','tab.pins':'引脚','tab.uart':'UART','tab.buzzer':'蜂鸣器','tab.cloud':'云','tab.about':'关于',
+    'tab.power':'电源','tab.pins':'引脚','tab.uart':'UART','tab.dap':'DAP','tab.buzzer':'蜂鸣器','tab.cloud':'云','tab.about':'关于',
+    'dap.swclk':'SWCLK','dap.swdio':'SWDIO','dap.nreset':'nRESET','dap.apply':'应用配置','dap.connection':'连接',
+    'dap.active':'已启用','dap.off':'关闭',
+    'dap.hint':'SWCLK 与 SWDIO 必填。没有复位线时，nRESET 留空。',
+    'dap.running':'CMSIS-DAP over TCP 已启动。将下方配置复制到 OpenOCD 配置文件中。',
+    'dap.offHint':'调试服务已关闭。',
+    'dap.noIp':'CMSIS-DAP over TCP 已启动，但设备还没有网络地址。',
     'buzzer.ready':'空闲','buzzer.sequence':'序列',
     'buzzer.hint':'摩尔斯风格图案。<code>.</code> 为短响，<code>-</code> 为长响，空格为额外间隔。播放会等到序列结束。',
     'buzzer.short':'短响','buzzer.double':'双短响','buzzer.long':'长响','buzzer.play':'播放','buzzer.playing':'播放中…','buzzer.needSeq':'请输入由 . 和 - 组成的序列。',
@@ -992,6 +1058,7 @@ const uartsEl=document.getElementById('uarts');
 const grantsEl=document.getElementById('grants');
 const editing=new Set();
 let uartEditing=false;
+let dapEditing=false;
 let activeTab='pins';
 let pollTimer=null;
 let busy=false;
@@ -1009,6 +1076,9 @@ let lastPins=[];
 let lastRails=null;
 let lastUarts=null;
 let lastGrants=[];
+let lastDapConfig=null;
+let lastDapStatus=null;
+let lastDapRunning=false;
 
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -1498,6 +1568,7 @@ async function refresh(force){
     if(force||!uartEditing||!uartsEl.children.length){
       renderUarts(uartRes.uarts||[]);
     }
+    await loadDap(force);
     lastPins=pins;
     lastUarts=uartRes.uarts||[];
     if(force||activeTab==='cloud'||!landingPageUrl){
@@ -1754,6 +1825,132 @@ async function pollUartReceive(){
   }catch(_){}
 }
 
+function setPinSelect(id, selected, allowNone){
+  const el=document.getElementById(id);
+  if(!el) return;
+  const value=selected==null||selected===''?'':String(selected);
+  let html=allowNone?'<option value="">'+escapeHtml(t('none'))+'</option>':'';
+  for(let i=0;i<=7;i++){
+    html+='<option value="'+i+'"'+(String(i)===value?' selected':'')+'>'+escapeHtml(t('pin.title',{n:i}))+'</option>';
+  }
+  el.innerHTML=html;
+}
+
+function applyDapForm(config){
+  const pins=config&&config.pins||{};
+  const en=document.getElementById('dap-enable');
+  if(en) en.checked=!!(config&&config.enable);
+  setPinSelect('dap-swclk', pins.swclk!=null?pins.swclk:0, false);
+  setPinSelect('dap-swdio', pins.swdio!=null?pins.swdio:1, false);
+  setPinSelect('dap-nreset', pins.nreset!=null?pins.nreset:null, true);
+}
+
+function syncDapStatus(running, status){
+  lastDapRunning=!!running;
+  lastDapStatus=running?status:null;
+  const pill=document.getElementById('dap-pill');
+  const text=document.getElementById('dap-pill-text');
+  const wrap=document.getElementById('dap-ocd-wrap');
+  const box=document.getElementById('dap-ocd');
+  const hint=document.getElementById('dap-status-hint');
+  const copyBtn=document.getElementById('dap-copy');
+  if(pill) pill.classList.toggle('high', lastDapRunning);
+  if(text) text.textContent=lastDapRunning?t('dap.active'):t('dap.off');
+  const ip=status&&typeof status.ip==='string'?status.ip:'';
+  const port=status&&Number.isInteger(status.port)?status.port:null;
+  const showConfig=!!(lastDapRunning&&ip&&port!=null);
+  const configText=showConfig?[
+    'adapter driver cmsis-dap',
+    'cmsis-dap backend tcp',
+    'cmsis-dap tcp host '+ip,
+    'cmsis-dap tcp port '+port,
+    'transport select swd'
+  ].join('\n'):'';
+  if(wrap) wrap.hidden=!showConfig;
+  if(box) box.textContent=configText;
+  if(copyBtn) copyBtn.disabled=!showConfig;
+  if(hint){
+    if(!lastDapRunning) hint.textContent=t('dap.offHint');
+    else if(!showConfig) hint.textContent=t('dap.noIp');
+    else hint.textContent=t('dap.running');
+  }
+}
+
+function readDapConfig(){
+  const nreset=document.getElementById('dap-nreset').value;
+  return {
+    enable:document.getElementById('dap-enable').checked,
+    pins:{
+      swclk:Number(document.getElementById('dap-swclk').value),
+      swdio:Number(document.getElementById('dap-swdio').value),
+      nreset:nreset===''?null:Number(nreset)
+    }
+  };
+}
+
+function markDapEdit(){dapEditing=true}
+function clearDapEdit(){setTimeout(()=>{dapEditing=false},400)}
+
+async function loadDap(force){
+  let config;
+  try{
+    config=await api('GET','/dap/config');
+  }catch(e){
+    if(force||activeTab==='dap') showError(e.message);
+    return;
+  }
+  lastDapConfig=config;
+  let status=null;
+  let running=false;
+  try{
+    status=await api('GET','/dap/status');
+    running=true;
+  }catch(e){
+    if(e.status!==503&&(force||activeTab==='dap')) showError(e.message);
+  }
+  if(force||!dapEditing) applyDapForm(config);
+  syncDapStatus(running, status);
+}
+
+function bindDap(){
+  ['dap-enable','dap-swclk','dap-swdio','dap-nreset'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.onfocus=markDapEdit;
+    el.onblur=clearDapEdit;
+    el.onchange=markDapEdit;
+  });
+  document.getElementById('dap-apply').onclick=async()=>{
+    markDapEdit();
+    try{
+      await api('POST','/dap/config',readDapConfig());
+      await refresh(true);
+    }catch(e){showError(e.message)}
+    finally{dapEditing=false}
+  };
+  document.getElementById('dap-copy').onclick=()=>{
+    const box=document.getElementById('dap-ocd');
+    const button=document.getElementById('dap-copy');
+    const value=box?box.textContent:'';
+    if(!value) return;
+    const done=()=>{
+      button.classList.add('done');
+      button.textContent=t('copied');
+      setTimeout(()=>{button.classList.remove('done');button.textContent=t('copy');},1500);
+    };
+    const fallback=()=>{
+      const area=document.createElement('textarea');
+      area.value=value;
+      document.body.appendChild(area);
+      area.select();
+      try{if(document.execCommand('copy')) done();}catch{}
+      area.remove();
+    };
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(value).then(done,fallback);
+    else fallback();
+  };
+}
+
 function setTab(name){
   activeTab=name;
   document.querySelectorAll('.tab').forEach(btn=>{
@@ -1852,6 +2049,8 @@ function setLang(next){
   if(lastRails) renderRails(lastRails);
   if(lastPins&&lastPins.length) renderPins(lastPins);
   if(lastUarts) renderUarts(lastUarts);
+  applyDapForm(lastDapConfig||{enable:false,pins:{swclk:0,swdio:1,nreset:null}});
+  syncDapStatus(lastDapRunning, lastDapStatus);
   renderGrants(lastGrants);
   if(aboutLoaded){
     renderAboutVersion(aboutCurrentVersion, aboutPending&&aboutPending.version);
@@ -1868,6 +2067,9 @@ document.getElementById('lang').onchange=(e)=>setLang(e.target.value);
 
 (async()=>{
   applyStaticI18n();
+  applyDapForm({enable:false,pins:{swclk:0,swdio:1,nreset:null}});
+  syncDapStatus(false, null);
+  bindDap();
   setTab('pins');
   await refresh(true);
   schedulePoll();

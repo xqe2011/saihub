@@ -26,6 +26,9 @@
       "name": "uart"
     },
     {
+      "name": "dap"
+    },
+    {
       "name": "spi"
     },
     {
@@ -294,7 +297,7 @@
           "meta"
         ],
         "summary": "Human control UI (HTML)",
-        "description": "Browser page for humans to control pins, power rails, UART, and the buzzer. Agents should use GET /openapi.json and call the JSON APIs instead of scraping this page.",
+        "description": "Browser page for humans to control pins, power rails, UART, DAP, and the buzzer. Agents should use GET /openapi.json and call the JSON APIs instead of scraping this page.",
         "responses": {
           "200": {
             "description": "HTML control page",
@@ -1485,6 +1488,100 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/dap/status": {
+      "get": {
+        "tags": [
+          "dap"
+        ],
+        "summary": "CMSIS-DAP TCP status",
+        "description": "prompt explains how to connect. port and ip are the address.",
+        "responses": {
+          "200": {
+            "description": "Service is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DapStatus"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "CMSIS-DAP is not running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dap/config": {
+      "get": {
+        "tags": [
+          "dap"
+        ],
+        "summary": "Read CMSIS-DAP configuration",
+        "description": "Returns the current enable flag and pins. pins.nreset is null when reset is unwired. enable false means the TCP service is stopped.",
+        "responses": {
+          "200": {
+            "description": "Current configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DapConfigBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "dap"
+        ],
+        "summary": "Configure CMSIS-DAP",
+        "description": "enable true claims pins.swclk, pins.swdio, and pins.nreset when set, then starts the TCP service. enable false stops it and releases those pins.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DapConfigBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Config applied"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
           }
         }
       }
@@ -2930,6 +3027,70 @@
           },
           "elapsed": {
             "$ref": "#/components/schemas/TimeUs"
+          }
+        }
+      },
+      "DapPins": {
+        "type": "object",
+        "required": [
+          "swclk",
+          "swdio"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "swclk": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "swdio": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "nreset": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 7
+          }
+        }
+      },
+      "DapConfigBody": {
+        "type": "object",
+        "required": [
+          "enable",
+          "pins"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "enable": {
+            "type": "boolean"
+          },
+          "pins": {
+            "$ref": "#/components/schemas/DapPins"
+          }
+        }
+      },
+      "DapStatus": {
+        "type": "object",
+        "required": [
+          "prompt",
+          "port",
+          "ip"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "ip": {
+            "type": "string"
           }
         }
       },

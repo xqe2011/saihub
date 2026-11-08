@@ -1524,6 +1524,74 @@
       }
     },
     {
+      "name": "get_dap_status",
+      "description": "Read the CMSIS-DAP status. prompt explains how to connect. port and ip are the address.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "configure_dap",
+      "description": "Configure CMSIS-DAP. When enable is true, pins.swclk and pins.swdio are required and the TCP service starts. pins.nreset may be null.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "enable",
+          "pins"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "enable": {
+            "type": "boolean"
+          },
+          "pins": {
+            "type": "object",
+            "required": [
+              "swclk",
+              "swdio"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "swclk": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 7
+              },
+              "swdio": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 7
+              },
+              "nreset": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 7
+              }
+            }
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the pins."
+          }
+        }
+      }
+    },
+    {
       "name": "get_cloud_status",
       "description": "Return whether the device is connected and authenticated to the cloud relay, the public landingPageUrl (empty when cloud relay is disabled), and a reason when not connected.",
       "annotations": {

@@ -1,0 +1,35 @@
+{
+  "formatVersion": 1,
+  "file": "firmware.bin",
+  "sha256": "cc1cafc058a9df1b9a29d1d729aa51f6662b500b552901e70714afc79c9a2bfb",
+  "size": 5008,
+  "flashAddress": 134217728,
+  "dpidr": 463475831,
+  "cpuid": 1092600369,
+  "systemClockHz": 72000000,
+  "externalClockHz": 8000000,
+  "scratchWords": 64,
+  "magic": 1398228052,
+  "fixtureVersion": 1,
+  "symbols": {
+    "DebugTick": 134221704,
+    "main": 134221848,
+    "SystemCoreClock": 536870912,
+    "debugFixtureMagic": 536870924,
+    "debugFixtureVersion": 536870928,
+    "debugHeartbeatPeriodMs": 536870932,
+    "debugOutputMode": 536870936,
+    "debugReady": 536870972,
+    "debugHeartbeatCount": 536870976,
+    "debugOutputLevel": 536870980,
+    "debugScratch": 536870984
+  },
+  "wiring": {
+    "swclk": 0,
+    "swdio": 1,
+    "probe": 2,
+    "targetProbe": "PA7",
+    "led": "PC13"
+  },
+  "defaultPeriodMs": 500
+}

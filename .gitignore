@@ -28,6 +28,7 @@ build/
 *.bin
 *.elf
 *.map
+!tests/fixtures/swd/firmware.bin
 flasher_args.json # Generated in build directory
 sdkconfig.old
 sdkconfig

@@ -102,4 +102,16 @@
 #define CONFIG_OTA_MANIFEST_MAX_BYTES (8 * 1024)
 #define CONFIG_OTA_URL_MAX_BYTES 512
 
+/* CMSIS-DAP over TCP. Logical pins follow CONFIG_GPIO_LOGICAL_TO_HW. nRESET -1 leaves reset unwired. */
+#define CONFIG_DAP_TCP_PORT 4441
+#define CONFIG_DAP_PACKET_SIZE 1024
+#define CONFIG_DAP_PACKET_COUNT 8
+#define CONFIG_DAP_SWCLK_LOGICAL 0
+#define CONFIG_DAP_SWDIO_LOGICAL 1
+#define CONFIG_DAP_NRESET_LOGICAL -1
+#define CONFIG_DAP_DEFAULT_CLOCK_HZ 1000000
+#define CONFIG_DAP_STATUS_PROMPT \
+  "CMSIS-DAP over TCP Service is running. If you can use OpenOCD, connect with cmsis-dap TCP backend using the ip and port from this status."
+
+
 #endif

@@ -8,6 +8,7 @@
 #include "buzzer.h"
 #include "cloud.h"
 #include "config.h"
+#include "dap_ctrl.h"
 #include "gpio_ctrl.h"
 #include "http_server.h"
 #include "lock.h"
@@ -1632,6 +1633,11 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
                   ToolCall_ArgStr(args, "lockId"));
   } else if (strcmp(name, "play_buzzer") == 0) {
     TOOL_CALL_LOG("%s play_buzzer(sequence=%s)", via, ToolCall_ArgStr(args, "sequence"));
+  } else if (strcmp(name, "get_dap_status") == 0) {
+    TOOL_CALL_LOG("%s get_dap_status()", via);
+  } else if (strcmp(name, "configure_dap") == 0) {
+    TOOL_CALL_LOG("%s configure_dap(enable=%s, lockId=%s)", via, ToolCall_ArgBool(args, "enable"),
+                  ToolCall_ArgStr(args, "lockId"));
   } else if (strcmp(name, "get_cloud_status") == 0) {
     TOOL_CALL_LOG("%s get_cloud_status()", via);
   } else if (strcmp(name, "get_system_info") == 0) {
@@ -1651,6 +1657,80 @@ static bool ToolCall_IsSystemTool(const char* name)
 {
   return name && (strcmp(name, "get_system_info") == 0 || strcmp(name, "check_system_ota") == 0 ||
                   strcmp(name, "get_system_ota") == 0 || strcmp(name, "upgrade_system_ota") == 0);
+}
+
+static int ToolCall_ParseDapPin(cJSON* pinsObj, const char* key, int* pinOut, bool required, char* reason, size_t reasonLen)
+{
+  cJSON* item = cJSON_GetObjectItem(pinsObj, key);
+  if (item == NULL || cJSON_IsNull(item)) {
+    if (required) {
+      snprintf(reason, reasonLen, "pins.%s is required.", key);
+      return -1;
+    }
+    *pinOut = -1;
+    return 0;
+  }
+  if (!cJSON_IsNumber(item)) {
+    snprintf(reason, reasonLen, "pins.%s must be an integer pin%s.", key, required ? "" : ", null, or omitted");
+    return -1;
+  }
+  *pinOut = item->valueint;
+  return 0;
+}
+
+static ToolCall_Result ToolCall_GetDapStatus(void)
+{
+  DapCtrl_Status status;
+  if (DapCtrl_GetStatus(&status) != ESP_OK) {
+    return ToolCall_Fail(503, "CMSIS-DAP is not running. POST /dap/config with enable true first.");
+  }
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return ToolCall_Fail(500, "internal");
+  cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
+  cJSON_AddNumberToObject(root, "port", status.port);
+  cJSON_AddStringToObject(root, "ip", status.ip);
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_ConfigureDap(cJSON* args)
+{
+  char reason[256];
+  DapCtrl_Config cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cJSON* enableItem = cJSON_GetObjectItem(args, "enable");
+  cJSON* pinsItem = cJSON_GetObjectItem(args, "pins");
+  if (!cJSON_IsBool(enableItem)) return ToolCall_Err("enable must be boolean.");
+  if (!cJSON_IsObject(pinsItem)) return ToolCall_Err("pins must be an object with swclk, swdio, and optional nreset.");
+  if (ToolCall_ParseDapPin(pinsItem, "swclk", &cfg.swclkPin, true, reason, sizeof(reason)) != 0 ||
+      ToolCall_ParseDapPin(pinsItem, "swdio", &cfg.swdioPin, true, reason, sizeof(reason)) != 0 ||
+      ToolCall_ParseDapPin(pinsItem, "nreset", &cfg.nresetPin, false, reason, sizeof(reason)) != 0) {
+    return ToolCall_Err(reason);
+  }
+  cfg.enable = cJSON_IsTrue(enableItem);
+
+  const char* lockId = ToolCall_GetLockId(args);
+  int pins[3];
+  size_t count = 0;
+  pins[count++] = cfg.swclkPin;
+  pins[count++] = cfg.swdioPin;
+  if (cfg.nresetPin >= 0) pins[count++] = cfg.nresetPin;
+  DapCtrl_Config current;
+  DapCtrl_GetConfig(&current);
+  for (size_t i = 0; i < count; i++) {
+    int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_GPIO, pins[i], LOCK_METHOD_WRITE, reason, sizeof(reason));
+    /* DAP may reconfigure or release its own pins; other lock failures still apply. */
+    bool owned = current.enable &&
+                 (pins[i] == current.swclkPin || pins[i] == current.swdioPin || pins[i] == current.nresetPin);
+    if (lockSt == 423 && owned) lockSt = 0;
+    if (lockSt) return ToolCall_Fail(lockSt, reason);
+  }
+
+  esp_err_t ret = DapCtrl_SetConfig(&cfg, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_ARG) return ToolCall_Err(reason);
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(409, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  Lock_Touch(lockId);
+  return ToolCall_OkEmpty();
 }
 
 static ToolCall_Result ToolCall_GetCloudStatus(void)
@@ -1789,6 +1869,10 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
     r = ToolCall_I2cSlaveReceive(args);
   else if (strcmp(name, "play_buzzer") == 0)
     r = ToolCall_PlayBuzzer(args);
+  else if (strcmp(name, "get_dap_status") == 0)
+    r = ToolCall_GetDapStatus();
+  else if (strcmp(name, "configure_dap") == 0)
+    r = ToolCall_ConfigureDap(args);
   else if (strcmp(name, "get_cloud_status") == 0)
     r = ToolCall_GetCloudStatus();
   else if (strcmp(name, "get_system_info") == 0)
