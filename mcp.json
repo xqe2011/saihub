@@ -760,6 +760,7 @@
         "openWorldHint": false
       },
       "inputSchema": {
+        "type": "object",
         "oneOf": [
           {
             "type": "object",
@@ -1079,6 +1080,7 @@
         "openWorldHint": false
       },
       "inputSchema": {
+        "type": "object",
         "oneOf": [
           {
             "type": "object",
