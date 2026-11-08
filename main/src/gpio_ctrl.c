@@ -40,7 +40,7 @@ typedef struct {
   GpioCtrl_TraceEvent* events;
   size_t capacity;
   volatile size_t count;
-  int64_t startTimeUs;
+  int64_t startMonotonicUs;
 } TraceContext;
 
 typedef struct {
@@ -48,7 +48,7 @@ typedef struct {
   int faultPin;
   bool enable;
   bool faulted;
-  int64_t faultTimeUs;
+  int64_t faultMonotonicUs;
 } GpioCtrl_PowerRuntime;
 
 static int logicalToHw[] = CONFIG_GPIO_LOGICAL_TO_HW;
@@ -244,6 +244,7 @@ static int GpioCtrl_ReadLevel(int logicalPin)
 
 static int64_t GpioCtrl_NowUs(void)
 {
+  /* Task context only: gettimeofday() may acquire a libc lock. */
   struct timeval tv;
   gettimeofday(&tv, NULL);
   return (int64_t)tv.tv_sec * 1000000LL + (int64_t)tv.tv_usec;
@@ -259,14 +260,14 @@ static void GpioCtrl_PowerFaultIsr(void* arg)
   GpioCtrl_PowerRail rail = (GpioCtrl_PowerRail)(intptr_t)arg;
   if (!GpioCtrl_IsPowerRail(rail)) return;
 
-  int64_t now = GpioCtrl_NowUs();
+  int64_t now = esp_timer_get_time();
   bool on = false;
   portENTER_CRITICAL_ISR(&powerMux);
   on = power[rail].enable;
   if (on) {
     power[rail].enable = false;
     power[rail].faulted = true;
-    power[rail].faultTimeUs = now;
+    power[rail].faultMonotonicUs = now;
   }
   portEXIT_CRITICAL_ISR(&powerMux);
   if (on) gpio_set_level(power[rail].enablePin, 0);
@@ -290,7 +291,7 @@ static void IRAM_ATTR GpioCtrl_IsrHandler(void* arg)
       event->pin = logicalPin;
       event->edge = raising;
       event->level = level;
-      event->deltaUs = GpioCtrl_NowUs() - context->startTimeUs;
+      event->deltaUs = esp_timer_get_time() - context->startMonotonicUs;
       context->count++;
     }
   }
@@ -307,7 +308,7 @@ static esp_err_t GpioCtrl_InitPowerRail(GpioCtrl_PowerRail rail)
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(p->enablePin, 0));
   p->enable = false;
   p->faulted = false;
-  p->faultTimeUs = 0;
+  p->faultMonotonicUs = 0;
 
   gpio_reset_pin(p->faultPin);
   TOOL_CHECK_ESP_OK_OR_RETURN(gpio_input_enable(p->faultPin));
@@ -514,16 +515,19 @@ esp_err_t GpioCtrl_GetPowerReason(GpioCtrl_PowerRail rail, char* reason, size_t 
 {
   if (reason == NULL || reasonLen == 0 || !GpioCtrl_IsPowerRail(rail)) return ESP_ERR_INVALID_ARG;
   bool faulted = false;
-  int64_t faultTimeUs = 0;
+  int64_t faultMonotonicUs = 0;
   portENTER_CRITICAL(&powerMux);
   faulted = power[rail].faulted;
-  faultTimeUs = power[rail].faultTimeUs;
+  faultMonotonicUs = power[rail].faultMonotonicUs;
   portEXIT_CRITICAL(&powerMux);
   if (!faulted) {
     reason[0] = '\0';
     return ESP_OK;
   }
-  time_t sec = (time_t)(faultTimeUs / 1000000LL);
+  /* Convert the ISR's monotonic timestamp to wall time outside the critical section. */
+  int64_t nowUs = GpioCtrl_NowUs();
+  int64_t wallTimeUs = nowUs - (esp_timer_get_time() - faultMonotonicUs);
+  time_t sec = (time_t)(wallTimeUs / 1000000LL);
   struct tm tmNow;
   gmtime_r(&sec, &tmNow);
   if (tmNow.tm_year + 1900 >= 2024) {
@@ -533,7 +537,7 @@ esp_err_t GpioCtrl_GetPowerReason(GpioCtrl_PowerRail rail, char* reason, size_t 
     return ESP_OK;
   }
   snprintf(reason, reasonLen, "Overcurrent, overtemperature, or reverse-voltage detected at %lld us. Output disabled.",
-           (long long)faultTimeUs);
+           (long long)faultMonotonicUs);
   return ESP_OK;
 }
 
@@ -545,18 +549,18 @@ esp_err_t GpioCtrl_SetPowerEnable(GpioCtrl_PowerRail rail, bool enable)
     portENTER_CRITICAL(&powerMux);
     p->enable = false;
     p->faulted = false;
-    p->faultTimeUs = 0;
+    p->faultMonotonicUs = 0;
     portEXIT_CRITICAL(&powerMux);
     TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(p->enablePin, 1));
     portENTER_CRITICAL(&powerMux);
     p->enable = true;
     portEXIT_CRITICAL(&powerMux);
     if (gpio_get_level(p->faultPin) == 0) {
-      int64_t now = GpioCtrl_NowUs();
+      int64_t now = esp_timer_get_time();
       portENTER_CRITICAL(&powerMux);
       p->enable = false;
       p->faulted = true;
-      p->faultTimeUs = now;
+      p->faultMonotonicUs = now;
       portEXIT_CRITICAL(&powerMux);
       TOOL_CHECK_ESP_OK_OR_RETURN(gpio_set_level(p->enablePin, 0));
     }
@@ -639,13 +643,15 @@ esp_err_t GpioCtrl_Trace(const int* logicalPins, size_t pinCount, GpioCtrl_Edge 
       .events = eventsOut,
       .capacity = maxEvents,
       .count = 0,
-      .startTimeUs = 0,
+      .startMonotonicUs = 0,
   };
 
   esp_err_t result = GpioCtrl_ClaimTracePins(logicalPins, pinCount, &context);
   if (result != ESP_OK) return result;
 
-  context.startTimeUs = GpioCtrl_NowUs();
+  /* Keep absolute API timestamps, but measure edge intervals with the ISR-safe clock. */
+  int64_t startTimeUs = GpioCtrl_NowUs();
+  context.startMonotonicUs = esp_timer_get_time();
   size_t enabledCount = 0;
   for (; enabledCount < pinCount; enabledCount++) {
     result = GpioCtrl_EnableTraceInterrupt(logicalPins[enabledCount], edge);
@@ -663,6 +669,6 @@ cleanup:
   }
   GpioCtrl_ReleaseTracePins(logicalPins, pinCount, &context);
   *eventCountOut = context.count;
-  *startTimeUsOut = context.startTimeUs;
+  *startTimeUsOut = startTimeUs;
   return result;
 }
