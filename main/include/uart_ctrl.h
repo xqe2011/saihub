@@ -29,8 +29,10 @@ typedef struct {
   UartCtrl_Parity parity;
   int stopBits;
   UartCtrl_Encoding encoding;
-  int rxPin; /* logical pin, or -1 if unused */
-  int txPin; /* logical pin, or -1 if unused */
+  int rxPin;  /* logical pin, or -1 if unused */
+  int txPin;  /* logical pin, or -1 if unused */
+  int rtsPin; /* logical pin, or -1 if unused */
+  int dtrPin; /* logical pin, or -1 if unused */
 } UartCtrl_Config;
 
 bool UartCtrl_IsValidId(int id);
@@ -46,6 +48,11 @@ esp_err_t UartCtrl_Transmit(int id, const uint8_t* data, size_t len, char* reaso
 /** Drain up to maxLen bytes from RX into out. *outLen is set to bytes written. */
 esp_err_t UartCtrl_Receive(int id, uint8_t* out, size_t maxLen, size_t* outLen, char* reason, size_t reasonLen);
 esp_err_t UartCtrl_Flush(int id, char* reason, size_t reasonLen);
+/** Read stored DTR/RTS level (0 or 1). Requires UART enabled with that pin set. */
+esp_err_t UartCtrl_GetDtrLevel(int id, int* levelOut, char* reason, size_t reasonLen);
+esp_err_t UartCtrl_GetRtsLevel(int id, int* levelOut, char* reason, size_t reasonLen);
+esp_err_t UartCtrl_SetDtr(int id, int level, char* reason, size_t reasonLen);
+esp_err_t UartCtrl_SetRts(int id, int level, char* reason, size_t reasonLen);
 
 const char* UartCtrl_ParityToString(UartCtrl_Parity p);
 bool UartCtrl_ParityFromString(const char* s, UartCtrl_Parity* out);

@@ -1792,6 +1792,180 @@
         }
       }
     },
+    "/uart/{id}/dtr": {
+      "get": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "Read UART DTR level",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current DTR level",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UartLineState"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "Set UART DTR level",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UartLineBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Updated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/uart/{id}/rts": {
+      "get": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "Read UART RTS level",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current RTS level",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UartLineState"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "Set UART RTS level",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UartLineBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Updated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
     "/spi/": {
       "get": {
         "tags": [
@@ -3113,7 +3287,9 @@
         "type": "object",
         "required": [
           "rx",
-          "tx"
+          "tx",
+          "rts",
+          "dtr"
         ],
         "properties": {
           "rx": {
@@ -3125,6 +3301,22 @@
             "maximum": 7
           },
           "tx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 7
+          },
+          "rts": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 7
+          },
+          "dtr": {
             "type": [
               "integer",
               "null"
@@ -3178,6 +3370,44 @@
           },
           "pins": {
             "$ref": "#/components/schemas/UartPins"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UartLineBody": {
+        "type": "object",
+        "required": [
+          "level"
+        ],
+        "properties": {
+          "level": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "Physical logic level."
+          }
+        },
+        "additionalProperties": false
+      },
+      "UartLineState": {
+        "type": "object",
+        "required": [
+          "level",
+          "time"
+        ],
+        "properties": {
+          "level": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "Physical logic level."
+          },
+          "time": {
+            "$ref": "#/components/schemas/TimeUs"
           }
         },
         "additionalProperties": false

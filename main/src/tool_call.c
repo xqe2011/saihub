@@ -540,6 +540,8 @@ static cJSON* ToolCall_UartStateJson(int id, const UartCtrl_Config* cfg)
   cJSON* pins = cJSON_CreateObject();
   ToolCall_AddOptionalPin(pins, "rx", cfg->rxPin);
   ToolCall_AddOptionalPin(pins, "tx", cfg->txPin);
+  ToolCall_AddOptionalPin(pins, "rts", cfg->rtsPin);
+  ToolCall_AddOptionalPin(pins, "dtr", cfg->dtrPin);
   cJSON_AddItemToObject(item, "pins", pins);
   return item;
 }
@@ -611,11 +613,17 @@ static ToolCall_Result ToolCall_ConfigureUart(cJSON* args)
   if (!cJSON_IsString(encodingItem) || !UartCtrl_EncodingFromString(encodingItem->valuestring, &cfg.encoding)) {
     return ToolCall_Err("encoding must be one of: utf8, byte.");
   }
-  if (!cJSON_IsObject(pinsItem)) return ToolCall_Err("pins must be an object with optional rx and tx.");
+  if (!cJSON_IsObject(pinsItem)) return ToolCall_Err("pins must be an object with optional rx, tx, rts, and dtr.");
   if (ToolCall_ParseOptionalUartPin(pinsItem, "rx", &cfg.rxPin, reason, sizeof(reason)) != 0) {
     return ToolCall_Err(reason);
   }
   if (ToolCall_ParseOptionalUartPin(pinsItem, "tx", &cfg.txPin, reason, sizeof(reason)) != 0) {
+    return ToolCall_Err(reason);
+  }
+  if (ToolCall_ParseOptionalUartPin(pinsItem, "rts", &cfg.rtsPin, reason, sizeof(reason)) != 0) {
+    return ToolCall_Err(reason);
+  }
+  if (ToolCall_ParseOptionalUartPin(pinsItem, "dtr", &cfg.dtrPin, reason, sizeof(reason)) != 0) {
     return ToolCall_Err(reason);
   }
   cfg.enable = cJSON_IsTrue(enableItem);
@@ -778,6 +786,65 @@ static ToolCall_Result ToolCall_UartFlush(cJSON* args)
   if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
   Lock_Touch(lockId);
   return ToolCall_OkEmpty();
+}
+
+static ToolCall_Result ToolCall_UartGetControlLine(cJSON* args, esp_err_t (*getter)(int, int*, char*, size_t))
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseUartId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_UART, id, LOCK_METHOD_READ, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  int level = 0;
+  esp_err_t ret = getter(id, &level, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddNumberToObject(root, "level", level);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  Lock_Touch(lockId);
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_UartSetControlLine(cJSON* args, esp_err_t (*setter)(int, int, char*, size_t))
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseUartId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  cJSON* levelItem = cJSON_GetObjectItem(args, "level");
+  if (!cJSON_IsNumber(levelItem) || (levelItem->valueint != 0 && levelItem->valueint != 1)) {
+    return ToolCall_Err("level must be 0 or 1.");
+  }
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  esp_err_t ret = setter(id, levelItem->valueint, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_ARG) return ToolCall_Err(reason);
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  Lock_Touch(lockId);
+  return ToolCall_OkEmpty();
+}
+
+static ToolCall_Result ToolCall_UartGetDtr(cJSON* args)
+{
+  return ToolCall_UartGetControlLine(args, UartCtrl_GetDtrLevel);
+}
+
+static ToolCall_Result ToolCall_UartGetRts(cJSON* args)
+{
+  return ToolCall_UartGetControlLine(args, UartCtrl_GetRtsLevel);
+}
+
+static ToolCall_Result ToolCall_UartSetDtr(cJSON* args)
+{
+  return ToolCall_UartSetControlLine(args, UartCtrl_SetDtr);
+}
+
+static ToolCall_Result ToolCall_UartSetRts(cJSON* args)
+{
+  return ToolCall_UartSetControlLine(args, UartCtrl_SetRts);
 }
 
 static cJSON* ToolCall_SpiStateJson(int id, const SpiCtrl_Config* cfg)
@@ -1603,6 +1670,18 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
   } else if (strcmp(name, "uart_flush") == 0) {
     TOOL_CALL_LOG("%s uart_flush(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
                   ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "uart_get_dtr") == 0) {
+    TOOL_CALL_LOG("%s uart_get_dtr(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "uart_get_rts") == 0) {
+    TOOL_CALL_LOG("%s uart_get_rts(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "uart_set_dtr") == 0) {
+    TOOL_CALL_LOG("%s uart_set_dtr(id=%d, level=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgInt(args, "level", -1), ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "uart_set_rts") == 0) {
+    TOOL_CALL_LOG("%s uart_set_rts(id=%d, level=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgInt(args, "level", -1), ToolCall_ArgStr(args, "lockId"));
   } else if (strcmp(name, "list_spis") == 0) {
     TOOL_CALL_LOG("%s list_spis()", via);
   } else if (strcmp(name, "configure_spi") == 0) {
@@ -1847,6 +1926,14 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
     r = ToolCall_UartReceive(args);
   else if (strcmp(name, "uart_flush") == 0)
     r = ToolCall_UartFlush(args);
+  else if (strcmp(name, "uart_get_dtr") == 0)
+    r = ToolCall_UartGetDtr(args);
+  else if (strcmp(name, "uart_get_rts") == 0)
+    r = ToolCall_UartGetRts(args);
+  else if (strcmp(name, "uart_set_dtr") == 0)
+    r = ToolCall_UartSetDtr(args);
+  else if (strcmp(name, "uart_set_rts") == 0)
+    r = ToolCall_UartSetRts(args);
   else if (strcmp(name, "list_spis") == 0)
     r = ToolCall_ListSpis();
   else if (strcmp(name, "configure_spi") == 0)

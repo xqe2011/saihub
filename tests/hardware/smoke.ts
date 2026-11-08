@@ -33,6 +33,10 @@ const EXPECTED_MCP_TOOLS = [
   "uart_transmit",
   "uart_receive",
   "uart_flush",
+  "uart_get_dtr",
+  "uart_get_rts",
+  "uart_set_dtr",
+  "uart_set_rts",
   "list_spis",
   "configure_spi",
   "spi_master_transceive",
@@ -71,7 +75,7 @@ type UartConfig = {
   parity: "none" | "even" | "odd";
   stopBits: 1 | 2;
   encoding: "utf8" | "byte";
-  pins: { rx: number | null; tx: number | null };
+  pins: { rx: number | null; tx: number | null; rts: number | null; dtr: number | null };
 };
 type SpiConfig = {
   id?: number;
@@ -308,7 +312,7 @@ const disabledUart: UartConfig = {
   parity: "none",
   stopBits: 1,
   encoding: "byte",
-  pins: { rx: null, tx: null },
+  pins: { rx: null, tx: null, rts: null, dtr: null },
 };
 
 function loopbackUart(
@@ -319,8 +323,10 @@ function loopbackUart(
   parity: "none" | "even" | "odd" = "none",
   stopBits: 1 | 2 = 1,
   encoding: "utf8" | "byte" = "byte",
+  rts: number | null = null,
+  dtr: number | null = null,
 ): JsonObject {
-  return { enable: true, baudRate, dataBits, parity, stopBits, encoding, pins: { rx, tx } };
+  return { enable: true, baudRate, dataBits, parity, stopBits, encoding, pins: { rx, tx, rts, dtr } };
 }
 
 async function captureSnapshot(): Promise<Snapshot> {
@@ -358,9 +364,12 @@ async function captureSnapshot(): Promise<Snapshot> {
   const uart = uartList.uarts[0];
   assert(uart !== undefined && uart.id === UART_ID, "REST UART inventory omitted UART 0");
   if (uart.enable) {
-    const assigned = [uart.pins.rx, uart.pins.tx].filter((pin): pin is number => pin !== null);
-    assert(assigned.every((pin) => pin === OUTPUT_A || pin === OUTPUT_B), "Refusing to disturb an enabled UART using pins other than 6 and 7");
+    const assigned = [uart.pins.rx, uart.pins.tx, uart.pins.rts, uart.pins.dtr].filter((pin): pin is number => pin !== null);
+    assert(assigned.every((pin) => pin === OUTPUT_A || pin === OUTPUT_B || pin === 4 || pin === 5),
+      "Refusing to disturb an enabled UART using unexpected pins");
   }
+  assert(uart.pins.rts !== undefined && uart.pins.dtr !== undefined, "UART inventory omitted rts/dtr pins");
+  assert(!("dtr" in uart) && !("rts" in uart), "UART inventory must not embed dtr/rts levels");
 
   const power3v3 = await requestJson<{ enable: boolean; time: number; reason?: string }>("GET", "/power/3v3");
   const power5v = await requestJson<{ enable: boolean; time: number; reason?: string }>("GET", "/power/5v");
@@ -894,6 +903,70 @@ async function testUartPayloadsAndRaces(): Promise<void> {
   assert(received.length === expectedLength, `Concurrent UART transmit lost bytes: expected ${expectedLength}, got ${received.length}`);
   for (const chunk of chunks) {
     assert(chunk.every((byte) => received.includes(byte)), `Concurrent UART transmit lost chunk ${JSON.stringify(chunk)}`);
+  }
+  await mcpTool("configure_uart", { id: UART_ID, ...uartBody(disabledUart) });
+}
+
+async function testUartControlLines(): Promise<void> {
+  log("UART DTR/RTS default high and 0/1 levels measured through the 6/7 loop over REST/MCP");
+  // Test one control output at a time so the existing jumper needs no extra wiring.
+  // UART requires RX or TX; use the idle, unconnected pin 0 for RX.
+  for (const line of ["rts", "dtr"] as const) {
+    for (const [output, input] of [[OUTPUT_A, OUTPUT_B], [OUTPUT_B, OUTPUT_A]] as const) {
+      for (const mcp of [false, true]) {
+        await requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204);
+        await disableTestPins();
+        await configureRestPin(input, "digitalInput", true);
+        const config = {
+          ...uartBody(disabledUart), enable: true,
+          pins: { rx: 0, tx: null, rts: null, dtr: null, [line]: output },
+        };
+        if (mcp) await mcpTool("configure_uart", { id: UART_ID, ...config });
+        else await requestJson<void>("POST", `/uart/${UART_ID}/config`, config, 204);
+        const label = `UART ${line.toUpperCase()} ${output}->${input} (${mcp ? "MCP" : "REST"} config)`;
+        const verify = async (level: 0 | 1): Promise<void> => {
+          const rest = await requestJson<{ level: number }>("GET", `/uart/${UART_ID}/${line}`);
+          const tool = await mcpTool<{ level: number }>(`uart_get_${line}`, { id: UART_ID });
+          assert(rest.level === level && tool.level === level, `${label} stored level should be ${level}`);
+          assert((await waitForRestLevel(input, level)) === level, `${label} REST loop level should be ${level}`);
+          assert((await waitForMcpLevel(input, level)) === level, `${label} MCP loop level should be ${level}`);
+        };
+        await verify(1);
+        await expectStatus("PUT", `/pin/${output}`, 423, {
+          mode: "digitalOutput", openDrain: false, pullUp: false, pullDown: false,
+        });
+        for (const setViaMcp of [false, true]) {
+          for (const level of [0, 1] as const) {
+            if (setViaMcp) await mcpTool(`uart_set_${line}`, { id: UART_ID, level });
+            else await requestJson<void>("POST", `/uart/${UART_ID}/${line}`, { level }, 204);
+            await verify(level);
+          }
+        }
+        // Re-enabling after a low output must restore the default high level.
+        await mcpTool(`uart_set_${line}`, { id: UART_ID, level: 0 });
+        await verify(0);
+        await requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204);
+        if (mcp) await mcpTool("configure_uart", { id: UART_ID, ...config });
+        else await requestJson<void>("POST", `/uart/${UART_ID}/config`, config, 204);
+        await verify(1);
+      }
+    }
+  }
+
+  await requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204);
+  await disableTestPins();
+  await requestJson<void>("POST", `/uart/${UART_ID}/config`, {
+    ...uartBody(disabledUart), enable: true, pins: { rx: 0, tx: null, rts: null, dtr: null },
+  }, 204);
+  for (const line of ["rts", "dtr"] as const) {
+    await expectStatus("GET", `/uart/${UART_ID}/${line}`, 422);
+    await expectStatus("POST", `/uart/${UART_ID}/${line}`, 422, { level: 1 });
+    for (const action of ["get", "set"] as const) {
+      const response = await mcpRequest("tools/call", {
+        name: `uart_${action}_${line}`, arguments: { id: UART_ID, ...(action === "set" ? { level: 1 } : {}) },
+      });
+      assert(response?.result?.isError === true, `MCP UART ${action} ${line} should reject a missing pin`);
+    }
   }
   await mcpTool("configure_uart", { id: UART_ID, ...uartBody(disabledUart) });
 }
@@ -1530,6 +1603,7 @@ async function main(): Promise<void> {
     console.log("Cloud: SAIHUB_TARGET=https://<cloud-host>/device/<device-digest> SAIHUB_ROUTING_TOKEN=<token> bun tests/hardware/smoke.ts");
     console.log("Jumper pins 6/7. Leave idle pins 0-3 unconnected. SPI, I2C and DAP must be disabled before testing.");
     console.log("PWM drives 0-2 plus 6 and probes 7. SPI uses 0-3; I2C uses 0/1; DAP uses 0-2; loopback uses 6/7.");
+    console.log("UART RTS/DTR reuse the 6/7 loop one at a time, with RX on idle pin 0; no extra jumper is needed.");
     console.log("Optional: SAIHUB_DAP_HOST selects the direct DAP address; SAIHUB_DAP_TIMEOUT_MS=1500 bounds operations.");
     console.log("Optional: SAIHUB_SPI_TIMEOUT_MS=1500 bounds each non-blocking SPI operation, including transport time.");
     return;
@@ -1558,6 +1632,10 @@ async function main(): Promise<void> {
   await runSection("reset after MCP UART", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
   await runSection("UART payloads and races", testUartPayloadsAndRaces);
   await runSection("reset after UART stress", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
+  await runSection("UART RTS/DTR loopback", testUartControlLines, async () => {
+    await requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204);
+    await disableTestPins();
+  });
   await runSection("open-end SPI", testOpenEndSpi, disableTestSpi);
   await runSection("open-end I2C", testOpenEndI2c, disableTestI2c);
   await runSection("open-end DAP", testOpenEndDap, disableTestDap);

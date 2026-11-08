@@ -586,7 +586,9 @@
             "type": "object",
             "required": [
               "rx",
-              "tx"
+              "tx",
+              "rts",
+              "dtr"
             ],
             "additionalProperties": false,
             "properties": {
@@ -601,6 +603,26 @@
                 ]
               },
               "tx": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/pin"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rts": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/pin"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "dtr": {
                 "oneOf": [
                   {
                     "$ref": "#/$defs/pin"
@@ -719,6 +741,164 @@
         "properties": {
           "id": {
             "$ref": "#/$defs/uartId"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "uart_get_dtr",
+      "description": "Read UART DTR level.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "uart_get_rts",
+      "description": "Read UART RTS level.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "uart_set_dtr",
+      "description": "Set UART DTR level.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "level"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          },
+          "level": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "uart_set_rts",
+      "description": "Set UART RTS level.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "level"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          },
+          "level": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
           },
           "lockId": {
             "$ref": "#/$defs/lockId"

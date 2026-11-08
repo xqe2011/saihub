@@ -589,13 +589,30 @@ body{
   color:var(--md-sys-color-on-secondary-container);
 }
 .btn-tonal:hover{box-shadow:var(--md-sys-elevation-1)}
-.uart-grid{
+.uart-grid,.uart-lines{
   display:grid;
   grid-template-columns:1fr;
   gap:.65rem;
 }
 @media (min-width:480px){
-  .uart-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .uart-grid,.uart-lines{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+.uart-line-item{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+  padding:.45rem .85rem;
+  border-radius:var(--md-sys-shape-corner-medium);
+  background:var(--md-sys-color-surface-container-highest);
+  transition:opacity .15s;
+}
+.uart-line-item.disabled{opacity:.45}
+.uart-line-label{
+  font-size:.85rem;
+  font-weight:600;
+  color:var(--md-sys-color-on-surface);
+  user-select:none;
 }
 .rx-log{
   min-height:9.5rem;
@@ -964,6 +981,7 @@ const I18N={
     'pin.title':'Pin {n}',none:'None',
     'uart.serial':'Serial port','uart.baud':'Baud rate','uart.dataBits':'Data bits','uart.parity':'Parity',
     'uart.stopBits':'Stop bits','uart.encoding':'Encoding','uart.rx':'RX pin','uart.tx':'TX pin',
+    'uart.rts':'RTS pin','uart.dtr':'DTR pin','uart.rtsLevel':'RTS level','uart.dtrLevel':'DTR level',
     'uart.apply':'Apply config',transmit:'Transmit',send:'Send','uart.flush':'Flush RX','uart.clear':'Clear log',
     'uart.rxLog':'Receive log','uart.emptyLog':'No data received yet.','uart.active':'Active','uart.off':'Off',
     'uart.bytes':'Byte data must be an even-length hex string.',
@@ -1007,7 +1025,8 @@ const I18N={
     'pwm.freq':'频率 (Hz)',duty:'占空比','pwm.apply':'应用 PWM',
     'pin.title':'引脚 {n}',none:'无',
     'uart.serial':'串口','uart.baud':'波特率','uart.dataBits':'数据位','uart.parity':'校验','uart.stopBits':'停止位',
-    'uart.encoding':'编码','uart.rx':'RX 引脚','uart.tx':'TX 引脚','uart.apply':'应用配置',transmit:'发送数据',
+    'uart.encoding':'编码','uart.rx':'RX 引脚','uart.tx':'TX 引脚','uart.rts':'RTS 引脚','uart.dtr':'DTR 引脚',
+    'uart.rtsLevel':'RTS 电平','uart.dtrLevel':'DTR 电平','uart.apply':'应用配置',transmit:'发送数据',
     send:'发送','uart.flush':'清空 RX','uart.clear':'清空日志','uart.rxLog':'接收日志','uart.emptyLog':'暂无接收数据。',
     'uart.active':'已启用','uart.off':'关闭',
     'uart.bytes':'字节数据必须是偶数长度的十六进制字符串。',
@@ -1565,12 +1584,13 @@ async function refresh(force){
     }else{
       updateLiveLevels(pins);
     }
+    const uarts=uartRes.uarts||[];
     if(force||!uartEditing||!uartsEl.children.length){
-      renderUarts(uartRes.uarts||[]);
+      renderUarts(uarts, await loadUartLineLevels(uarts[0]));
     }
     await loadDap(force);
     lastPins=pins;
-    lastUarts=uartRes.uarts||[];
+    lastUarts=uarts;
     if(force||activeTab==='cloud'||!landingPageUrl){
       try{
         const st=await api('GET','/cloud/status');
@@ -1693,14 +1713,34 @@ function pinOptions(selected){
   return html;
 }
 
-function renderUarts(uarts){
+async function loadUartLineLevels(u){
+  const levels={rts:1,dtr:1};
+  if(!u||!u.enable||!u.pins) return levels;
+  const tasks=[];
+  if(u.pins.rts!=null){
+    tasks.push(api('GET','/uart/'+u.id+'/rts').then(j=>{if(j&&(j.level===0||j.level===1)) levels.rts=j.level}).catch(()=>{}));
+  }
+  if(u.pins.dtr!=null){
+    tasks.push(api('GET','/uart/'+u.id+'/dtr').then(j=>{if(j&&(j.level===0||j.level===1)) levels.dtr=j.level}).catch(()=>{}));
+  }
+  if(tasks.length) await Promise.all(tasks);
+  return levels;
+}
+
+function renderUarts(uarts, lineLevels){
   lastUarts=uarts;
+  const levels=lineLevels||{rts:1,dtr:1};
   const u=(uarts&&uarts[0])||{
-    id:0,enable:false,baudRate:115200,dataBits:8,parity:'none',stopBits:1,encoding:'utf8',pins:{rx:null,tx:null}
+    id:0,enable:false,baudRate:115200,dataBits:8,parity:'none',stopBits:1,encoding:'utf8',
+    pins:{rx:null,tx:null,rts:null,dtr:null}
   };
   const rx=u.pins&&u.pins.rx!=null?u.pins.rx:'';
   const tx=u.pins&&u.pins.tx!=null?u.pins.tx:'';
+  const rts=u.pins&&u.pins.rts!=null?u.pins.rts:'';
+  const dtr=u.pins&&u.pins.dtr!=null?u.pins.dtr:'';
   const on=!!u.enable;
+  const rtsReady=on&&rts!=='';
+  const dtrReady=on&&dtr!=='';
   uartsEl.innerHTML=
     '<article class="pin-card" data-uart="'+u.id+'">'+
       '<div class="pin-head">'+
@@ -1712,9 +1752,11 @@ function renderUarts(uarts){
         '<div class="field"><select id="uart-dataBits">'+[5,6,7,8].map(v=>'<option value="'+v+'"'+(u.dataBits===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>'+t('uart.dataBits')+'</label></div>'+
         '<div class="field"><select id="uart-parity">'+['none','even','odd'].map(v=>'<option value="'+v+'"'+(u.parity===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>'+t('uart.parity')+'</label></div>'+
         '<div class="field"><select id="uart-stopBits">'+[1,2].map(v=>'<option value="'+v+'"'+(u.stopBits===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>'+t('uart.stopBits')+'</label></div>'+
-        '<div class="field"><select id="uart-encoding">'+['utf8','byte'].map(v=>'<option value="'+v+'"'+(u.encoding===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>'+t('uart.encoding')+'</label></div>'+
+        '<div class="field" style="grid-column:1 / -1"><select id="uart-encoding">'+['utf8','byte'].map(v=>'<option value="'+v+'"'+(u.encoding===v?' selected':'')+'>'+v+'</option>').join('')+'</select><label>'+t('uart.encoding')+'</label></div>'+
         '<div class="field"><select id="uart-rx">'+pinOptions(rx===''?null:Number(rx))+'</select><label>'+t('uart.rx')+'</label></div>'+
-        '<div class="field" style="grid-column:1 / -1"><select id="uart-tx">'+pinOptions(tx===''?null:Number(tx))+'</select><label>'+t('uart.tx')+'</label></div>'+
+        '<div class="field"><select id="uart-tx">'+pinOptions(tx===''?null:Number(tx))+'</select><label>'+t('uart.tx')+'</label></div>'+
+        '<div class="field"><select id="uart-rts">'+pinOptions(rts===''?null:Number(rts))+'</select><label>'+t('uart.rts')+'</label></div>'+
+        '<div class="field"><select id="uart-dtr">'+pinOptions(dtr===''?null:Number(dtr))+'</select><label>'+t('uart.dtr')+'</label></div>'+
       '</div>'+
       '<button type="button" class="btn btn-filled" id="uart-apply">'+t('uart.apply')+'</button>'+
     '</article>'+
@@ -1722,6 +1764,10 @@ function renderUarts(uarts){
       '<div class="pin-head">'+
         '<h3 class="pin-title">'+t('uart.rxLog')+'</h3>'+
         '<span class="level-pill'+(on?' high':'')+'"><span class="dot"></span>'+(on?t('uart.active'):t('uart.off'))+'</span>'+
+      '</div>'+
+      '<div class="uart-lines">'+
+        '<div class="uart-line-item'+(dtrReady?'':' disabled')+'"><span class="uart-line-label">'+t('uart.dtrLevel')+'</span>'+switchHtml('uart-dtr-level',levels.dtr===1,!dtrReady)+'</div>'+
+        '<div class="uart-line-item'+(rtsReady?'':' disabled')+'"><span class="uart-line-label">'+t('uart.rtsLevel')+'</span>'+switchHtml('uart-rts-level',levels.rts===1,!rtsReady)+'</div>'+
       '</div>'+
       '<div class="rx-log" id="uart-rx-log" data-placeholder="'+escapeHtml(t('uart.emptyLog'))+'"></div>'+
       '<div class="field"><textarea id="uart-tx-data" placeholder=" "></textarea><label>'+t('transmit')+'</label></div>'+
@@ -1742,6 +1788,8 @@ function clearUartEdit(){setTimeout(()=>{uartEditing=false},400)}
 function readUartConfig(id){
   const rx=document.getElementById('uart-rx').value;
   const tx=document.getElementById('uart-tx').value;
+  const rts=document.getElementById('uart-rts').value;
+  const dtr=document.getElementById('uart-dtr').value;
   return {
     enable:document.getElementById('uart-enable').checked,
     baudRate:Number(document.getElementById('uart-baud').value),
@@ -1749,7 +1797,12 @@ function readUartConfig(id){
     parity:document.getElementById('uart-parity').value,
     stopBits:Number(document.getElementById('uart-stopBits').value),
     encoding:document.getElementById('uart-encoding').value,
-    pins:{rx:rx===''?null:Number(rx),tx:tx===''?null:Number(tx)}
+    pins:{
+      rx:rx===''?null:Number(rx),
+      tx:tx===''?null:Number(tx),
+      rts:rts===''?null:Number(rts),
+      dtr:dtr===''?null:Number(dtr)
+    }
   };
 }
 
@@ -1761,7 +1814,7 @@ function parseBytePayload(text){
 }
 
 function bindUartCard(id){
-  ['uart-baud','uart-dataBits','uart-parity','uart-stopBits','uart-encoding','uart-rx','uart-tx','uart-tx-data'].forEach(nid=>{
+  ['uart-baud','uart-dataBits','uart-parity','uart-stopBits','uart-encoding','uart-rx','uart-tx','uart-rts','uart-dtr','uart-tx-data'].forEach(nid=>{
     const el=document.getElementById(nid);
     if(!el) return;
     el.onfocus=markUartEdit;
@@ -1778,6 +1831,21 @@ function bindUartCard(id){
     }catch(e){showError(e.message)}
     finally{uartEditing=false}
   };
+  const bindLine=async(path,inputId)=>{
+    const el=document.getElementById(inputId);
+    if(!el||el.disabled) return;
+    try{
+      await api('POST','/uart/'+id+'/'+path,{level:el.checked?1:0});
+      await refresh(true);
+    }catch(e){
+      showError(e.message);
+      el.checked=!el.checked;
+    }
+  };
+  const rtsLevel=document.getElementById('uart-rts-level');
+  if(rtsLevel) rtsLevel.onchange=()=>bindLine('rts','uart-rts-level');
+  const dtrLevel=document.getElementById('uart-dtr-level');
+  if(dtrLevel) dtrLevel.onchange=()=>bindLine('dtr','uart-dtr-level');
   document.getElementById('uart-send').onclick=async()=>{
     const encoding=document.getElementById('uart-encoding').value;
     const raw=document.getElementById('uart-tx-data').value;
@@ -2048,7 +2116,7 @@ function setLang(next){
   renderCloudStatus();
   if(lastRails) renderRails(lastRails);
   if(lastPins&&lastPins.length) renderPins(lastPins);
-  if(lastUarts) renderUarts(lastUarts);
+  if(lastUarts) loadUartLineLevels(lastUarts[0]).then(levels=>renderUarts(lastUarts,levels));
   applyDapForm(lastDapConfig||{enable:false,pins:{swclk:0,swdio:1,nreset:null}});
   syncDapStatus(lastDapRunning, lastDapStatus);
   renderGrants(lastGrants);
