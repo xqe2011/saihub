@@ -489,7 +489,7 @@
     },
     {
       "name": "list_uarts",
-      "description": "List UART ids with enable, baud, framing, encoding, and pins.",
+      "description": "List UART ids with enable, mode, baud, framing, encoding, and pins.",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false
@@ -502,7 +502,7 @@
     },
     {
       "name": "configure_uart",
-      "description": "Configure one UART by id. When enable is true, at least one of pins.rx or pins.tx is required.",
+      "description": "Configure one UART by id. mode native (default) requires baudRate, dataBits, parity, stopBits, and encoding. In rfc2217 mode, pass only id, enable, pins, and mode. The TCP client sets framing. When enable is true, at least one of pins.rx or pins.tx is required.",
       "annotations": {
         "readOnlyHint": false,
         "idempotentHint": true,
@@ -513,11 +513,6 @@
         "required": [
           "id",
           "enable",
-          "baudRate",
-          "dataBits",
-          "parity",
-          "stopBits",
-          "encoding",
           "pins"
         ],
         "additionalProperties": false,
@@ -527,6 +522,14 @@
           },
           "enable": {
             "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "native",
+              "rfc2217"
+            ],
+            "description": "Default native. rfc2217 rejects baudRate, dataBits, parity, stopBits, and encoding."
           },
           "baudRate": {
             "type": "integer",
@@ -762,7 +765,7 @@
     },
     {
       "name": "uart_get_dtr",
-      "description": "Read UART DTR level.",
+      "description": "Read the active-low UART DTR state.",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false
@@ -797,7 +800,7 @@
     },
     {
       "name": "uart_get_rts",
-      "description": "Read UART RTS level.",
+      "description": "Read the active-low UART RTS state.",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false
@@ -832,7 +835,7 @@
     },
     {
       "name": "uart_set_dtr",
-      "description": "Set UART DTR level.",
+      "description": "Set the active-low UART DTR state.",
       "annotations": {
         "readOnlyHint": false,
         "idempotentHint": true,
@@ -842,19 +845,16 @@
         "type": "object",
         "required": [
           "id",
-          "level"
+          "active"
         ],
         "additionalProperties": false,
         "properties": {
           "id": {
             "$ref": "#/$defs/uartId"
           },
-          "level": {
-            "type": "integer",
-            "enum": [
-              0,
-              1
-            ]
+          "active": {
+            "type": "boolean",
+            "description": "True asserts DTR (pin low). False releases DTR (pin high)."
           },
           "lockId": {
             "$ref": "#/$defs/lockId"
@@ -876,7 +876,7 @@
     },
     {
       "name": "uart_set_rts",
-      "description": "Set UART RTS level.",
+      "description": "Set the active-low UART RTS state.",
       "annotations": {
         "readOnlyHint": false,
         "idempotentHint": true,
@@ -886,19 +886,16 @@
         "type": "object",
         "required": [
           "id",
-          "level"
+          "active"
         ],
         "additionalProperties": false,
         "properties": {
           "id": {
             "$ref": "#/$defs/uartId"
           },
-          "level": {
-            "type": "integer",
-            "enum": [
-              0,
-              1
-            ]
+          "active": {
+            "type": "boolean",
+            "description": "True asserts RTS (pin low). False releases RTS (pin high)."
           },
           "lockId": {
             "$ref": "#/$defs/lockId"
@@ -914,6 +911,33 @@
             "type": "string",
             "minLength": 1,
             "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_uart_rfc2217_status",
+      "description": "Read RFC2217 status for one UART. prompt explains how to connect. port and ip are the address. Fails when that UART is not enabled in rfc2217 mode.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
           }
         }
       }

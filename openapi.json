@@ -1627,6 +1627,7 @@
           "uart"
         ],
         "summary": "Configure a UART",
+        "description": "mode native (default when omitted) requires baudRate, dataBits, parity, stopBits, and encoding. mode rfc2217 accepts only enable, pins, and mode. When enable is true, at least one of pins.rx or pins.tx is required.",
         "parameters": [
           {
             "$ref": "#/components/parameters/UartPath"
@@ -1670,6 +1671,45 @@
         }
       }
     },
+    "/uart/{id}/rfc2217": {
+      "get": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "RFC2217 TCP status",
+        "description": "prompt explains how to connect. port and ip are the address. 503 when this UART is not enabled in rfc2217 mode.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rfc2217Status"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "RFC2217 is not running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/uart/{id}/transmit": {
       "post": {
         "tags": [
@@ -1703,6 +1743,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "412": {
             "$ref": "#/components/responses/PreconditionFailed"
@@ -1747,6 +1790,9 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
           "412": {
             "$ref": "#/components/responses/PreconditionFailed"
           },
@@ -1780,6 +1826,9 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
           "412": {
             "$ref": "#/components/responses/PreconditionFailed"
           },
@@ -1797,7 +1846,7 @@
         "tags": [
           "uart"
         ],
-        "summary": "Read UART DTR level",
+        "summary": "Read UART DTR state",
         "parameters": [
           {
             "$ref": "#/components/parameters/UartPath"
@@ -1808,7 +1857,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Current DTR level",
+            "description": "Current DTR state",
             "content": {
               "application/json": {
                 "schema": {
@@ -1819,6 +1868,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "412": {
             "$ref": "#/components/responses/PreconditionFailed"
@@ -1835,7 +1887,7 @@
         "tags": [
           "uart"
         ],
-        "summary": "Set UART DTR level",
+        "summary": "Set UART DTR state",
         "parameters": [
           {
             "$ref": "#/components/parameters/UartPath"
@@ -1863,6 +1915,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "412": {
             "$ref": "#/components/responses/PreconditionFailed"
@@ -1884,7 +1939,7 @@
         "tags": [
           "uart"
         ],
-        "summary": "Read UART RTS level",
+        "summary": "Read UART RTS state",
         "parameters": [
           {
             "$ref": "#/components/parameters/UartPath"
@@ -1895,7 +1950,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Current RTS level",
+            "description": "Current RTS state",
             "content": {
               "application/json": {
                 "schema": {
@@ -1906,6 +1961,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "412": {
             "$ref": "#/components/responses/PreconditionFailed"
@@ -1922,7 +1980,7 @@
         "tags": [
           "uart"
         ],
-        "summary": "Set UART RTS level",
+        "summary": "Set UART RTS state",
         "parameters": [
           {
             "$ref": "#/components/parameters/UartPath"
@@ -1950,6 +2008,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "412": {
             "$ref": "#/components/responses/PreconditionFailed"
@@ -3285,6 +3346,7 @@
       },
       "UartPins": {
         "type": "object",
+        "description": "DTR and RTS are active-low outputs. Assigned control lines start released (pin high).",
         "required": [
           "rx",
           "tx",
@@ -3327,8 +3389,16 @@
         },
         "additionalProperties": false
       },
-      "UartConfigBody": {
+      "UartMode": {
+        "type": "string",
+        "enum": [
+          "native",
+          "rfc2217"
+        ]
+      },
+      "UartNativeConfigBody": {
         "type": "object",
+        "description": "mode native, or omitted. Framing fields are required.",
         "required": [
           "enable",
           "baudRate",
@@ -3341,6 +3411,12 @@
         "properties": {
           "enable": {
             "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "native"
+            ]
           },
           "baudRate": {
             "type": "integer",
@@ -3374,19 +3450,68 @@
         },
         "additionalProperties": false
       },
+      "UartRfc2217ConfigBody": {
+        "type": "object",
+        "description": "mode rfc2217. Only enable, pins, and mode are accepted.",
+        "required": [
+          "enable",
+          "mode",
+          "pins"
+        ],
+        "properties": {
+          "enable": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "const": "rfc2217"
+          },
+          "pins": {
+            "$ref": "#/components/schemas/UartPins"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UartConfigBody": {
+        "description": "mode native (default when omitted) requires framing fields. mode rfc2217 accepts only enable, pins, and mode.",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/UartNativeConfigBody"
+          },
+          {
+            "$ref": "#/components/schemas/UartRfc2217ConfigBody"
+          }
+        ]
+      },
+      "Rfc2217Status": {
+        "type": "object",
+        "required": [
+          "prompt",
+          "port",
+          "ip"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "ip": {
+            "type": "string"
+          }
+        }
+      },
       "UartLineBody": {
         "type": "object",
         "required": [
-          "level"
+          "active"
         ],
         "properties": {
-          "level": {
-            "type": "integer",
-            "enum": [
-              0,
-              1
-            ],
-            "description": "Physical logic level."
+          "active": {
+            "type": "boolean",
+            "description": "True asserts the active-low line (pin low). False releases it (pin high)."
           }
         },
         "additionalProperties": false
@@ -3394,17 +3519,13 @@
       "UartLineState": {
         "type": "object",
         "required": [
-          "level",
+          "active",
           "time"
         ],
         "properties": {
-          "level": {
-            "type": "integer",
-            "enum": [
-              0,
-              1
-            ],
-            "description": "Physical logic level."
+          "active": {
+            "type": "boolean",
+            "description": "Stored assertion state. True means asserted (pin low). False means released (pin high)."
           },
           "time": {
             "$ref": "#/components/schemas/TimeUs"
@@ -3413,23 +3534,60 @@
         "additionalProperties": false
       },
       "UartState": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/UartConfigBody"
+        "type": "object",
+        "required": [
+          "id",
+          "enable",
+          "mode",
+          "baudRate",
+          "dataBits",
+          "parity",
+          "stopBits",
+          "encoding",
+          "pins"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 0
           },
-          {
-            "type": "object",
-            "required": [
-              "id"
-            ],
-            "properties": {
-              "id": {
-                "type": "integer",
-                "minimum": 0
-              }
-            }
+          "enable": {
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/UartMode"
+          },
+          "baudRate": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "dataBits": {
+            "type": "integer",
+            "enum": [
+              5,
+              6,
+              7,
+              8
+            ]
+          },
+          "parity": {
+            "$ref": "#/components/schemas/UartParity"
+          },
+          "stopBits": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "encoding": {
+            "$ref": "#/components/schemas/UartEncoding"
+          },
+          "pins": {
+            "$ref": "#/components/schemas/UartPins"
           }
-        ]
+        }
       },
       "UartTransmitBody": {
         "type": "object",
@@ -4173,7 +4331,7 @@
         }
       },
       "Conflict": {
-        "description": "A request overlaps an existing lock, peripheral hold, or active trace; or resource configuration conflicts with a held pin",
+        "description": "A request overlaps an existing lock, peripheral hold, or active trace; resource configuration conflicts with a held pin; or UART I/O while mode is rfc2217",
         "content": {
           "application/json": {
             "schema": {

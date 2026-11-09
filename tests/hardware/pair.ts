@@ -501,9 +501,9 @@ async function uartControlLines(): Promise<void> {
     await sink.pin(sink.row[0]!, "digitalInput", false, { pullDown: true });
     await source.configureUart({ enable: true, baudRate: 115200, dataBits: 8, parity: "none", stopBits: 1,
       encoding: "byte", pins: { rx: source.row[1], tx: null, rts: null, dtr: null, [line]: source.row[0] } });
-    equal((await sink.levels())[0], 1, "UART " + line.toUpperCase() + " defaults to 1 on the wire");
-    await source.tool("uart_set_" + line, { id: 0, level: 0 });
-    equal((await sink.levels(true))[0], 0, "UART " + line.toUpperCase() + " drives 0 on the wire");
+    equal((await sink.levels())[0], 1, "UART " + line.toUpperCase() + " starts released (high)");
+    await source.tool("uart_set_" + line, { id: 0, active: true });
+    equal((await sink.levels(true))[0], 0, "UART " + line.toUpperCase() + " asserts low");
   }
 }
 
@@ -860,7 +860,7 @@ async function main(): Promise<void> {
   }
   await section("PWM, pulse and trace, both directions", pwmTracePulse);
   await section("UART framing, payloads, flush and concurrency", uart);
-  await section("UART RTS/DTR default 1 and set 0", uartControlLines);
+  await section("UART RTS/DTR active-low control", uartControlLines);
   await section(I2C_MATRIX_SECTION, i2cMatrix);
   await section(I2C_FEATURES_SECTION, i2cFeatures);
   await section("SPI modes, bit orders, clocks and 1-255-byte payloads", spiMatrix, true, 4);

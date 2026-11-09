@@ -965,6 +965,7 @@ static void Script_OpenSandbox(lua_State* L)
       "uart_get_rts",
       "uart_set_dtr",
       "uart_set_rts",
+      "get_uart_rfc2217_status",
       "list_spis",
       "configure_spi",
       "spi_master_transceive",

@@ -63,6 +63,11 @@
 #define CONFIG_UART_RX_BUF_BYTES 4096
 #define CONFIG_UART_MAX_PAYLOAD_BYTES 2048
 
+/* RFC2217 serial-over-TCP. One listener; the UART id is chosen when mode is rfc2217. */
+#define CONFIG_RFC2217_TCP_PORT 4442
+#define CONFIG_RFC2217_STATUS_PROMPT \
+  "RFC2217 serial-over-TCP is running. Connect a compatible client using the ip and port from this status."
+
 /* Product SPI id -> hardware host number. Id 0 is host 2. */
 #define CONFIG_SPI_ID_TO_HOST {1}
 /* Variable-length slave events. The oldest events are dropped when this buffer is full. */

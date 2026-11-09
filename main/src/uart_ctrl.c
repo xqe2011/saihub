@@ -8,7 +8,9 @@
 #include "config.h"
 #include "gpio_ctrl.h"
 #include "lock.h"
+#include "tcp.h"
 #include "tool.h"
+#include "wifi.h"
 
 #include <driver/uart.h>
 #include <esp_log.h>
@@ -24,13 +26,14 @@ static const int uartIdToNum[] = CONFIG_UART_ID_TO_NUM;
 typedef struct {
   UartCtrl_Config cfg;
   bool driverInstalled;
-  int rtsLevel; /* 0 or 1 when rtsPin set */
-  int dtrLevel; /* 0 or 1 when dtrPin set */
+  bool rtsActive;
+  bool dtrActive;
   char owner[32];
 } UartCtrl_Runtime;
 
 static UartCtrl_Runtime uarts[TOOL_GET_ARRAY_LENGTH(uartIdToNum)];
 static SemaphoreHandle_t mutex;
+static SemaphoreHandle_t configMutex;
 
 bool UartCtrl_IsValidId(int id)
 {
@@ -87,6 +90,25 @@ bool UartCtrl_EncodingFromString(const char* s, UartCtrl_Encoding* out)
   }
   if (strcmp(s, "byte") == 0) {
     *out = UART_CTRL_ENCODING_BYTE;
+    return true;
+  }
+  return false;
+}
+
+const char* UartCtrl_ModeToString(UartCtrl_Mode mode)
+{
+  return mode == UART_CTRL_MODE_RFC2217 ? "rfc2217" : "native";
+}
+
+bool UartCtrl_ModeFromString(const char* s, UartCtrl_Mode* out)
+{
+  if (s == NULL || out == NULL) return false;
+  if (strcmp(s, "native") == 0) {
+    *out = UART_CTRL_MODE_NATIVE;
+    return true;
+  }
+  if (strcmp(s, "rfc2217") == 0) {
+    *out = UART_CTRL_MODE_RFC2217;
     return true;
   }
   return false;
@@ -191,6 +213,10 @@ static esp_err_t UartCtrl_ValidateConfig(const UartCtrl_Config* cfg, char* reaso
   if (UartCtrl_ValidateOptionalPin(cfg->rtsPin, "rts", reason, reasonLen) != ESP_OK) return ESP_ERR_INVALID_ARG;
   if (UartCtrl_ValidateOptionalPin(cfg->dtrPin, "dtr", reason, reasonLen) != ESP_OK) return ESP_ERR_INVALID_ARG;
   if (UartCtrl_PinsConflict(cfg, reason, reasonLen)) return ESP_ERR_INVALID_ARG;
+  if (cfg->mode != UART_CTRL_MODE_NATIVE && cfg->mode != UART_CTRL_MODE_RFC2217) {
+    snprintf(reason, reasonLen, "mode must be one of: native, rfc2217.");
+    return ESP_ERR_INVALID_ARG;
+  }
   if (cfg->enable && cfg->rxPin < 0 && cfg->txPin < 0) {
     snprintf(reason, reasonLen, "enable true requires at least one of pins.rx or pins.tx.");
     return ESP_ERR_INVALID_ARG;
@@ -220,13 +246,14 @@ static void UartCtrl_DisablePinModes(const UartCtrl_Config* cfg)
   }
 }
 
-static esp_err_t UartCtrl_ApplyControlPin(int logicalPin, int level, char* reason, size_t reasonLen)
+static esp_err_t UartCtrl_ApplyControlPin(int logicalPin, bool active, char* reason, size_t reasonLen)
 {
   if (GpioCtrl_SetConfig(logicalPin, GPIO_CTRL_MODE_DIGITAL_OUTPUT, false, false, false) != ESP_OK) {
     snprintf(reason, reasonLen, "Could not configure UART control pin %d as digital output.", logicalPin);
     return ESP_FAIL;
   }
-  if (GpioCtrl_SetLevel(logicalPin, level) != ESP_OK) {
+  /* UART control outputs are active low. */
+  if (GpioCtrl_SetLevel(logicalPin, active ? 0 : 1) != ESP_OK) {
     snprintf(reason, reasonLen, "Could not drive UART control pin %d.", logicalPin);
     return ESP_FAIL;
   }
@@ -236,17 +263,17 @@ static esp_err_t UartCtrl_ApplyControlPin(int logicalPin, int level, char* reaso
 static esp_err_t UartCtrl_ApplyControlPins(UartCtrl_Runtime* u, char* reason, size_t reasonLen)
 {
   if (u->cfg.rtsPin >= 0) {
-    esp_err_t err = UartCtrl_ApplyControlPin(u->cfg.rtsPin, u->rtsLevel, reason, reasonLen);
+    esp_err_t err = UartCtrl_ApplyControlPin(u->cfg.rtsPin, u->rtsActive, reason, reasonLen);
     if (err != ESP_OK) return err;
   }
   if (u->cfg.dtrPin >= 0) {
-    esp_err_t err = UartCtrl_ApplyControlPin(u->cfg.dtrPin, u->dtrLevel, reason, reasonLen);
+    esp_err_t err = UartCtrl_ApplyControlPin(u->cfg.dtrPin, u->dtrActive, reason, reasonLen);
     if (err != ESP_OK) return err;
   }
   return ESP_OK;
 }
 
-static esp_err_t UartCtrl_StartDriver(int id, const UartCtrl_Config* cfg, int rtsLevel, int dtrLevel, char* reason,
+static esp_err_t UartCtrl_StartDriver(int id, const UartCtrl_Config* cfg, bool rtsActive, bool dtrActive, char* reason,
                                       size_t reasonLen)
 {
   Lock_Resource resources[4];
@@ -315,8 +342,8 @@ static esp_err_t UartCtrl_StartDriver(int id, const UartCtrl_Config* cfg, int rt
   UartCtrl_Runtime* u = &uarts[id];
   u->cfg = *cfg;
   u->cfg.enable = true;
-  u->rtsLevel = cfg->rtsPin >= 0 ? rtsLevel : 1;
-  u->dtrLevel = cfg->dtrPin >= 0 ? dtrLevel : 1;
+  u->rtsActive = cfg->rtsPin >= 0 && rtsActive;
+  u->dtrActive = cfg->dtrPin >= 0 && dtrActive;
   u->driverInstalled = true;
   snprintf(u->owner, sizeof(u->owner), "%s", owner);
 
@@ -337,6 +364,7 @@ esp_err_t UartCtrl_Init(void)
   memset(uarts, 0, sizeof(uarts));
   for (size_t i = 0; i < TOOL_GET_ARRAY_LENGTH(uarts); i++) {
     uarts[i].cfg.enable = false;
+    uarts[i].cfg.mode = UART_CTRL_MODE_NATIVE;
     uarts[i].cfg.baudRate = 115200;
     uarts[i].cfg.dataBits = 8;
     uarts[i].cfg.parity = UART_CTRL_PARITY_NONE;
@@ -346,13 +374,20 @@ esp_err_t UartCtrl_Init(void)
     uarts[i].cfg.txPin = -1;
     uarts[i].cfg.rtsPin = -1;
     uarts[i].cfg.dtrPin = -1;
-    uarts[i].rtsLevel = 1;
-    uarts[i].dtrLevel = 1;
+    uarts[i].rtsActive = false;
+    uarts[i].dtrActive = false;
     uarts[i].driverInstalled = false;
     uarts[i].owner[0] = '\0';
   }
+  configMutex = xSemaphoreCreateMutex();
+  TOOL_CHECK_OR_LOG_RETURN(configMutex == NULL, "config mutex create failed");
   mutex = xSemaphoreCreateMutex();
-  TOOL_CHECK_OR_LOG_RETURN(mutex == NULL, "mutex create failed");
+  if (mutex == NULL) {
+    vSemaphoreDelete(configMutex);
+    configMutex = NULL;
+    ESP_LOGE(tag, "mutex create failed");
+    return ESP_FAIL;
+  }
   return ESP_OK;
 }
 
@@ -365,9 +400,9 @@ esp_err_t UartCtrl_GetConfig(int id, UartCtrl_Config* out)
   return ESP_OK;
 }
 
-static esp_err_t UartCtrl_GetControlLine(int id, bool isDtr, int* levelOut, char* reason, size_t reasonLen)
+static esp_err_t UartCtrl_GetControlLine(int id, bool isDtr, bool* activeOut, char* reason, size_t reasonLen)
 {
-  if (!UartCtrl_IsValidId(id) || levelOut == NULL) return ESP_ERR_INVALID_ARG;
+  if (!UartCtrl_IsValidId(id) || activeOut == NULL) return ESP_ERR_INVALID_ARG;
 
   xSemaphoreTake(mutex, portMAX_DELAY);
   UartCtrl_Runtime* u = &uarts[id];
@@ -383,54 +418,40 @@ static esp_err_t UartCtrl_GetControlLine(int id, bool isDtr, int* levelOut, char
     xSemaphoreGive(mutex);
     return ESP_ERR_INVALID_STATE;
   }
-  *levelOut = isDtr ? u->dtrLevel : u->rtsLevel;
+  *activeOut = isDtr ? u->dtrActive : u->rtsActive;
   xSemaphoreGive(mutex);
   return ESP_OK;
 }
 
-esp_err_t UartCtrl_GetDtrLevel(int id, int* levelOut, char* reason, size_t reasonLen)
+esp_err_t UartCtrl_GetDtrActive(int id, bool* activeOut, char* reason, size_t reasonLen)
 {
-  return UartCtrl_GetControlLine(id, true, levelOut, reason, reasonLen);
+  return UartCtrl_GetControlLine(id, true, activeOut, reason, reasonLen);
 }
 
-esp_err_t UartCtrl_GetRtsLevel(int id, int* levelOut, char* reason, size_t reasonLen)
+esp_err_t UartCtrl_GetRtsActive(int id, bool* activeOut, char* reason, size_t reasonLen)
 {
-  return UartCtrl_GetControlLine(id, false, levelOut, reason, reasonLen);
+  return UartCtrl_GetControlLine(id, false, activeOut, reason, reasonLen);
 }
 
-esp_err_t UartCtrl_SetConfig(int id, const UartCtrl_Config* cfg, char* reason, size_t reasonLen)
+static bool UartCtrl_SamePins(const UartCtrl_Config* a, const UartCtrl_Config* b)
 {
-  if (!UartCtrl_IsValidId(id) || cfg == NULL) return ESP_ERR_INVALID_ARG;
-  if (UartCtrl_ValidateConfig(cfg, reason, reasonLen) != ESP_OK) return ESP_ERR_INVALID_ARG;
+  return a->rxPin == b->rxPin && a->txPin == b->txPin && a->rtsPin == b->rtsPin && a->dtrPin == b->dtrPin;
+}
 
-  xSemaphoreTake(mutex, portMAX_DELAY);
+static bool UartCtrl_SameFraming(const UartCtrl_Config* a, const UartCtrl_Config* b)
+{
+  return a->baudRate == b->baudRate && a->dataBits == b->dataBits && a->parity == b->parity && a->stopBits == b->stopBits;
+}
+
+static bool UartCtrl_SameConfig(const UartCtrl_Config* a, const UartCtrl_Config* b)
+{
+  return a->enable == b->enable && a->mode == b->mode && a->encoding == b->encoding && UartCtrl_SamePins(a, b) &&
+         UartCtrl_SameFraming(a, b);
+}
+
+static void UartCtrl_StopDriverLocked(int id)
+{
   UartCtrl_Runtime* u = &uarts[id];
-  UartCtrl_Config previous = u->cfg;
-  int previousRtsLevel = u->rtsLevel;
-  int previousDtrLevel = u->dtrLevel;
-  bool wasInstalled = u->driverInstalled;
-  char previousOwner[32];
-  snprintf(previousOwner, sizeof(previousOwner), "%s", u->owner);
-
-  if (!cfg->enable) {
-    if (u->driverInstalled) {
-      uart_driver_delete(UartCtrl_HwPort(id));
-      u->driverInstalled = false;
-    }
-    if (u->owner[0] != '\0') {
-      Lock_ReleasePeripheral(u->owner);
-      u->owner[0] = '\0';
-    }
-    UartCtrl_DisablePinModes(&u->cfg);
-    u->cfg = *cfg;
-    u->cfg.enable = false;
-    u->rtsLevel = 1;
-    u->dtrLevel = 1;
-    xSemaphoreGive(mutex);
-    return ESP_OK;
-  }
-
-  /* Enabling or reconfiguring while enabled: stop current driver first, then start with new pins. */
   if (u->driverInstalled) {
     uart_driver_delete(UartCtrl_HwPort(id));
     u->driverInstalled = false;
@@ -440,46 +461,207 @@ esp_err_t UartCtrl_SetConfig(int id, const UartCtrl_Config* cfg, char* reason, s
     u->owner[0] = '\0';
   }
   UartCtrl_DisablePinModes(&u->cfg);
+}
 
-  int nextRts = 1;
-  int nextDtr = 1;
-  if (cfg->rtsPin >= 0 && wasInstalled && previous.enable && previous.rtsPin == cfg->rtsPin) nextRts = previousRtsLevel;
-  if (cfg->dtrPin >= 0 && wasInstalled && previous.enable && previous.dtrPin == cfg->dtrPin) nextDtr = previousDtrLevel;
-
-  esp_err_t err = UartCtrl_StartDriver(id, cfg, nextRts, nextDtr, reason, reasonLen);
-  if (err != ESP_OK) {
-    /* Best-effort restore of previous enabled state. */
-    if (wasInstalled && previous.enable) {
-      char restoreReason[160];
-      if (UartCtrl_StartDriver(id, &previous, previousRtsLevel, previousDtrLevel, restoreReason, sizeof(restoreReason)) !=
-          ESP_OK) {
-        ESP_LOGW(tag, "Failed to restore UART %d after config error: %s", id, restoreReason);
-        u->cfg = previous;
-        u->cfg.enable = false;
-        u->rtsLevel = 1;
-        u->dtrLevel = 1;
-        (void)previousOwner;
-      }
-    } else {
-      u->cfg = *cfg;
-      u->cfg.enable = false;
-      u->rtsLevel = 1;
-      u->dtrLevel = 1;
-    }
-    xSemaphoreGive(mutex);
-    return err;
+static esp_err_t UartCtrl_ApplyFraming(int id, const UartCtrl_Config* cfg, char* reason, size_t reasonLen)
+{
+  uart_config_t ucfg = {
+      .baud_rate = cfg->baudRate,
+      .data_bits = UartCtrl_ToWordLength(cfg->dataBits),
+      .parity = UartCtrl_ToParity(cfg->parity),
+      .stop_bits = UartCtrl_ToStopBits(cfg->stopBits),
+      .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+      .source_clk = UART_SCLK_DEFAULT,
+  };
+  if (uart_param_config(UartCtrl_HwPort(id), &ucfg) != ESP_OK) {
+    snprintf(reason, reasonLen, "UART configuration was rejected. Check baudRate, dataBits, parity, and stopBits.");
+    return ESP_FAIL;
   }
-  xSemaphoreGive(mutex);
   return ESP_OK;
 }
 
-static esp_err_t UartCtrl_SetControlLine(int id, bool isDtr, int level, char* reason, size_t reasonLen)
+/* Caller holds mutex. Releases it around the stop so the bridge task can finish an in-flight UartCtrl call. */
+static void UartCtrl_DropBridge(void)
+{
+  if (!Tcp_Rfc2217IsRunning()) return;
+  xSemaphoreGive(mutex);
+  Tcp_Rfc2217Stop();
+  xSemaphoreTake(mutex, portMAX_DELAY);
+}
+
+/* Caller holds mutex. Releases it around start so the bridge task can call SetConfig. */
+static esp_err_t UartCtrl_StartBridge(int id, char* reason, size_t reasonLen)
+{
+  xSemaphoreGive(mutex);
+  esp_err_t err = Tcp_Rfc2217Start(id);
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  if (err != ESP_OK) snprintf(reason, reasonLen, "RFC2217 service failed to start.");
+  return err;
+}
+
+static void UartCtrl_StoreDisabled(UartCtrl_Runtime* u, const UartCtrl_Config* cfg)
+{
+  u->cfg = *cfg;
+  u->cfg.enable = false;
+  u->rtsActive = false;
+  u->dtrActive = false;
+}
+
+static esp_err_t UartCtrl_RestoreLocked(int id, const UartCtrl_Config* previous, bool rtsActive, bool dtrActive)
+{
+  UartCtrl_Runtime* u = &uarts[id];
+  if (!previous->enable) {
+    UartCtrl_StoreDisabled(u, previous);
+    return ESP_OK;
+  }
+  char restoreReason[160];
+  esp_err_t err = UartCtrl_StartDriver(id, previous, rtsActive, dtrActive, restoreReason, sizeof(restoreReason));
+  if (err != ESP_OK) {
+    ESP_LOGW(tag, "Failed to restore UART %d after config error: %s", id, restoreReason);
+    UartCtrl_StoreDisabled(u, previous);
+    return err;
+  }
+  if (previous->mode == UART_CTRL_MODE_RFC2217) {
+    err = UartCtrl_StartBridge(id, restoreReason, sizeof(restoreReason));
+    if (err != ESP_OK) {
+      ESP_LOGW(tag, "Failed to restore UART %d RFC2217 after config error: %s", id, restoreReason);
+      UartCtrl_StopDriverLocked(id);
+      UartCtrl_StoreDisabled(u, previous);
+    }
+  }
+  return err;
+}
+
+esp_err_t UartCtrl_SetConfig(int id, const UartCtrl_Config* cfg, char* reason, size_t reasonLen)
+{
+  if (!UartCtrl_IsValidId(id) || cfg == NULL) return ESP_ERR_INVALID_ARG;
+  if (UartCtrl_ValidateConfig(cfg, reason, reasonLen) != ESP_OK) return ESP_ERR_INVALID_ARG;
+
+  /* The bridge task calls SetConfig for line changes. It must not take configMutex: HTTP holds that
+   * mutex across Tcp_Rfc2217Stop, and Stop waits for this task. */
+  bool fromBridge = Tcp_Rfc2217InTask();
+  if (!fromBridge) xSemaphoreTake(configMutex, portMAX_DELAY);
+  xSemaphoreTake(mutex, portMAX_DELAY);
+
+  UartCtrl_Runtime* u = &uarts[id];
+  UartCtrl_Config previous = u->cfg;
+  bool previousRts = u->rtsActive;
+  bool previousDtr = u->dtrActive;
+  bool wasInstalled = u->driverInstalled;
+  bool stayUp = false;
+  bool keepBridge = false;
+  bool nextRts = false;
+  bool nextDtr = false;
+  esp_err_t err = ESP_OK;
+
+  if (fromBridge) {
+    bool live = previous.enable && wasInstalled && cfg->enable && previous.mode == UART_CTRL_MODE_RFC2217 &&
+                cfg->mode == UART_CTRL_MODE_RFC2217 && UartCtrl_SamePins(&previous, cfg);
+    if (!live) {
+      snprintf(reason, reasonLen, "RFC2217 client can only change baudRate, dataBits, parity, and stopBits.");
+      err = ESP_ERR_INVALID_ARG;
+      goto done;
+    }
+    if (!UartCtrl_SameFraming(&previous, cfg)) {
+      err = UartCtrl_ApplyFraming(id, cfg, reason, reasonLen);
+      if (err != ESP_OK) goto done;
+    }
+    u->cfg = *cfg;
+    u->cfg.enable = true;
+    goto done;
+  }
+
+  if (UartCtrl_SameConfig(&previous, cfg) && (!cfg->enable || wasInstalled)) {
+    if (cfg->enable && cfg->mode == UART_CTRL_MODE_RFC2217 && wasInstalled && !Tcp_Rfc2217IsRunning()) {
+      err = UartCtrl_StartBridge(id, reason, reasonLen);
+    }
+    goto done;
+  }
+
+  stayUp = previous.enable && wasInstalled && cfg->enable && UartCtrl_SamePins(&previous, cfg);
+  keepBridge = stayUp && previous.mode == UART_CTRL_MODE_RFC2217 && cfg->mode == UART_CTRL_MODE_RFC2217;
+  if (Tcp_Rfc2217IsRunning() && !keepBridge) UartCtrl_DropBridge();
+
+  if (!cfg->enable) {
+    UartCtrl_StopDriverLocked(id);
+    UartCtrl_StoreDisabled(u, cfg);
+    goto done;
+  }
+
+  if (stayUp) {
+    if (!UartCtrl_SameFraming(&previous, cfg)) {
+      err = UartCtrl_ApplyFraming(id, cfg, reason, reasonLen);
+      if (err != ESP_OK) goto done;
+    }
+    u->cfg = *cfg;
+    u->cfg.enable = true;
+    u->rtsActive = cfg->rtsPin >= 0 && previousRts;
+    u->dtrActive = cfg->dtrPin >= 0 && previousDtr;
+    if (cfg->mode == UART_CTRL_MODE_RFC2217 && !Tcp_Rfc2217IsRunning()) {
+      err = UartCtrl_StartBridge(id, reason, reasonLen);
+      if (err != ESP_OK) {
+        char ignored[160];
+        if (!UartCtrl_SameFraming(&previous, cfg)) (void)UartCtrl_ApplyFraming(id, &previous, ignored, sizeof(ignored));
+        u->cfg = previous;
+        u->rtsActive = previousRts;
+        u->dtrActive = previousDtr;
+      }
+    }
+    goto done;
+  }
+
+  UartCtrl_StopDriverLocked(id);
+  if (cfg->rtsPin >= 0 && wasInstalled && previous.enable && previous.rtsPin == cfg->rtsPin) nextRts = previousRts;
+  if (cfg->dtrPin >= 0 && wasInstalled && previous.enable && previous.dtrPin == cfg->dtrPin) nextDtr = previousDtr;
+
+  err = UartCtrl_StartDriver(id, cfg, nextRts, nextDtr, reason, reasonLen);
+  if (err != ESP_OK) {
+    if (wasInstalled && previous.enable) (void)UartCtrl_RestoreLocked(id, &previous, previousRts, previousDtr);
+    else UartCtrl_StoreDisabled(u, cfg);
+    goto done;
+  }
+  if (cfg->mode == UART_CTRL_MODE_RFC2217) {
+    err = UartCtrl_StartBridge(id, reason, reasonLen);
+    if (err != ESP_OK) {
+      UartCtrl_StopDriverLocked(id);
+      if (wasInstalled && previous.enable) (void)UartCtrl_RestoreLocked(id, &previous, previousRts, previousDtr);
+      else UartCtrl_StoreDisabled(u, cfg);
+    }
+  }
+
+done:
+  xSemaphoreGive(mutex);
+  if (!fromBridge) xSemaphoreGive(configMutex);
+  return err;
+}
+
+esp_err_t UartCtrl_GetRfc2217Status(int id, UartCtrl_Rfc2217Status* out)
+{
+  if (!UartCtrl_IsValidId(id) || out == NULL) return ESP_ERR_INVALID_ARG;
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  UartCtrl_Runtime* u = &uarts[id];
+  bool running = u->cfg.enable && u->driverInstalled && u->cfg.mode == UART_CTRL_MODE_RFC2217 && Tcp_Rfc2217IsRunning() &&
+                 Tcp_Rfc2217UartId() == id;
+  xSemaphoreGive(mutex);
+  if (!running) return ESP_ERR_INVALID_STATE;
+
+  memset(out, 0, sizeof(*out));
+  out->prompt = CONFIG_RFC2217_STATUS_PROMPT;
+  out->port = CONFIG_RFC2217_TCP_PORT;
+  char ip[16];
+  ip[0] = '\0';
+  if (Wifi_GetPairStatus(ip, sizeof(ip), NULL, 0) != WIFI_PAIR_STATE_CONNECTED || ip[0] == '\0' ||
+      strcmp(ip, "0.0.0.0") == 0) {
+    out->ip[0] = '\0';
+  } else {
+    snprintf(out->ip, sizeof(out->ip), "%s", ip);
+  }
+  return ESP_OK;
+}
+
+static esp_err_t UartCtrl_SetControlLine(int id, bool isDtr, bool active, char* reason, size_t reasonLen)
 {
   if (!UartCtrl_IsValidId(id)) return ESP_ERR_INVALID_ARG;
-  if (level != 0 && level != 1) {
-    snprintf(reason, reasonLen, "level must be 0 or 1.");
-    return ESP_ERR_INVALID_ARG;
-  }
 
   xSemaphoreTake(mutex, portMAX_DELAY);
   UartCtrl_Runtime* u = &uarts[id];
@@ -495,28 +677,28 @@ static esp_err_t UartCtrl_SetControlLine(int id, bool isDtr, int level, char* re
     xSemaphoreGive(mutex);
     return ESP_ERR_INVALID_STATE;
   }
-  esp_err_t err = UartCtrl_ApplyControlPin(pin, level, reason, reasonLen);
+  esp_err_t err = UartCtrl_ApplyControlPin(pin, active, reason, reasonLen);
   if (err != ESP_OK) {
     xSemaphoreGive(mutex);
     return err;
   }
   if (isDtr) {
-    u->dtrLevel = level;
+    u->dtrActive = active;
   } else {
-    u->rtsLevel = level;
+    u->rtsActive = active;
   }
   xSemaphoreGive(mutex);
   return ESP_OK;
 }
 
-esp_err_t UartCtrl_SetDtr(int id, int level, char* reason, size_t reasonLen)
+esp_err_t UartCtrl_SetDtr(int id, bool active, char* reason, size_t reasonLen)
 {
-  return UartCtrl_SetControlLine(id, true, level, reason, reasonLen);
+  return UartCtrl_SetControlLine(id, true, active, reason, reasonLen);
 }
 
-esp_err_t UartCtrl_SetRts(int id, int level, char* reason, size_t reasonLen)
+esp_err_t UartCtrl_SetRts(int id, bool active, char* reason, size_t reasonLen)
 {
-  return UartCtrl_SetControlLine(id, false, level, reason, reasonLen);
+  return UartCtrl_SetControlLine(id, false, active, reason, reasonLen);
 }
 
 esp_err_t UartCtrl_Transmit(int id, const uint8_t* data, size_t len, char* reason, size_t reasonLen)

@@ -37,6 +37,7 @@ const EXPECTED_MCP_TOOLS = [
   "uart_get_rts",
   "uart_set_dtr",
   "uart_set_rts",
+  "get_uart_rfc2217_status",
   "list_spis",
   "configure_spi",
   "spi_master_transceive",
@@ -369,7 +370,7 @@ async function captureSnapshot(): Promise<Snapshot> {
       "Refusing to disturb an enabled UART using unexpected pins");
   }
   assert(uart.pins.rts !== undefined && uart.pins.dtr !== undefined, "UART inventory omitted rts/dtr pins");
-  assert(!("dtr" in uart) && !("rts" in uart), "UART inventory must not embed dtr/rts levels");
+  assert(!("dtr" in uart) && !("rts" in uart), "UART inventory must not embed dtr/rts states");
 
   const power3v3 = await requestJson<{ enable: boolean; time: number; reason?: string }>("GET", "/power/3v3");
   const power5v = await requestJson<{ enable: boolean; time: number; reason?: string }>("GET", "/power/5v");
@@ -908,7 +909,7 @@ async function testUartPayloadsAndRaces(): Promise<void> {
 }
 
 async function testUartControlLines(): Promise<void> {
-  log("UART DTR/RTS default high and 0/1 levels measured through the 6/7 loop over REST/MCP");
+  log("UART DTR/RTS active-low states measured through the 6/7 loop over REST/MCP");
   // Test one control output at a time so the existing jumper needs no extra wiring.
   // UART requires RX or TX; use the idle, unconnected pin 0 for RX.
   for (const line of ["rts", "dtr"] as const) {
@@ -924,31 +925,32 @@ async function testUartControlLines(): Promise<void> {
         if (mcp) await mcpTool("configure_uart", { id: UART_ID, ...config });
         else await requestJson<void>("POST", `/uart/${UART_ID}/config`, config, 204);
         const label = `UART ${line.toUpperCase()} ${output}->${input} (${mcp ? "MCP" : "REST"} config)`;
-        const verify = async (level: 0 | 1): Promise<void> => {
-          const rest = await requestJson<{ level: number }>("GET", `/uart/${UART_ID}/${line}`);
-          const tool = await mcpTool<{ level: number }>(`uart_get_${line}`, { id: UART_ID });
-          assert(rest.level === level && tool.level === level, `${label} stored level should be ${level}`);
-          assert((await waitForRestLevel(input, level)) === level, `${label} REST loop level should be ${level}`);
-          assert((await waitForMcpLevel(input, level)) === level, `${label} MCP loop level should be ${level}`);
+        const verify = async (active: boolean): Promise<void> => {
+          const rest = await requestJson<{ active: boolean }>("GET", `/uart/${UART_ID}/${line}`);
+          const tool = await mcpTool<{ active: boolean }>(`uart_get_${line}`, { id: UART_ID });
+          const pinLevel = active ? 0 : 1;
+          assert(rest.active === active && tool.active === active, `${label} active should be ${active}`);
+          assert((await waitForRestLevel(input, pinLevel)) === pinLevel, `${label} REST pin level should be ${pinLevel}`);
+          assert((await waitForMcpLevel(input, pinLevel)) === pinLevel, `${label} MCP pin level should be ${pinLevel}`);
         };
-        await verify(1);
+        await verify(false);
         await expectStatus("PUT", `/pin/${output}`, 423, {
           mode: "digitalOutput", openDrain: false, pullUp: false, pullDown: false,
         });
         for (const setViaMcp of [false, true]) {
-          for (const level of [0, 1] as const) {
-            if (setViaMcp) await mcpTool(`uart_set_${line}`, { id: UART_ID, level });
-            else await requestJson<void>("POST", `/uart/${UART_ID}/${line}`, { level }, 204);
-            await verify(level);
+          for (const active of [false, true]) {
+            if (setViaMcp) await mcpTool(`uart_set_${line}`, { id: UART_ID, active });
+            else await requestJson<void>("POST", `/uart/${UART_ID}/${line}`, { active }, 204);
+            await verify(active);
           }
         }
-        // Re-enabling after a low output must restore the default high level.
-        await mcpTool(`uart_set_${line}`, { id: UART_ID, level: 0 });
-        await verify(0);
+        // Re-enabling after assertion must release the line.
+        await mcpTool(`uart_set_${line}`, { id: UART_ID, active: true });
+        await verify(true);
         await requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204);
         if (mcp) await mcpTool("configure_uart", { id: UART_ID, ...config });
         else await requestJson<void>("POST", `/uart/${UART_ID}/config`, config, 204);
-        await verify(1);
+        await verify(false);
       }
     }
   }
@@ -960,10 +962,11 @@ async function testUartControlLines(): Promise<void> {
   }, 204);
   for (const line of ["rts", "dtr"] as const) {
     await expectStatus("GET", `/uart/${UART_ID}/${line}`, 422);
-    await expectStatus("POST", `/uart/${UART_ID}/${line}`, 422, { level: 1 });
+    await expectStatus("POST", `/uart/${UART_ID}/${line}`, 400, { active: 1 });
+    await expectStatus("POST", `/uart/${UART_ID}/${line}`, 422, { active: true });
     for (const action of ["get", "set"] as const) {
       const response = await mcpRequest("tools/call", {
-        name: `uart_${action}_${line}`, arguments: { id: UART_ID, ...(action === "set" ? { level: 1 } : {}) },
+        name: `uart_${action}_${line}`, arguments: { id: UART_ID, ...(action === "set" ? { active: true } : {}) },
       });
       assert(response?.result?.isError === true, `MCP UART ${action} ${line} should reject a missing pin`);
     }

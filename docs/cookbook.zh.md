@@ -117,7 +117,7 @@ GPIO：`list_pins`、`configure_pins`、`get_pin_levels`、`set_pin_levels`、`p
 
 电源：`get_output_power_state`、`set_output_power_state`（`3v3` / `5v`）。
 
-UART：`list_uarts`、`configure_uart`、`uart_transmit`、`uart_receive`、`uart_flush`。
+UART：`list_uarts`、`configure_uart`、`uart_transmit`、`uart_receive`、`uart_flush`、`uart_get_dtr`、`uart_get_rts`、`uart_set_dtr`、`uart_set_rts`。
 
 SPI：`list_spis`、`configure_spi`、`spi_master_transceive`、`spi_slave_receive`、`spi_slave_transmit`。
 

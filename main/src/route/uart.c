@@ -78,6 +78,7 @@ static cJSON* Route_UartConfigToJson(int id, const UartCtrl_Config* cfg)
   cJSON* item = cJSON_CreateObject();
   cJSON_AddNumberToObject(item, "id", id);
   cJSON_AddBoolToObject(item, "enable", cfg->enable);
+  cJSON_AddStringToObject(item, "mode", UartCtrl_ModeToString(cfg->mode));
   cJSON_AddNumberToObject(item, "baudRate", cfg->baudRate);
   cJSON_AddNumberToObject(item, "dataBits", cfg->dataBits);
   cJSON_AddStringToObject(item, "parity", UartCtrl_ParityToString(cfg->parity));
@@ -107,9 +108,20 @@ static int Route_ParseUartOptionalPin(cJSON* pinsObj, const char* key, int* pinO
   return 0;
 }
 
-static esp_err_t Route_ParseUartConfigBody(cJSON* body, UartCtrl_Config* cfg, char* reason, size_t reasonLen)
+static bool Route_UartRfc2217Busy(int id, char* reason, size_t reasonLen)
+{
+  UartCtrl_Config cfg;
+  if (UartCtrl_GetConfig(id, &cfg) != ESP_OK || !cfg.enable || cfg.mode != UART_CTRL_MODE_RFC2217) return false;
+  snprintf(reason, reasonLen,
+           "UART %d mode is rfc2217. Data and control lines are owned by the TCP bridge. POST /uart/%d/config with mode native to use this API.",
+           id, id);
+  return true;
+}
+
+static esp_err_t Route_ParseUartConfigBody(int id, cJSON* body, UartCtrl_Config* cfg, char* reason, size_t reasonLen)
 {
   cJSON* enableItem = cJSON_GetObjectItem(body, "enable");
+  cJSON* modeItem = cJSON_GetObjectItem(body, "mode");
   cJSON* baudItem = cJSON_GetObjectItem(body, "baudRate");
   cJSON* dataBitsItem = cJSON_GetObjectItem(body, "dataBits");
   cJSON* parityItem = cJSON_GetObjectItem(body, "parity");
@@ -121,6 +133,37 @@ static esp_err_t Route_ParseUartConfigBody(cJSON* body, UartCtrl_Config* cfg, ch
     snprintf(reason, reasonLen, "enable must be boolean.");
     return ESP_ERR_INVALID_ARG;
   }
+  if (modeItem == NULL) {
+    cfg->mode = UART_CTRL_MODE_NATIVE;
+  } else if (!cJSON_IsString(modeItem) || !UartCtrl_ModeFromString(modeItem->valuestring, &cfg->mode)) {
+    snprintf(reason, reasonLen, "mode must be one of: native, rfc2217.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!cJSON_IsObject(pinsItem)) {
+    snprintf(reason, reasonLen, "pins must be an object with optional rx, tx, rts, and dtr.");
+    return ESP_ERR_INVALID_ARG;
+  }
+  cfg->enable = cJSON_IsTrue(enableItem);
+  if (Route_ParseUartOptionalPin(pinsItem, "rx", &cfg->rxPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseUartOptionalPin(pinsItem, "tx", &cfg->txPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseUartOptionalPin(pinsItem, "rts", &cfg->rtsPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+  if (Route_ParseUartOptionalPin(pinsItem, "dtr", &cfg->dtrPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
+
+  if (cfg->mode == UART_CTRL_MODE_RFC2217) {
+    if (baudItem != NULL || dataBitsItem != NULL || parityItem != NULL || stopBitsItem != NULL || encodingItem != NULL) {
+      snprintf(reason, reasonLen, "mode rfc2217 only accepts enable, pins, and mode.");
+      return ESP_ERR_INVALID_ARG;
+    }
+    UartCtrl_Config current;
+    if (UartCtrl_GetConfig(id, &current) != ESP_OK) return ESP_FAIL;
+    cfg->baudRate = current.baudRate;
+    cfg->dataBits = current.dataBits;
+    cfg->parity = current.parity;
+    cfg->stopBits = current.stopBits;
+    cfg->encoding = current.encoding;
+    return ESP_OK;
+  }
+
   if (!cJSON_IsNumber(baudItem)) {
     snprintf(reason, reasonLen, "baudRate must be a positive integer.");
     return ESP_ERR_INVALID_ARG;
@@ -141,19 +184,10 @@ static esp_err_t Route_ParseUartConfigBody(cJSON* body, UartCtrl_Config* cfg, ch
     snprintf(reason, reasonLen, "encoding must be one of: utf8, byte.");
     return ESP_ERR_INVALID_ARG;
   }
-  if (!cJSON_IsObject(pinsItem)) {
-    snprintf(reason, reasonLen, "pins must be an object with optional rx, tx, rts, and dtr.");
-    return ESP_ERR_INVALID_ARG;
-  }
 
-  cfg->enable = cJSON_IsTrue(enableItem);
   cfg->baudRate = baudItem->valueint;
   cfg->dataBits = dataBitsItem->valueint;
   cfg->stopBits = stopBitsItem->valueint;
-  if (Route_ParseUartOptionalPin(pinsItem, "rx", &cfg->rxPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
-  if (Route_ParseUartOptionalPin(pinsItem, "tx", &cfg->txPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
-  if (Route_ParseUartOptionalPin(pinsItem, "rts", &cfg->rtsPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
-  if (Route_ParseUartOptionalPin(pinsItem, "dtr", &cfg->dtrPin, reason, reasonLen) != 0) return ESP_ERR_INVALID_ARG;
   return ESP_OK;
 }
 
@@ -270,7 +304,7 @@ static esp_err_t Route_UartPostConfigHandler(HttpServer_Context* ctx)
 
   UartCtrl_Config cfg;
   memset(&cfg, 0, sizeof(cfg));
-  if (Route_ParseUartConfigBody(body, &cfg, reason, sizeof(reason)) != ESP_OK) {
+  if (Route_ParseUartConfigBody(id, body, &cfg, reason, sizeof(reason)) != ESP_OK) {
     cJSON_Delete(body);
     return HttpServer_SendError(ctx, 400, reason);
   }
@@ -301,6 +335,7 @@ static esp_err_t Route_UartPostTransmitHandler(HttpServer_Context* ctx)
   char reason[256];
   int st = HttpServer_LockStatus(ctx, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(ctx, st, reason);
+  if (Route_UartRfc2217Busy(id, reason, sizeof(reason))) return HttpServer_SendError(ctx, 409, reason);
   if (!Route_UartIsEnabled(id, reason, sizeof(reason))) return HttpServer_SendError(ctx, 422, reason);
 
   UartCtrl_Config cfg;
@@ -339,6 +374,7 @@ static esp_err_t Route_UartGetReceiveHandler(HttpServer_Context* ctx)
   char reason[256];
   int st = HttpServer_LockStatus(ctx, LOCK_KIND_UART, id, LOCK_METHOD_READ, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(ctx, st, reason);
+  if (Route_UartRfc2217Busy(id, reason, sizeof(reason))) return HttpServer_SendError(ctx, 409, reason);
   if (!Route_UartIsEnabled(id, reason, sizeof(reason))) return HttpServer_SendError(ctx, 422, reason);
 
   UartCtrl_Config cfg;
@@ -382,6 +418,7 @@ static esp_err_t Route_UartPostFlushHandler(HttpServer_Context* ctx)
   char reason[256];
   int st = HttpServer_LockStatus(ctx, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(ctx, st, reason);
+  if (Route_UartRfc2217Busy(id, reason, sizeof(reason))) return HttpServer_SendError(ctx, 409, reason);
 
   esp_err_t ret = UartCtrl_Flush(id, reason, sizeof(reason));
   if (ret == ESP_ERR_INVALID_STATE) return HttpServer_SendError(ctx, 422, reason);
@@ -392,7 +429,7 @@ static esp_err_t Route_UartPostFlushHandler(HttpServer_Context* ctx)
 }
 
 static esp_err_t Route_UartGetControlLine(HttpServer_Context* ctx, const char* suffix,
-                                          esp_err_t (*getter)(int, int*, char*, size_t))
+                                         esp_err_t (*getter)(int, bool*, char*, size_t))
 {
   HttpServer_LogCall(ctx);
   Lock_SweepExpired();
@@ -404,21 +441,22 @@ static esp_err_t Route_UartGetControlLine(HttpServer_Context* ctx, const char* s
   char reason[256];
   int st = HttpServer_LockStatus(ctx, LOCK_KIND_UART, id, LOCK_METHOD_READ, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(ctx, st, reason);
+  if (Route_UartRfc2217Busy(id, reason, sizeof(reason))) return HttpServer_SendError(ctx, 409, reason);
 
-  int level = 0;
-  esp_err_t ret = getter(id, &level, reason, sizeof(reason));
+  bool active = false;
+  esp_err_t ret = getter(id, &active, reason, sizeof(reason));
   if (ret == ESP_ERR_INVALID_STATE) return HttpServer_SendError(ctx, 422, reason);
   if (ret != ESP_OK) return HttpServer_SendError(ctx, 500, reason[0] ? reason : "internal");
 
   cJSON* root = cJSON_CreateObject();
-  cJSON_AddNumberToObject(root, "level", level);
+  cJSON_AddBoolToObject(root, "active", active);
   cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
   Lock_Touch(lockId);
   return HttpServer_SendJson(ctx, 200, root);
 }
 
 static esp_err_t Route_UartPostControlLine(HttpServer_Context* ctx, const char* suffix,
-                                           esp_err_t (*setter)(int, int, char*, size_t))
+                                          esp_err_t (*setter)(int, bool, char*, size_t))
 {
   HttpServer_LogCall(ctx);
   Lock_SweepExpired();
@@ -434,20 +472,21 @@ static esp_err_t Route_UartPostControlLine(HttpServer_Context* ctx, const char* 
   char reason[256];
   int st = HttpServer_LockStatus(ctx, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, lockId, sizeof(lockId), reason, sizeof(reason));
   if (st) return HttpServer_SendError(ctx, st, reason);
+  if (Route_UartRfc2217Busy(id, reason, sizeof(reason))) return HttpServer_SendError(ctx, 409, reason);
 
   esp_err_t perr = ESP_OK;
   cJSON* body = HttpServer_ParseBody(ctx, &perr);
   if (body == NULL) return HttpServer_SendError(ctx, 400, "invalid_json");
 
-  cJSON* levelItem = cJSON_GetObjectItem(body, "level");
-  if (!cJSON_IsNumber(levelItem) || (levelItem->valueint != 0 && levelItem->valueint != 1)) {
+  cJSON* activeItem = cJSON_GetObjectItem(body, "active");
+  if (!cJSON_IsBool(activeItem)) {
     cJSON_Delete(body);
-    return HttpServer_SendError(ctx, 400, "level must be 0 or 1.");
+    return HttpServer_SendError(ctx, 400, "active must be boolean.");
   }
-  int level = levelItem->valueint;
+  bool active = cJSON_IsTrue(activeItem);
   cJSON_Delete(body);
 
-  esp_err_t ret = setter(id, level, reason, sizeof(reason));
+  esp_err_t ret = setter(id, active, reason, sizeof(reason));
   if (ret == ESP_ERR_INVALID_ARG) return HttpServer_SendError(ctx, 400, reason);
   if (ret == ESP_ERR_INVALID_STATE) return HttpServer_SendError(ctx, 422, reason);
   if (ret != ESP_OK) return HttpServer_SendError(ctx, 500, reason[0] ? reason : "internal");
@@ -456,14 +495,36 @@ static esp_err_t Route_UartPostControlLine(HttpServer_Context* ctx, const char* 
   return HttpServer_SendEmpty(ctx, 204);
 }
 
+static esp_err_t Route_UartGetRfc2217Handler(HttpServer_Context* ctx)
+{
+  HttpServer_LogCall(ctx);
+  int id = 0;
+  int pr = Route_ParseUartPathId(HttpServer_GetUri(ctx), "/rfc2217", &id);
+  if (pr != 0) return Route_UartIdError(ctx, pr);
+
+  UartCtrl_Rfc2217Status status;
+  if (UartCtrl_GetRfc2217Status(id, &status) != ESP_OK) {
+    char reason[160];
+    snprintf(reason, sizeof(reason),
+             "RFC2217 is not running. POST /uart/%d/config with enable true and mode rfc2217 first.", id);
+    return HttpServer_SendError(ctx, 503, reason);
+  }
+  cJSON* root = cJSON_CreateObject();
+  if (root == NULL) return HttpServer_SendError(ctx, 500, "internal");
+  cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
+  cJSON_AddNumberToObject(root, "port", status.port);
+  cJSON_AddStringToObject(root, "ip", status.ip);
+  return HttpServer_SendJson(ctx, 200, root);
+}
+
 static esp_err_t Route_UartGetDtrHandler(HttpServer_Context* ctx)
 {
-  return Route_UartGetControlLine(ctx, "/dtr", UartCtrl_GetDtrLevel);
+  return Route_UartGetControlLine(ctx, "/dtr", UartCtrl_GetDtrActive);
 }
 
 static esp_err_t Route_UartGetRtsHandler(HttpServer_Context* ctx)
 {
-  return Route_UartGetControlLine(ctx, "/rts", UartCtrl_GetRtsLevel);
+  return Route_UartGetControlLine(ctx, "/rts", UartCtrl_GetRtsActive);
 }
 
 static esp_err_t Route_UartPostDtrHandler(HttpServer_Context* ctx)
@@ -479,6 +540,7 @@ static esp_err_t Route_UartPostRtsHandler(HttpServer_Context* ctx)
 static const HttpServer_Route uris[] = {
     {.uri = "/uart/", .method = HTTP_SERVER_GET, .handler = Route_UartListHandler},
     {.uri = "/uart/*/config", .method = HTTP_SERVER_POST, .handler = Route_UartPostConfigHandler},
+    {.uri = "/uart/*/rfc2217", .method = HTTP_SERVER_GET, .handler = Route_UartGetRfc2217Handler},
     {.uri = "/uart/*/transmit", .method = HTTP_SERVER_POST, .handler = Route_UartPostTransmitHandler},
     {.uri = "/uart/*/receive", .method = HTTP_SERVER_GET, .handler = Route_UartGetReceiveHandler},
     {.uri = "/uart/*/flush", .method = HTTP_SERVER_POST, .handler = Route_UartPostFlushHandler},
