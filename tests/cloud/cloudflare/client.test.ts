@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, type Subprocess } from "bun";
 import { join } from "node:path";
-import { authSignedMessage, publicKeyDigest } from "../../../cloud/cloudflare/src/crypto.ts";
+import { authSignedMessage, openWebsocketToken, publicKeyDigest, sealWebsocketToken } from "../../../cloud/cloudflare/src/crypto.ts";
 import { PUBLIC_KEY_BYTES, SIGNATURE_BYTES } from "../../../cloud/cloudflare/src/protocol.ts";
 
 const PACKAGE_DIR = join(import.meta.dir, "../../../cloud/cloudflare");
 const BASE_PORT = 8787 + Math.floor(Math.random() * 1000);
 const ROUTING_TOKEN_SECRET = "local-dev-routing-token-secret";
+const WEBSOCKET_TOKEN_SECRET = "local-dev-websocket-token-secret";
 const ADMIN_TOKEN = "local-dev-admin-token";
 const ACCESS_TOKEN_EXPIRES_IN = 315_360_000;
 
@@ -1540,5 +1541,174 @@ describe("cloudflare device proxy e2e", () => {
       },
     });
     expect(ws.status).toBe(403);
+  }, 30_000);
+
+  test("tcp-stream rejects missing, expired, and wrong-path tokens", async () => {
+    const headers = {
+      Upgrade: "websocket",
+      Connection: "Upgrade",
+      "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+      "Sec-WebSocket-Version": "13",
+    };
+    const missing = await fetch(`${baseUrl}/device/${identity.digest}/tcp-stream/dap`, { headers });
+    expect(missing.status).toBe(401);
+
+    const expired = await sealWebsocketToken(WEBSOCKET_TOKEN_SECRET, {
+      expireAt: Math.floor(Date.now() / 1000) - 5,
+      devicePublicKeyDigest: identity.digest,
+      path: "/tcp-stream/dap",
+      grantSecret: "abcdefghijklmnopqrstuvwx012345",
+    });
+    const expiredRes = await fetch(`${baseUrl}/device/${identity.digest}/tcp-stream/dap?token=${expired}`, { headers });
+    expect(expiredRes.status).toBe(401);
+
+    const wrongPath = await sealWebsocketToken(WEBSOCKET_TOKEN_SECRET, {
+      expireAt: Math.floor(Date.now() / 1000) + 3600,
+      devicePublicKeyDigest: identity.digest,
+      path: "/tcp-stream/rfc2217",
+      grantSecret: "abcdefghijklmnopqrstuvwx012345",
+    });
+    const wrong = await fetch(`${baseUrl}/device/${identity.digest}/tcp-stream/dap?token=${wrongPath}`, { headers });
+    expect(wrong.status).toBe(401);
+  }, 30_000);
+
+  test("tcp-stream injects one token and relays binary frames", async () => {
+    const other = await generateDeviceIdentity();
+    const grantSecret = "abcdefghijklmnopqrstuvwx012345";
+    await whitelistDigest(baseUrl, other.digest);
+    const ws = await openDeviceSocket(baseUrl, other.digest);
+    ws.binaryType = "arraybuffer";
+    expect((await authenticateDevice(ws, other)).success).toBe(true);
+
+    const frames: Array<string | Uint8Array> = [];
+    const waiters: Array<(frame: string | Uint8Array) => void> = [];
+    const asFrame = (data: unknown): string | Uint8Array => {
+      if (typeof data === "string") return data;
+      if (data instanceof ArrayBuffer) return new Uint8Array(data);
+      if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      throw new Error(`unexpected frame ${typeof data}`);
+    };
+    ws.addEventListener("message", (event) => {
+      const frame = asFrame(event.data);
+      const waiter = waiters.shift();
+      if (waiter) waiter(frame);
+      else frames.push(frame);
+    });
+    const nextFrame = () => {
+      const queued = frames.shift();
+      if (queued !== undefined) return Promise.resolve(queued);
+      return new Promise<string | Uint8Array>((resolve) => waiters.push(resolve));
+    };
+
+    const statusUrl = `${baseUrl.replace(/^http/, "ws")}/device/${other.digest}/tcp-stream/dap` +
+      "?token=$WEBSOCKET_TOKEN$&next=$WEBSOCKET_TOKEN$";
+    const statusPromise = fetch(`${baseUrl}/device/${other.digest}/dap/status`, {
+      headers: { authorization: `Bearer ${await bearerFor(other.digest, grantSecret)}` },
+    });
+    const requestFrame = await nextFrame();
+    expect(typeof requestFrame).toBe("string");
+    const request = JSON.parse(requestFrame as string) as RequestMessage;
+    expect(request.path).toBe("/dap/status");
+    expect(request.grantSecret).toBe(grantSecret);
+    ws.send(JSON.stringify({
+      type: "response",
+      requestId: request.requestId,
+      status: 200,
+      headers: { "content-type": "application/json" },
+      cloud: { addWebsocketToken: { jsonPathes: ["/url", "/prompt"], websocketPath: "/tcp-stream/dap" } },
+      body: { prompt: "prompt $WEBSOCKET_TOKEN$ stays", url: statusUrl },
+    }));
+    const statusRes = await statusPromise;
+    expect(statusRes.status).toBe(200);
+    const statusBody = (await statusRes.json()) as { prompt: string; url: string; port?: number };
+    expect(statusBody.port).toBeUndefined();
+    expect(statusBody.prompt.startsWith("prompt ")).toBe(true);
+    expect(statusBody.prompt.endsWith(" stays")).toBe(true);
+    expect(statusBody.prompt.includes("$WEBSOCKET_TOKEN$")).toBe(false);
+    expect(statusBody.url.includes("&next=$WEBSOCKET_TOKEN$")).toBe(true);
+    const token = new URL(statusBody.url.replace(/^ws/, "http")).searchParams.get("token");
+    expect(token).toBeTruthy();
+    const opened = await openWebsocketToken(WEBSOCKET_TOKEN_SECRET, token!);
+    expect(opened?.devicePublicKeyDigest).toBe(other.digest);
+    expect(opened?.path).toBe("/tcp-stream/dap");
+    expect(opened?.grantSecret).toBe(grantSecret);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const ttlSec = 7200;
+    expect(opened!.expireAt).toBeGreaterThan(nowSec + ttlSec - 30);
+    expect(opened!.expireAt).toBeLessThanOrEqual(nowSec + ttlSec);
+
+    const stream = new WebSocket(statusBody.url);
+    stream.binaryType = "arraybuffer";
+    const streamReady = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("stream open timeout")), 10_000);
+      stream.addEventListener("open", () => { clearTimeout(timer); resolve(); });
+      stream.addEventListener("error", () => { clearTimeout(timer); reject(new Error("stream open failed")); });
+    });
+    const openFrame = await nextFrame();
+    const openReq = JSON.parse(openFrame as string) as {
+      type: string; requestId: string; service: string; grantSecret: string;
+    };
+    expect(openReq.type).toBe("tcpStreamOpenRequest");
+    expect(openReq.service).toBe("dap");
+    expect(openReq.grantSecret).toBe(grantSecret);
+    ws.send(JSON.stringify({
+      type: "tcpStreamOpenResponse", requestId: openReq.requestId, success: true, channelId: 4, byteCredits: 2,
+    }));
+    await streamReady;
+
+    stream.send("ping");
+    await Bun.sleep(200);
+    expect(stream.readyState).toBe(WebSocket.OPEN);
+
+    const binaryWait = nextFrame();
+    stream.send(new Uint8Array([1, 2, 3]));
+    const forwarded = await binaryWait;
+    expect(forwarded).toEqual(new Uint8Array([4, 1, 2]));
+    const restWait = nextFrame();
+    ws.send(JSON.stringify({ type: "tcpStreamAck", channelId: 4, length: 2 }));
+    expect(await restWait).toEqual(new Uint8Array([4, 3]));
+
+    const clientWait = new Promise<Uint8Array>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("client binary timeout")), 5_000);
+      stream.addEventListener("message", (event) => {
+        clearTimeout(timer);
+        resolve(asFrame(event.data) as Uint8Array);
+      });
+    });
+    ws.send(new Uint8Array([4, 9, 8]));
+    expect(await clientWait).toEqual(new Uint8Array([9, 8]));
+
+    const closeWait = nextFrame();
+    stream.send("not-binary");
+    const closed = new Promise<number>((resolve) => stream.addEventListener("close", (event) => resolve(event.code)));
+    const closeFrame = await closeWait;
+    const closeReq = JSON.parse(closeFrame as string) as { type: string; channelId: number; grantSecret: string };
+    expect(closeReq.type).toBe("tcpStreamCloseRequest");
+    expect(closeReq.channelId).toBe(4);
+    expect(closeReq.grantSecret).toBe(grantSecret);
+    expect(await closed).toBe(1003);
+
+    const overflow = new WebSocket(statusBody.url);
+    overflow.binaryType = "arraybuffer";
+    const overflowReady = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("stream open timeout")), 10_000);
+      overflow.addEventListener("open", () => { clearTimeout(timer); resolve(); });
+      overflow.addEventListener("error", () => { clearTimeout(timer); reject(new Error("stream open failed")); });
+    });
+    const overflowOpen = JSON.parse(await nextFrame() as string) as { requestId: string };
+    ws.send(JSON.stringify({
+      type: "tcpStreamOpenResponse",
+      requestId: overflowOpen.requestId,
+      success: true,
+      channelId: 4,
+      byteCredits: 16 * 1024,
+    }));
+    await overflowReady;
+    const overflowCode = new Promise<number>((resolve) => overflow.addEventListener("close", (event) => resolve(event.code)));
+    const overflowClose = nextFrame();
+    overflow.send(new Uint8Array(1024 * 1024 + 1));
+    expect(await overflowCode).toBe(1009);
+    expect(JSON.parse(await overflowClose as string).type).toBe("tcpStreamCloseRequest");
+    ws.close();
   }, 30_000);
 });

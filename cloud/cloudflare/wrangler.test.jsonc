@@ -28,7 +28,9 @@
   "vars": {
     "AUTH_TIMEOUT_MS": "2000",
     "REQUEST_TIMEOUT_MS": "2000",
+    "WEBSOCKET_TOKEN_TTL_S": "7200",
     "ROUTING_TOKEN_SECRET": "local-dev-routing-token-secret",
+    "WEBSOCKET_TOKEN_SECRET": "local-dev-websocket-token-secret",
     "ADMIN_TOKEN": "local-dev-admin-token"
   }
 }

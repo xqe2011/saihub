@@ -257,6 +257,7 @@ async function main(): Promise<void> {
 
   const connect = (): void => {
     const ws = new WebSocket(wsUrl);
+    ws.binaryType = "arraybuffer";
     const heartbeat = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send("ping"); }, 10_000);
     ws.addEventListener("open", () => console.log("ws open"));
     ws.addEventListener("close", (e) => {
@@ -268,9 +269,18 @@ async function main(): Promise<void> {
 
     ws.addEventListener("message", async (event) => {
       if (event.data === "pong") return;
+      if (typeof event.data !== "string") {
+        const bytes = event.data instanceof ArrayBuffer
+          ? new Uint8Array(event.data)
+          : ArrayBuffer.isView(event.data)
+            ? new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            : null;
+        if (bytes && bytes.length > 0) ws.send(bytes);
+        return;
+      }
       let msg: Record<string, unknown>;
       try {
-        msg = JSON.parse(String(event.data)) as Record<string, unknown>;
+        msg = JSON.parse(event.data) as Record<string, unknown>;
       } catch {
         console.warn("non-json frame");
         return;
@@ -336,10 +346,40 @@ async function main(): Promise<void> {
         return;
       }
 
+      if (msg.type === "tcpStreamOpenRequest" && typeof msg.requestId === "string") {
+        ws.send(JSON.stringify({
+          type: "tcpStreamOpenResponse", requestId: msg.requestId, success: true, channelId: 1, byteCredits: 16 * 1024,
+        }));
+        return;
+      }
+
+      if (msg.type === "tcpStreamCloseRequest" && typeof msg.requestId === "string") {
+        ws.send(JSON.stringify({ type: "tcpStreamCloseResponse", requestId: msg.requestId, success: true }));
+        return;
+      }
+
       if (msg.type === "request" && typeof msg.requestId === "string" && typeof msg.path === "string") {
         const path = msg.path.split("?")[0] ?? msg.path;
         const method = typeof msg.method === "string" ? msg.method : "GET";
         console.log(`← ${method} ${msg.path}`);
+
+        if (method === "GET" && (path === "/dap/status" || /^\/uart\/\d+\/rfc2217$/.test(path))) {
+          const service = path === "/dap/status" ? "dap" : "rfc2217";
+          const cloud = new URL(CLOUD);
+          const scheme = cloud.protocol === "https:" ? "wss" : "ws";
+          ws.send(JSON.stringify({
+            type: "response",
+            requestId: msg.requestId,
+            status: 200,
+            headers: { "content-type": "application/json" },
+            cloud: { addWebsocketToken: { jsonPathes: ["/url"], websocketPath: `/tcp-stream/${service}` } },
+            body: {
+              prompt: "cloud stream",
+              url: `${scheme}://${cloud.host}/device/${digest}/tcp-stream/${service}?token=$WEBSOCKET_TOKEN$`,
+            },
+          }));
+          return;
+        }
 
         if (path === "/mcp") {
           const rawBody = msg.body === null ? "" : JSON.stringify(msg.body);
