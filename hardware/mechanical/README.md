@@ -39,7 +39,8 @@ coordinates. Generate with `--output PATH` to select another export directory.
   ramp detents replace the thin spring arms. Each catch is **4 mm wide**, projects
   **0.8 mm** from the lip and engages the base wall by **0.6 mm** after the
   **0.2 mm** mating gap. The matching side windows are **4.6 × 1.8 mm**,
-  centred at y = 14 mm and spanning z = 5.1–6.9 mm.
+  centred at y = 14 mm and spanning z = 4.7–6.5 mm, leaving a **1 mm** strip below the base top edge.
+  Both catches and windows are lowered by 0.4 mm; catch supports extend up to the lip.
   Entry and release ramps let the base side walls flex outward: press the cover
   down to close; lift each side gently in turn to open. No small release arms.
   Catch tips remain **0.4 mm** inside the exterior wall plane. Solid extensions
@@ -174,8 +175,9 @@ metadata just to refresh these documents.
 
 The four top-side LEDs remain together at board x=30.3 mm, y=5.2/8.4/11.6/14.8 mm.
 The shell takes these positions directly from `agent/design.json`. Each has a
-1.5 mm circular viewing opening and a separate 2.2 mm outside-diameter light well,
-with 0.4 mm clearance above the nominal 0.6 mm LED body. Recessed labels read
+1.5 mm circular viewing opening and a 3.5 mm outside-diameter light well with a **1 mm wall**.
+Adjacent well exteriors merge at the 3.2 mm pitch. Their bottoms sit at z = 6.2 mm,
+clearing nearby component models by 0.255 mm and the nominal 0.6 mm LED bodies by 1.2 mm. Recessed labels read
 `3V3 OUT`, `5V OUT`, `5V IN`, and `STATUS`; the first two are green, then red and blue.
 The QR sticker area remains blank. All resistors and test pads are on the front, with the other components. The
 bottom allowance is for connector tails and solder. Verify visibility, light

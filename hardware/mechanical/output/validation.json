@@ -6,9 +6,9 @@
     "stl_closed": true
   },
   "cover": {
-    "volume_mm3": 1983.074,
+    "volume_mm3": 2030.693,
     "solid_count": 1,
-    "stl_triangles": 37266,
+    "stl_triangles": 37002,
     "stl_closed": true
   },
   "base_cover_interference_mm3": 0.0,
@@ -63,6 +63,8 @@
   "snap_type": "Solid ramp detents; outward-flexing base walls",
   "snap_engagement_mm": 0.6,
   "snap_projection_mm": 0.8,
+  "snap_window_top_strip_mm": 1.0,
+  "snap_vertical_drop_mm": 0.4,
   "snap_width_mm": 4.0,
   "snap_window_mm": [
     4.6,
@@ -77,8 +79,10 @@
       "STATUS"
     ],
     "opening_diameter_mm": 1.5,
-    "well_outer_diameter_mm": 2.2,
-    "led_top_clearance_mm": 0.4,
+    "well_outer_diameter_mm": 3.5,
+    "sleeve_wall_mm": 1.0,
+    "led_top_clearance_mm": 1.2,
+    "well_bottom_z_mm": 6.2,
     "pitch_mm": 3.2
   }
 }

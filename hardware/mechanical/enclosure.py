@@ -22,6 +22,10 @@ FLOOR = 1.0
 PCB_Z = 2.8  # 1.8 mm above the floor, clearing the available connector-tail model.
 SEAM_Z = 7.5
 LAP = 1.0
+SNAP_DROP = 0.4  # Lower catches and windows together, leaving a 1 mm top strip.
+LED_BORE_RADIUS = 0.75
+LED_SLEEVE_WALL = 1.0
+LED_WELL_BOTTOM = 6.2  # Clears adjacent component models at z=5.945 by 0.255 mm.
 ROOF_Z = 8.5  # 4.1 mm above PCB top; 0.795 mm above the available USB model.
 USB_OPENING_TOP = SEAM_Z  # Align the visible top edge with the header opening.
 BUTTON_OPENING_W, BUTTON_OPENING_H, BUTTON_OPENING_Z = 3.0, 1.8, 4.4
@@ -125,15 +129,16 @@ def make_enclosure():
     # outward over the entry/release ramps; no inward-moving arms or release slots.
     for right in (False, True):
         x = 47.6 if right else 0.4
-        cover += block(0.8, 4.0, 2.4, x=x, y=14.0, z=5.2)
+        cover += block(0.8, 4.0, 2.4 + SNAP_DROP, x=x, y=14.0, z=5.2 - SNAP_DROP)
         # 0.8 mm projection from the lip, less 0.2 mm fit gap = 0.6 engagement.
         outline = [(0, 5.2), (-0.8, 5.8), (-0.8, 6.1), (0, 6.7),
                    (0.8, 6.7), (0.8, 5.2)]
+        outline = [(u, v - SNAP_DROP) for u, v in outline]
         if right:
             outline = [(48 - u, v) for u, v in outline]
         profile = Plane.XZ * Polygon(*outline, align=None)
         cover += Pos(0, 12.0, 0) * extrude(profile, amount=4.0, dir=(0, 1, 0))
-        base -= block(2.0, 4.6, 1.8, x=48.7 if right else -0.7, y=14.0, z=5.1)
+        base -= block(2.0, 4.6, 1.8, x=48.7 if right else -0.7, y=14.0, z=5.1 - SNAP_DROP)
 
     # Intaglio border with a square, full-size sticker bed flush with the cover.
     qr_z = ROOF_Z + WALL - QR_FRAME_DEPTH
@@ -151,11 +156,11 @@ def make_enclosure():
         cover -= text_cut(label, 48 - (1.8 + 2.54 * i), 0.2, 1.8, rotation=90, anchor="bottom")
 
     # Individual wells prevent direct lateral light paths between adjacent lamps.
-    # Well bottoms clear the 0.6 mm LEDs by 0.4 mm; prototype visibility still needs checking.
-    well_bottom = PCB_Z + BOARD_T + 1.0
+    # Thick well walls clear adjacent components; prototype light isolation needs checking.
+    well_bottom = LED_WELL_BOTTOM
     for ref, label, x, y in indicators():
-        cover += Pos(x, y, well_bottom) * Cylinder(1.1, ROOF_Z-well_bottom+0.02, align=(Align.CENTER, Align.CENTER, Align.MIN))
-        cover -= Pos(x, y, well_bottom-0.02) * Cylinder(0.75, ROOF_Z+WALL-well_bottom+0.04, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        cover += Pos(x, y, well_bottom) * Cylinder(LED_BORE_RADIUS + LED_SLEEVE_WALL, ROOF_Z-well_bottom+0.02, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        cover -= Pos(x, y, well_bottom-0.02) * Cylinder(LED_BORE_RADIUS, ROOF_Z+WALL-well_bottom+0.04, align=(Align.CENTER, Align.CENTER, Align.MIN))
         cover -= text_cut(label, x-10.0, y, 1.6, anchor="left")
 
     base.label, cover.label = "Base", "Cover"
@@ -252,6 +257,8 @@ def validate(base, cover, board):
                    "pcb_support_count": 6, "rear_support_centres_mm": [[0.8, 28.4], [24.5, 28.4]],
                    "snap_type": "Solid ramp detents; outward-flexing base walls",
                    "snap_engagement_mm": 0.6, "snap_projection_mm": 0.8,
+                   "snap_window_top_strip_mm": round(SEAM_Z - (5.1 - SNAP_DROP + 1.8), 3),
+                   "snap_vertical_drop_mm": SNAP_DROP,
                    "snap_width_mm": 4.0, "snap_window_mm": [4.6, 1.8],
                    "component_fit": "Prototype verification required"})
     return report
@@ -387,8 +394,11 @@ def main():
     assert len(lamps) == 4 and len({round(x, 4) for _, _, x, _ in lamps}) == 1
     assert all(abs(lamps[i+1][3]-lamps[i][3]-3.2)<1e-6 for i in range(3))
     report['indicator_bank'] = {'labels':[label for _,label,_,_ in lamps],
-                                'opening_diameter_mm':1.5, 'well_outer_diameter_mm':2.2,
-                                'led_top_clearance_mm':0.4, 'pitch_mm':3.2}
+                                'opening_diameter_mm':2 * LED_BORE_RADIUS,
+                                'well_outer_diameter_mm':2 * (LED_BORE_RADIUS + LED_SLEEVE_WALL),
+                                'sleeve_wall_mm':LED_SLEEVE_WALL,
+                                'led_top_clearance_mm':round(LED_WELL_BOTTOM - (PCB_Z + BOARD_T + 0.6), 3),
+                                'well_bottom_z_mm':LED_WELL_BOTTOM, 'pitch_mm':3.2}
     if args.check_components:
         checks = validate_components(base, cover, populated)
         (args.output / "component-clearance.json").write_text(json.dumps(checks, indent=2) + "\n")
