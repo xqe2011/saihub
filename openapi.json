@@ -63,7 +63,7 @@
           "system"
         ],
         "summary": "System info",
-        "description": "Authentication Digest, firmware version, and compiled date from the running image header.",
+        "description": "Authentication Digest, firmware version, compiled date, CPU usage percent, free heap, and minimum free heap since boot.",
         "responses": {
           "200": {
             "description": "System info",
@@ -74,7 +74,10 @@
                   "required": [
                     "digest",
                     "version",
-                    "compiledDate"
+                    "compiledDate",
+                    "cpu_usage_percent",
+                    "free_heap_bytes",
+                    "min_free_heap_since_boot_bytes"
                   ],
                   "additionalProperties": false,
                   "properties": {
@@ -88,13 +91,32 @@
                     "compiledDate": {
                       "type": "string",
                       "description": "Compile date and time from the image header"
+                    },
+                    "cpu_usage_percent": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100,
+                      "description": "CPU usage percent (0-100)"
+                    },
+                    "free_heap_bytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Current free heap in bytes"
+                    },
+                    "min_free_heap_since_boot_bytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Lowest free heap since boot in bytes"
                     }
                   }
                 },
                 "example": {
                   "digest": "1A2B3C4D5E6F7G8H9J0KLMNPQRSTUVWX",
                   "version": "0.1.3",
-                  "compiledDate": "Oct 26 2026 12:00:00"
+                  "compiledDate": "Oct 26 2026 12:00:00",
+                  "cpu_usage_percent": 12.3,
+                  "free_heap_bytes": 131072,
+                  "min_free_heap_since_boot_bytes": 98304
                 }
               }
             }

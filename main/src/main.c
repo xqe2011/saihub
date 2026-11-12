@@ -12,6 +12,7 @@
 #include "ntp.h"
 #include "nvs.h"
 #include "script.h"
+#include "system.h"
 #include "i2c_ctrl.h"
 #include "spi_ctrl.h"
 #include "uart_ctrl.h"
@@ -27,6 +28,7 @@ static const char* tag = "SAIHub-Main";
 
 void app_main(void)
 {
+  System_SampleCpuUsage();
   bool someModuleFailed = false;
   MAIN_LOAD_MODULE(Nvs_Init(), "Nvs");
   MAIN_LOAD_MODULE(Cloud_Init(), "Cloud");
@@ -51,6 +53,7 @@ void app_main(void)
 
   TickType_t lastMemoryLog = xTaskGetTickCount();
   while (true) {
+    System_SampleCpuUsage();
     Lock_SweepExpired();
     TickType_t now = xTaskGetTickCount();
     if ((TickType_t)(now - lastMemoryLog) >= pdMS_TO_TICKS(5000)) {

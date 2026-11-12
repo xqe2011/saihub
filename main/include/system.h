@@ -10,11 +10,15 @@
 #include <esp_err.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct {
   const char* digest;
   const char* version;
   char compiledDate[48];
+  unsigned cpuUsageTenthsPercent; /* 0-1000 in tenths of a percent, latest sampling interval */
+  uint32_t freeHeap;
+  uint32_t minFreeHeapSinceBoot;
 } System_Info;
 
 typedef enum {
@@ -29,7 +33,10 @@ typedef struct {
   char reason[192];    /* failure reason when state is FAILED */
 } System_OtaStatus;
 
-/** Fill info from the running app image header and Authentication Digest. */
+/** Sample CPU usage, should only be called by the maintenance task */
+void System_SampleCpuUsage(void);
+
+/** Fill identity, firmware info, and current resource statistics. */
 void System_GetInfo(System_Info* out);
 
 /** True while a firmware upgrade task is running. */

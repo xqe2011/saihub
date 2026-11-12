@@ -1896,6 +1896,9 @@ static ToolCall_Result ToolCall_GetSystemInfo(void)
   cJSON_AddStringToObject(root, "digest", info.digest ? info.digest : "");
   cJSON_AddStringToObject(root, "version", info.version ? info.version : "");
   cJSON_AddStringToObject(root, "compiledDate", info.compiledDate);
+  cJSON_AddNumberToObject(root, "cpu_usage_percent", info.cpuUsageTenthsPercent / 10.0);
+  cJSON_AddNumberToObject(root, "free_heap_bytes", info.freeHeap);
+  cJSON_AddNumberToObject(root, "min_free_heap_since_boot_bytes", info.minFreeHeapSinceBoot);
   return ToolCall_Ok(root);
 }
 

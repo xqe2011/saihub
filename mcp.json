@@ -1810,7 +1810,7 @@
     },
     {
       "name": "get_system_info",
-      "description": "Return Authentication Digest, firmware version, and compiled date from the running image header.",
+      "description": "Return Authentication Digest, firmware version, compiled date, CPU usage percent, free heap, and minimum free heap since boot.",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false

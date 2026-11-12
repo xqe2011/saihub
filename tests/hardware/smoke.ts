@@ -56,6 +56,11 @@ const EXPECTED_MCP_TOOLS = [
   "renew_lock",
   "delete_lock",
   "run_script",
+  "get_cloud_status",
+  "get_system_info",
+  "check_system_ota",
+  "get_system_ota",
+  "upgrade_system_ota",
 ] as const;
 
 type JsonObject = Record<string, unknown>;
@@ -434,6 +439,34 @@ async function testMcpProtocol(): Promise<void> {
     deferredFailures.push(message);
     log(`continuing after protocol failure: ${message}`);
   }
+}
+
+function assertSystemInfo(info: unknown, label: string): asserts info is JsonObject {
+  assert(isObject(info), `${label} returned a non-object`);
+  assert(typeof info.digest === "string" && info.digest.length > 0, `${label} omitted digest`);
+  assert(typeof info.version === "string" && info.version.length > 0, `${label} omitted version`);
+  assert(typeof info.compiledDate === "string" && info.compiledDate.length > 0, `${label} omitted compiledDate`);
+  assert(typeof info.cpu_usage_percent === "number" && Number.isFinite(info.cpu_usage_percent) &&
+    info.cpu_usage_percent >= 0 && info.cpu_usage_percent <= 100,
+    `${label} returned invalid cpu_usage_percent`);
+  assert(typeof info.free_heap_bytes === "number" && Number.isInteger(info.free_heap_bytes) && info.free_heap_bytes >= 0,
+    `${label} returned invalid free_heap_bytes`);
+  assert(typeof info.min_free_heap_since_boot_bytes === "number" && Number.isInteger(info.min_free_heap_since_boot_bytes) &&
+    info.min_free_heap_since_boot_bytes >= 0,
+    `${label} returned invalid min_free_heap_since_boot_bytes`);
+  assert(info.min_free_heap_since_boot_bytes <= info.free_heap_bytes,
+    `${label} min_free_heap_since_boot_bytes exceeded free_heap_bytes`);
+}
+
+async function testSystemInfo(): Promise<void> {
+  log("REST and MCP system info");
+  const rest = await requestJson<JsonObject>("GET", "/system");
+  assertSystemInfo(rest, "REST GET /system");
+  const mcp = await mcpTool<JsonObject>("get_system_info", {});
+  assertSystemInfo(mcp, "MCP get_system_info");
+  assert(rest.digest === mcp.digest, "REST/MCP system digest disagreed");
+  assert(rest.version === mcp.version, "REST/MCP system version disagreed");
+  assert(rest.compiledDate === mcp.compiledDate, "REST/MCP system compiledDate disagreed");
 }
 
 async function testInventorySurfaces(state: Snapshot): Promise<void> {
@@ -1647,6 +1680,7 @@ async function main(): Promise<void> {
   log(`target ${target.origin}${target.pathname}`);
   await testRestMetadata();
   await testMcpProtocol();
+  await runSection("system info", testSystemInfo);
   snapshot = await captureSnapshot();
   mutationStarted = true;
   await runSection("inventory", () => testInventorySurfaces(snapshot!));

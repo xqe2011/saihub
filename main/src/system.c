@@ -16,15 +16,18 @@
 #include <esp_https_ota.h>
 #include <esp_log.h>
 #include <esp_system.h>
+#include <esp_timer.h>
 #include <esp_tls_errors.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static const char* tag = "SAIHub-System";
 
+static atomic_uint cpuUsageTenthsPercent;
 static portMUX_TYPE otaMux = portMUX_INITIALIZER_UNLOCKED;
 static System_OtaState otaState = SYSTEM_OTA_IDLE;
 static int otaProgress = -1;
@@ -48,10 +51,32 @@ static void System_OtaSetState(System_OtaState state, int progress, const char* 
   portEXIT_CRITICAL(&otaMux);
 }
 
+void System_SampleCpuUsage(void)
+{
+  static uint64_t previousTime;
+  static uint64_t previousIdle;
+  uint64_t idle = 0;
+  for (BaseType_t core = 0; core < configNUMBER_OF_CORES; core++) {
+    idle += ulTaskGetIdleRunTimeCounterForCore(core);
+  }
+  uint64_t now = (uint64_t)esp_timer_get_time();
+  uint64_t elapsed = (now - previousTime) * configNUMBER_OF_CORES;
+  uint64_t idleElapsed = idle - previousIdle;
+  if (elapsed > 0) {
+    unsigned usage = idleElapsed >= elapsed ? 0 : (unsigned)(((elapsed - idleElapsed) * 1000) / elapsed);
+    atomic_store_explicit(&cpuUsageTenthsPercent, usage, memory_order_relaxed);
+  }
+  previousTime = now;
+  previousIdle = idle;
+}
+
 void System_GetInfo(System_Info* out)
 {
   if (!out) return;
   const esp_app_desc_t* desc = esp_app_get_description();
+  out->cpuUsageTenthsPercent = atomic_load_explicit(&cpuUsageTenthsPercent, memory_order_relaxed);
+  out->freeHeap = esp_get_free_heap_size();
+  out->minFreeHeapSinceBoot = esp_get_minimum_free_heap_size();
   out->digest = Cloud_GetPublicKeyDigest();
   out->version = desc->version;
   snprintf(out->compiledDate, sizeof(out->compiledDate), "%s %s", desc->date, desc->time);
