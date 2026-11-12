@@ -99,6 +99,7 @@ body{
 .icon-btn svg{width:1.35rem;height:1.35rem}
 .top-actions{display:flex;align-items:center;gap:.5rem;flex:none}
 .lang-select{
+  text-align:center;text-align-last:center;
   appearance:none;border:0;border-radius:999px;padding:.55rem .9rem;font:inherit;font-size:.82rem;font-weight:650;
   background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-on-secondary-container);cursor:pointer;min-height:2.75rem;
 }
@@ -272,15 +273,6 @@ body{
   box-shadow:none;
   transform:none;
 }
-.status{
-  min-height:1.35rem;
-  margin-top:.15rem;
-  font-size:.88rem;
-  line-height:1.35;
-  color:var(--md-sys-color-on-surface-variant);
-}
-.status.busy{color:var(--md-sys-color-primary);font-weight:600}
-.status.ok{color:var(--md-sys-color-primary);font-weight:600}
 .snack{
   position:fixed;
   left:50%;
@@ -373,8 +365,7 @@ body{
         <input id="password" type="password" placeholder=" " autocomplete="current-password"/>
         <label for="password" data-i18n="password">Password</label>
       </div>
-      <button class="btn btn-filled" type="button" id="connect" disabled data-i18n="connect">Connect</button>
-      <div class="status" id="status" role="status" aria-live="polite"></div>
+      <button class="btn btn-filled" type="button" id="connect" disabled aria-live="polite" data-i18n="connect">Connect</button>
       <div class="ip-card" id="ip">
         <div class="label" data-i18n="deviceIp">Device IP</div>
         <div class="value" id="ipValue"></div>
@@ -392,7 +383,7 @@ const I18N={
     secured:'Secured network', open:'Open network', empty:'No networks found nearby.',
     scanFailEmpty:'Could not scan. Tap refresh to try again.', scanFail:'Scan failed.',
     connecting:'Connecting…', waiting:'Waiting…', waitingDevice:'Waiting for device…',
-    connected:'Connected. Setup network will close shortly.',
+    connected:'Connected',
     startFail:'Could not start connection.', connFail:'Connection failed.',
     'err.generic':'Something went wrong.','err.request':'Request failed'
   },
@@ -403,7 +394,7 @@ const I18N={
     secured:'加密网络', open:'开放网络', empty:'附近未找到网络。',
     scanFailEmpty:'无法扫描。点刷新重试。', scanFail:'扫描失败。',
     connecting:'正在连接…', waiting:'等待中…', waitingDevice:'正在等待设备…',
-    connected:'已连接。设置网络即将关闭。',
+    connected:'已连接',
     startFail:'无法开始连接。', connFail:'连接失败。',
     'err.generic':'出错了。','err.request':'请求失败'
   }
@@ -429,7 +420,6 @@ function applyStaticI18n(){
   document.querySelectorAll('[data-i18n-title]').forEach(el=>{el.title=t(el.dataset.i18nTitle);});
 }
 const listEl=document.getElementById('list');
-const statusEl=document.getElementById('status');
 const snackEl=document.getElementById('snack');
 const ipEl=document.getElementById('ip');
 const ipValueEl=document.getElementById('ipValue');
@@ -437,6 +427,16 @@ const passEl=document.getElementById('password');
 const connectBtn=document.getElementById('connect');
 let selected=null, pollTimer=null, snackTimer=null;
 let lastNets=null;
+let connectionState='idle';
+
+function setConnectState(state, label){
+  connectionState=state;
+  connectBtn.dataset.i18n=label;
+  connectBtn.textContent=t(label);
+  connectBtn.disabled=state!=='idle'||!selected;
+  passEl.disabled=state!=='idle';
+  document.getElementById('refresh').disabled=state!=='idle';
+}
 
 function showError(text){
   clearTimeout(snackTimer);
@@ -458,17 +458,16 @@ function escapeHtml(s){
 }
 
 async function loadNetworks(){
-  statusEl.className='status busy';
-  statusEl.textContent=t('scanning');
+  if(connectionState!=='idle') return;
+  listEl.innerHTML='<div class="empty">'+t('scanning')+'</div>';
   ipEl.className='ip-card';
   try{
     const r=await fetch('/wifi/networks');
     const j=await r.json();
+    if(!r.ok) throw new Error(j.reason||t('scanFail'));
     const nets=j.networks||[];
     if(!nets.length){
       listEl.innerHTML='<div class="empty">'+t('empty')+'</div>';
-      statusEl.className='status';
-      statusEl.textContent='';
       return;
     }
     lastNets=nets;
@@ -485,6 +484,7 @@ async function loadNetworks(){
         '<span class="net-text"><span class="net-ssid">'+escapeHtml(n.ssid)+'</span><span class="net-sub">'+sub+'</span></span>'+
         '<span class="net-trail">'+(n.secure?iconLock:'')+bars(n.rssi)+'</span>';
       b.onclick=()=>{
+        if(connectionState!=='idle') return;
         selected=n.ssid;
         passEl.value='';
         [...listEl.querySelectorAll('.net')].forEach(x=>{
@@ -493,30 +493,24 @@ async function loadNetworks(){
         });
         b.classList.add('selected');
         b.setAttribute('aria-selected','true');
-        connectBtn.disabled=false;
-        statusEl.className='status';
-        statusEl.textContent='';
+        setConnectState('idle','connect');
         ipEl.className='ip-card';
         if(!n.secure) passEl.focus();
         else passEl.focus();
       };
       listEl.appendChild(b);
     });
-    statusEl.className='status';
-    statusEl.textContent='';
   }catch(e){
     listEl.innerHTML='<div class="empty">'+t('scanFailEmpty')+'</div>';
-    statusEl.className='status';
-    statusEl.textContent='';
     showError(t('scanFail'));
   }
 }
 
 async function connect(){
-  if(!selected)return;
-  connectBtn.disabled=true;
-  statusEl.className='status busy';
-  statusEl.textContent=t('connecting');
+  if(!selected||connectionState!=='idle')return;
+  clearTimeout(snackTimer);
+  snackEl.classList.remove('show');
+  setConnectState('connecting','connecting');
   ipEl.className='ip-card';
   try{
     const r=await fetch('/wifi/connect',{
@@ -530,10 +524,8 @@ async function connect(){
     }
     pollStatus();
   }catch(e){
-    statusEl.className='status';
-    statusEl.textContent='';
     showError(e.message||t('startFail'));
-    connectBtn.disabled=false;
+    setConnectState('idle','connect');
   }
 }
 
@@ -543,8 +535,7 @@ async function pollStatus(){
     const r=await fetch('/wifi/status');
     const j=await r.json();
     if(j.state==='connected'){
-      statusEl.className='status ok';
-      statusEl.textContent=t('connected');
+      setConnectState('connected','connected');
       if(j.ip){
         ipValueEl.textContent=j.ip;
         ipEl.className='ip-card show';
@@ -552,17 +543,13 @@ async function pollStatus(){
       return;
     }
     if(j.state==='failed'){
-      statusEl.className='status';
-      statusEl.textContent='';
       showError(j.reason||t('connFail'));
-      connectBtn.disabled=false;
+      setConnectState('idle','connect');
       return;
     }
-    statusEl.className='status busy';
-    statusEl.textContent=j.state==='connecting'?t('connecting'):t('waiting');
+    setConnectState('connecting',j.state==='connecting'?'connecting':'waiting');
   }catch(e){
-    statusEl.className='status busy';
-    statusEl.textContent=t('waitingDevice');
+    setConnectState('connecting','waitingDevice');
   }
   pollTimer=setTimeout(pollStatus,1200);
 }
@@ -589,14 +576,13 @@ document.getElementById('lang').onchange=(e)=>{
         '<span class="net-text"><span class="net-ssid">'+escapeHtml(n.ssid)+'</span><span class="net-sub">'+sub+'</span></span>'+
         '<span class="net-trail">'+(n.secure?iconLock:'')+bars(n.rssi)+'</span>';
       b.onclick=()=>{
+        if(connectionState!=='idle') return;
         selected=n.ssid;
         passEl.value='';
         [...listEl.querySelectorAll('.net')].forEach(x=>{x.classList.remove('selected');x.setAttribute('aria-selected','false');});
         b.classList.add('selected');
         b.setAttribute('aria-selected','true');
-        connectBtn.disabled=false;
-        statusEl.className='status';
-        statusEl.textContent='';
+        setConnectState('idle','connect');
         ipEl.className='ip-card';
         passEl.focus();
       };

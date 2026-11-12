@@ -278,6 +278,11 @@ static void Wifi_FinishPairingStop(void)
 
   esp_wifi_set_mode(WIFI_MODE_STA);
 
+  allowReconnect = true;
+  if (!isConnected) {
+    xTimerReset(reconnectTimer, portMAX_DELAY);
+  }
+
   TOOL_EXECUTE_CALLBACKS(pairingStoppedCallbacks);
   if (fireConnected) {
     TOOL_EXECUTE_CALLBACKS(connectedCallbacks);
@@ -304,13 +309,18 @@ esp_err_t Wifi_StartPairing(void)
   apConfig.ap.max_connection = 4;
   apConfig.ap.ssid_hidden = 0;
 
-  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_set_mode(WIFI_MODE_APSTA), "set APSTA failed");
-  TOOL_CHECK_ESP_OK_OR_LOG_RETURN(esp_wifi_set_config(WIFI_IF_AP, &apConfig), "set AP config failed");
-
-  Wifi_ApplyPairingDhcp();
-  if (Dns_Start() != ESP_OK) {
-    ESP_LOGW(tag, "DNS hijack failed; captive prompt may not appear");
-  }
+  /* Leave the station's channel before starting AP mode: it may be a DFS channel. */
+  bool resumeReconnect = allowReconnect;
+  allowReconnect = false;
+  xTimerStop(reconnectTimer, portMAX_DELAY);
+  esp_err_t err = esp_wifi_disconnect();
+  if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_CONNECT) goto pairing_failed;
+  err = esp_wifi_set_channel(apConfig.ap.channel, WIFI_SECOND_CHAN_NONE);
+  if (err != ESP_OK) goto pairing_failed;
+  err = esp_wifi_set_mode(WIFI_MODE_APSTA);
+  if (err != ESP_OK) goto pairing_failed;
+  err = esp_wifi_set_config(WIFI_IF_AP, &apConfig);
+  if (err != ESP_OK) goto pairing_failed;
 
   isPairing = true;
   pairState = WIFI_PAIR_STATE_IDLE;
@@ -320,10 +330,22 @@ esp_err_t Wifi_StartPairing(void)
   ignorePairingStaLeave = false;
   xTimerStop(pairCloseTimer, 0);
 
+  Wifi_ApplyPairingDhcp();
+  if (Dns_Start() != ESP_OK) {
+    ESP_LOGW(tag, "DNS hijack failed; captive prompt may not appear");
+  }
+
   ESP_LOGI(tag, "Pairing AP started: %s", pairingApSsid);
   TOOL_EXECUTE_CALLBACKS(pairingStartedCallbacks);
   Buzzer_Play(CONFIG_WIFI_PAIRING_BUZZER_SEQUENCE, NULL, 0);
   return ESP_OK;
+
+pairing_failed:
+  ESP_LOGW(tag, "start pairing failed: %s", esp_err_to_name(err));
+  esp_wifi_set_mode(WIFI_MODE_STA);
+  allowReconnect = resumeReconnect;
+  if (allowReconnect) xTimerReset(reconnectTimer, portMAX_DELAY);
+  return err;
 }
 
 esp_err_t Wifi_StopPairing(void)
@@ -334,14 +356,13 @@ esp_err_t Wifi_StopPairing(void)
     return ESP_OK;
   }
   Wifi_FinishPairingStop();
-  allowReconnect = true;
   return ESP_OK;
 }
 
 static void Wifi_ReconnectCallback(TimerHandle_t timer)
 {
   (void)timer;
-  if (allowReconnect && !portalConnectInFlight) {
+  if (allowReconnect && !isPairing && !portalConnectInFlight) {
     esp_wifi_connect();
     TOOL_EXECUTE_CALLBACKS(connectingCallbacks);
   }
@@ -436,7 +457,7 @@ static void Wifi_EventHandler(void* arg, esp_event_base_t eventBase, int32_t eve
         return;
       }
 
-      if (allowReconnect) {
+      if (allowReconnect && !isPairing) {
         xTimerStop(reconnectTimer, portMAX_DELAY);
         xTimerStart(reconnectTimer, portMAX_DELAY);
       }
