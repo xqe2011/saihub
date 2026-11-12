@@ -27,6 +27,7 @@
   ],
   "vars": {
     "AUTH_TIMEOUT_MS": "10000",
-    "REQUEST_TIMEOUT_MS": "55000"
+    "REQUEST_TIMEOUT_MS": "55000",
+    "WEBSOCKET_TOKEN_TTL_S": "86400"
   }
 }

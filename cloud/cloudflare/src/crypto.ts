@@ -123,13 +123,13 @@ export type RoutingTokenPayload = {
 
 const GCM_IV_BYTES = 12;
 
-async function routingAesKey(secret: string): Promise<CryptoKey> {
+async function deriveAesKeyFromSecret(secret: string): Promise<CryptoKey> {
   const digest = await crypto.subtle.digest("SHA-256", TEXT_ENCODER.encode(secret));
   return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
 export async function sealRoutingToken(secret: string, payload: RoutingTokenPayload): Promise<string> {
-  const key = await routingAesKey(secret);
+  const key = await deriveAesKeyFromSecret(secret);
   const iv = crypto.getRandomValues(new Uint8Array(GCM_IV_BYTES));
   const plaintext = TEXT_ENCODER.encode(JSON.stringify(payload));
   const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext));
@@ -137,6 +137,62 @@ export async function sealRoutingToken(secret: string, payload: RoutingTokenPayl
   packed.set(iv, 0);
   packed.set(ciphertext, iv.length);
   return bytesToBase64Url(packed);
+}
+
+export type WebsocketTokenPayload = {
+  expireAt: number;
+  devicePublicKeyDigest: string;
+  path: string;
+  grantSecret: string;
+};
+
+export async function sealWebsocketToken(secret: string, payload: WebsocketTokenPayload): Promise<string> {
+  const key = await deriveAesKeyFromSecret(secret);
+  const iv = crypto.getRandomValues(new Uint8Array(GCM_IV_BYTES));
+  const plaintext = TEXT_ENCODER.encode(JSON.stringify(payload));
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext));
+  const packed = new Uint8Array(iv.length + ciphertext.length);
+  packed.set(iv, 0);
+  packed.set(ciphertext, iv.length);
+  return bytesToBase64Url(packed);
+}
+
+export async function openWebsocketToken(
+  secret: string,
+  token: string,
+  nowSec = Date.now() / 1000,
+): Promise<WebsocketTokenPayload | null> {
+  const packed = base64UrlToBytes(token);
+  if (!packed || packed.length <= GCM_IV_BYTES) {
+    return null;
+  }
+  const iv = packed.subarray(0, GCM_IV_BYTES);
+  const ciphertext = packed.subarray(GCM_IV_BYTES);
+  try {
+    const key = await deriveAesKeyFromSecret(secret);
+    const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+    const parsed = JSON.parse(TEXT_DECODER.decode(plaintext)) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+    const record = parsed as Record<string, unknown>;
+    const expireAt = record.expireAt;
+    const devicePublicKeyDigest = record.devicePublicKeyDigest;
+    const path = record.path;
+    const grantSecret = record.grantSecret;
+    if (typeof expireAt !== "number" || !Number.isFinite(expireAt) || expireAt <= nowSec) {
+      return null;
+    }
+    if (typeof devicePublicKeyDigest !== "string" || typeof path !== "string" || typeof grantSecret !== "string") {
+      return null;
+    }
+    if (!isDigest(devicePublicKeyDigest) || path.length === 0 || grantSecret.length === 0) {
+      return null;
+    }
+    return { expireAt, devicePublicKeyDigest, path, grantSecret };
+  } catch {
+    return null;
+  }
 }
 
 export async function openRoutingToken(secret: string, token: string): Promise<RoutingTokenPayload | null> {
@@ -147,7 +203,7 @@ export async function openRoutingToken(secret: string, token: string): Promise<R
   const iv = packed.subarray(0, GCM_IV_BYTES);
   const ciphertext = packed.subarray(GCM_IV_BYTES);
   try {
-    const key = await routingAesKey(secret);
+    const key = await deriveAesKeyFromSecret(secret);
     const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
     const parsed = JSON.parse(TEXT_DECODER.decode(plaintext)) as unknown;
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {

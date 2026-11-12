@@ -1,4 +1,5 @@
 # Worker secrets. Copy to `.dev.vars` for local `wrangler dev`.
 # Deploy to Cloudflare prompts for these and stores them as Worker secrets.
 ROUTING_TOKEN_SECRET=change-me
+WEBSOCKET_TOKEN_SECRET=change-me
 ADMIN_TOKEN=change-me

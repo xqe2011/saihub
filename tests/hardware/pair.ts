@@ -81,7 +81,7 @@ class Board {
   row: number[];
   snapshot?: Snapshot;
   uart: Json = { enable: false, baudRate: 115200, dataBits: 8, parity: "none", stopBits: 1,
-    encoding: "byte", pins: { rx: null, tx: null } };
+    encoding: "byte", pins: { rx: null, tx: null, rts: null, dtr: null } };
   spi: Json;
   i2c: Json;
   touched = false;
@@ -421,7 +421,7 @@ async function uartPair(encoding = "byte", condition: Json = {}, mcp = false): P
   await releaseAll();
   for (const [index, board] of boards.entries()) {
     await board.configureUart({ enable: true, baudRate: 115200, dataBits: 8, parity: "none", stopBits: 1,
-      encoding, ...condition, pins: { tx: board.row[index], rx: board.row[1 - index] } }, mcp);
+      encoding, ...condition, pins: { tx: board.row[index], rx: board.row[1 - index], rts: null, dtr: null } }, mcp);
   }
   // Enabling either receiver before the opposite transmitter is idle can collect startup bytes.
   await Bun.sleep(20);
@@ -490,6 +490,21 @@ async function uart(): Promise<void> {
   }
   const observed = Array.from({ length: 4 }, (_, index) => JSON.stringify(all.slice(index * 4, index * 4 + 4)));
   equal(observed.sort(), chunks.map((chunk) => JSON.stringify(chunk)).sort(), "Concurrent UART intact chunks");
+}
+
+async function uartControlLines(): Promise<void> {
+  const source = boards[0]!;
+  const sink = boards[1]!;
+  for (const line of ["rts", "dtr"] as const) {
+    await releaseAll();
+    // Reuse the first wire for the control line and the second source pin for RX.
+    await sink.pin(sink.row[0]!, "digitalInput", false, { pullDown: true });
+    await source.configureUart({ enable: true, baudRate: 115200, dataBits: 8, parity: "none", stopBits: 1,
+      encoding: "byte", pins: { rx: source.row[1], tx: null, rts: null, dtr: null, [line]: source.row[0] } });
+    equal((await sink.levels())[0], 1, "UART " + line.toUpperCase() + " starts released (high)");
+    await source.tool("uart_set_" + line, { id: 0, active: true });
+    equal((await sink.levels(true))[0], 0, "UART " + line.toUpperCase() + " asserts low");
+  }
 }
 
 async function i2cSetup(master: Board, slave: Board, hz = 100000, mcp = false, address = 0x42): Promise<void> {
@@ -807,6 +822,7 @@ async function main(): Promise<void> {
     console.log("Connect those wires plus GND. "
       + "Selected pins, UART, SPI and I2C must be idle.");
     console.log("First four columns: SPI MISO, MOSI, clock, select. UART uses the first two columns.");
+    console.log("UART RTS/DTR reuse the first wire one at a time; the second source pin is RX. No extra wires needed.");
     console.log("I2C uses the first two columns as SDA, SCL, with pull-ups enabled on both boards.");
     console.log("Two-pin TEST_PINS='[1,2]' is supported; sections requiring four pins are skipped.");
     console.log("Optional: TEST_ROUNDS=1 TEST_SOAK_ITERATIONS=8 TEST_TIMEOUT_MS=15000 TEST_SEED=20261101");
@@ -844,6 +860,7 @@ async function main(): Promise<void> {
   }
   await section("PWM, pulse and trace, both directions", pwmTracePulse);
   await section("UART framing, payloads, flush and concurrency", uart);
+  await section("UART RTS/DTR active-low control", uartControlLines);
   await section(I2C_MATRIX_SECTION, i2cMatrix);
   await section(I2C_FEATURES_SECTION, i2cFeatures);
   await section("SPI modes, bit orders, clocks and 1-255-byte payloads", spiMatrix, true, 4);

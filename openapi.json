@@ -26,6 +26,9 @@
       "name": "uart"
     },
     {
+      "name": "dap"
+    },
+    {
       "name": "spi"
     },
     {
@@ -294,7 +297,7 @@
           "meta"
         ],
         "summary": "Human control UI (HTML)",
-        "description": "Browser page for humans to control pins, power rails, UART, and the buzzer. Agents should use GET /openapi.json and call the JSON APIs instead of scraping this page.",
+        "description": "Browser page for humans to control pins, power rails, UART, DAP, and the buzzer. Agents should use GET /openapi.json and call the JSON APIs instead of scraping this page.",
         "responses": {
           "200": {
             "description": "HTML control page",
@@ -1489,6 +1492,100 @@
         }
       }
     },
+    "/dap/status": {
+      "get": {
+        "tags": [
+          "dap"
+        ],
+        "summary": "CMSIS-DAP TCP status",
+        "description": "prompt explains how to connect.",
+        "responses": {
+          "200": {
+            "description": "Service is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DapStatus"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "CMSIS-DAP is not running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dap/config": {
+      "get": {
+        "tags": [
+          "dap"
+        ],
+        "summary": "Read CMSIS-DAP configuration",
+        "description": "Returns the current enable flag and pins. pins.nreset is null when reset is unwired. enable false means the TCP service is stopped.",
+        "responses": {
+          "200": {
+            "description": "Current configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DapConfigBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "dap"
+        ],
+        "summary": "Configure CMSIS-DAP",
+        "description": "enable true claims pins.swclk, pins.swdio, and pins.nreset when set, then starts the TCP service. enable false stops it and releases those pins.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DapConfigBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Config applied"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
     "/uart/": {
       "get": {
         "tags": [
@@ -1530,6 +1627,7 @@
           "uart"
         ],
         "summary": "Configure a UART",
+        "description": "mode native (default when omitted) requires baudRate, dataBits, parity, stopBits, and encoding. mode rfc2217 accepts only enable, pins, and mode. When enable is true, at least one of pins.rx or pins.tx is required.",
         "parameters": [
           {
             "$ref": "#/components/parameters/UartPath"
@@ -1573,6 +1671,45 @@
         }
       }
     },
+    "/uart/{id}/rfc2217": {
+      "get": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "RFC2217 TCP status",
+        "description": "prompt explains how to connect. 503 when this UART is not enabled in rfc2217 mode.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rfc2217Status"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "RFC2217 is not running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/uart/{id}/transmit": {
       "post": {
         "tags": [
@@ -1606,6 +1743,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "412": {
             "$ref": "#/components/responses/PreconditionFailed"
@@ -1650,6 +1790,9 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
           "412": {
             "$ref": "#/components/responses/PreconditionFailed"
           },
@@ -1683,8 +1826,197 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
           "412": {
             "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/uart/{id}/dtr": {
+      "get": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "Read UART DTR state",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current DTR state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UartLineState"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "Set UART DTR state",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UartLineBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Updated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      }
+    },
+    "/uart/{id}/rts": {
+      "get": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "Read UART RTS state",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current RTS state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UartLineState"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "423": {
+            "$ref": "#/components/responses/Locked"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "uart"
+        ],
+        "summary": "Set UART RTS state",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UartPath"
+          },
+          {
+            "$ref": "#/components/parameters/XLockId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UartLineBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Updated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
           },
           "422": {
             "$ref": "#/components/responses/Unprocessable"
@@ -2933,6 +3265,76 @@
           }
         }
       },
+      "DapPins": {
+        "type": "object",
+        "required": [
+          "swclk",
+          "swdio"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "swclk": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "swdio": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "nreset": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 7
+          }
+        }
+      },
+      "DapConfigBody": {
+        "type": "object",
+        "required": [
+          "enable",
+          "pins"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "enable": {
+            "type": "boolean"
+          },
+          "pins": {
+            "$ref": "#/components/schemas/DapPins"
+          }
+        }
+      },
+      "DapStatusLocal": {
+        "type": "object",
+        "required": ["prompt", "port", "ip"],
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {"type": "string"},
+          "port": {"type": "integer"},
+          "ip": {"type": "string"}
+        }
+      },
+      "DapStatusCloud": {
+        "type": "object",
+        "required": ["prompt", "url"],
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {"type": "string"},
+          "url": {"type": "string", "description": "WebSocket URL for the TCP byte stream."}
+        }
+      },
+      "DapStatus": {
+        "description": "Local responses include prompt, port, and ip. Cloud responses include prompt and url.",
+        "oneOf": [
+          {"$ref": "#/components/schemas/DapStatusLocal"},
+          {"$ref": "#/components/schemas/DapStatusCloud"}
+        ]
+      },
       "UartEncoding": {
         "type": "string",
         "enum": [
@@ -2950,9 +3352,12 @@
       },
       "UartPins": {
         "type": "object",
+        "description": "DTR and RTS are active-low outputs. Assigned control lines start released (pin high).",
         "required": [
           "rx",
-          "tx"
+          "tx",
+          "rts",
+          "dtr"
         ],
         "properties": {
           "rx": {
@@ -2970,12 +3375,36 @@
             ],
             "minimum": 0,
             "maximum": 7
+          },
+          "rts": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 7
+          },
+          "dtr": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 7
           }
         },
         "additionalProperties": false
       },
-      "UartConfigBody": {
+      "UartMode": {
+        "type": "string",
+        "enum": [
+          "native",
+          "rfc2217"
+        ]
+      },
+      "UartNativeConfigBody": {
         "type": "object",
+        "description": "mode native, or omitted. Framing fields are required.",
         "required": [
           "enable",
           "baudRate",
@@ -2988,6 +3417,12 @@
         "properties": {
           "enable": {
             "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "native"
+            ]
           },
           "baudRate": {
             "type": "integer",
@@ -3021,24 +3456,150 @@
         },
         "additionalProperties": false
       },
-      "UartState": {
-        "allOf": [
+      "UartRfc2217ConfigBody": {
+        "type": "object",
+        "description": "mode rfc2217. Only enable, pins, and mode are accepted.",
+        "required": [
+          "enable",
+          "mode",
+          "pins"
+        ],
+        "properties": {
+          "enable": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "const": "rfc2217"
+          },
+          "pins": {
+            "$ref": "#/components/schemas/UartPins"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UartConfigBody": {
+        "description": "mode native (default when omitted) requires framing fields. mode rfc2217 accepts only enable, pins, and mode.",
+        "oneOf": [
           {
-            "$ref": "#/components/schemas/UartConfigBody"
+            "$ref": "#/components/schemas/UartNativeConfigBody"
           },
           {
-            "type": "object",
-            "required": [
-              "id"
-            ],
-            "properties": {
-              "id": {
-                "type": "integer",
-                "minimum": 0
-              }
-            }
+            "$ref": "#/components/schemas/UartRfc2217ConfigBody"
           }
         ]
+      },
+      "Rfc2217StatusLocal": {
+        "type": "object",
+        "required": ["prompt", "port", "ip"],
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {"type": "string"},
+          "port": {"type": "integer"},
+          "ip": {"type": "string"}
+        }
+      },
+      "Rfc2217StatusCloud": {
+        "type": "object",
+        "required": ["prompt", "url"],
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {"type": "string"},
+          "url": {"type": "string", "description": "WebSocket URL for the TCP byte stream."}
+        }
+      },
+      "Rfc2217Status": {
+        "description": "Local responses include prompt, port, and ip. Cloud responses include prompt and url.",
+        "oneOf": [
+          {"$ref": "#/components/schemas/Rfc2217StatusLocal"},
+          {"$ref": "#/components/schemas/Rfc2217StatusCloud"}
+        ]
+      },
+      "UartLineBody": {
+        "type": "object",
+        "required": [
+          "active"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean",
+            "description": "True asserts the active-low line (pin low). False releases it (pin high)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "UartLineState": {
+        "type": "object",
+        "required": [
+          "active",
+          "time"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean",
+            "description": "Stored assertion state. True means asserted (pin low). False means released (pin high)."
+          },
+          "time": {
+            "$ref": "#/components/schemas/TimeUs"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UartState": {
+        "type": "object",
+        "required": [
+          "id",
+          "enable",
+          "mode",
+          "baudRate",
+          "dataBits",
+          "parity",
+          "stopBits",
+          "encoding",
+          "pins"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "enable": {
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/UartMode"
+          },
+          "baudRate": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "dataBits": {
+            "type": "integer",
+            "enum": [
+              5,
+              6,
+              7,
+              8
+            ]
+          },
+          "parity": {
+            "$ref": "#/components/schemas/UartParity"
+          },
+          "stopBits": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "encoding": {
+            "$ref": "#/components/schemas/UartEncoding"
+          },
+          "pins": {
+            "$ref": "#/components/schemas/UartPins"
+          }
+        }
       },
       "UartTransmitBody": {
         "type": "object",
@@ -3782,7 +4343,7 @@
         }
       },
       "Conflict": {
-        "description": "A request overlaps an existing lock, peripheral hold, or active trace; or resource configuration conflicts with a held pin",
+        "description": "A request overlaps an existing lock, peripheral hold, or active trace; resource configuration conflicts with a held pin; or UART I/O while mode is rfc2217",
         "content": {
           "application/json": {
             "schema": {

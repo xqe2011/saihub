@@ -489,7 +489,7 @@
     },
     {
       "name": "list_uarts",
-      "description": "List UART ids with enable, baud, framing, encoding, and pins.",
+      "description": "List UART ids with enable, mode, baud, framing, encoding, and pins.",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false
@@ -502,7 +502,7 @@
     },
     {
       "name": "configure_uart",
-      "description": "Configure one UART by id. When enable is true, at least one of pins.rx or pins.tx is required.",
+      "description": "Configure one UART by id. mode native (default) requires baudRate, dataBits, parity, stopBits, and encoding. In rfc2217 mode, pass only id, enable, pins, and mode. The TCP client sets framing. When enable is true, at least one of pins.rx or pins.tx is required.",
       "annotations": {
         "readOnlyHint": false,
         "idempotentHint": true,
@@ -513,11 +513,6 @@
         "required": [
           "id",
           "enable",
-          "baudRate",
-          "dataBits",
-          "parity",
-          "stopBits",
-          "encoding",
           "pins"
         ],
         "additionalProperties": false,
@@ -527,6 +522,14 @@
           },
           "enable": {
             "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "native",
+              "rfc2217"
+            ],
+            "description": "Default native. rfc2217 rejects baudRate, dataBits, parity, stopBits, and encoding."
           },
           "baudRate": {
             "type": "integer",
@@ -586,7 +589,9 @@
             "type": "object",
             "required": [
               "rx",
-              "tx"
+              "tx",
+              "rts",
+              "dtr"
             ],
             "additionalProperties": false,
             "properties": {
@@ -601,6 +606,26 @@
                 ]
               },
               "tx": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/pin"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rts": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/pin"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "dtr": {
                 "oneOf": [
                   {
                     "$ref": "#/$defs/pin"
@@ -734,6 +759,185 @@
             "type": "string",
             "minLength": 1,
             "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "uart_get_dtr",
+      "description": "Read the active-low UART DTR state.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "uart_get_rts",
+      "description": "Read the active-low UART RTS state.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "uart_set_dtr",
+      "description": "Set the active-low UART DTR state.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "active"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "True asserts DTR (pin low). False releases DTR (pin high)."
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "uart_set_rts",
+      "description": "Set the active-low UART RTS state.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "active"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "True asserts RTS (pin low). False releases RTS (pin high)."
+          },
+          "lockId": {
+            "$ref": "#/$defs/lockId"
+          }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the resource."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_uart_rfc2217_status",
+      "description": "Read RFC2217 status for one UART. prompt explains how to connect. Fails when that UART is not enabled in rfc2217 mode.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uartId"
+          }
+        },
+        "$defs": {
+          "uartId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
           }
         }
       }
@@ -1519,6 +1723,74 @@
             "examples": [
               "...---"
             ]
+          }
+        }
+      }
+    },
+    {
+      "name": "get_dap_status",
+      "description": "Read the CMSIS-DAP status. prompt explains how to connect.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "configure_dap",
+      "description": "Configure CMSIS-DAP. When enable is true, pins.swclk and pins.swdio are required and the TCP service starts. pins.nreset may be null.",
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "enable",
+          "pins"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "enable": {
+            "type": "boolean"
+          },
+          "pins": {
+            "type": "object",
+            "required": [
+              "swclk",
+              "swdio"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "swclk": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 7
+              },
+              "swdio": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 7
+              },
+              "nreset": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 7
+              }
+            }
+          },
+          "lockId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when another lock holds the pins."
           }
         }
       }

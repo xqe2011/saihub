@@ -3,6 +3,7 @@
 #include "button.h"
 #include "buzzer.h"
 #include "cloud.h"
+#include "dap_ctrl.h"
 #include "gpio_ctrl.h"
 #include "http_server.h"
 #include "pwm_ctrl.h"
@@ -36,6 +37,7 @@ void app_main(void)
   MAIN_LOAD_MODULE(UartCtrl_Init(), "Uart");
   MAIN_LOAD_MODULE(SpiCtrl_Init(), "Spi");
   MAIN_LOAD_MODULE(I2cCtrl_Init(), "I2c");
+  MAIN_LOAD_MODULE(DapCtrl_Init(), "Dap");
   MAIN_LOAD_MODULE(Script_Init(), "Script");
   MAIN_LOAD_MODULE(Ntp_Init(), "Ntp");
   MAIN_LOAD_MODULE(HttpServer_Init(), "HttpServer");

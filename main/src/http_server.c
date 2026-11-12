@@ -54,6 +54,9 @@ struct HttpServer_Context {
   HttpServer_CloudWrite cloudWrite;
   void* cloudUser;
   bool cloudBodySent;
+  const char* cloudWebsocketPath;
+  const char* cloudJsonPathes[4];
+  size_t cloudJsonPathCount;
 };
 
 static HttpServer_Method HttpServer_FromEspMethod(httpd_method_t method)
@@ -92,6 +95,16 @@ HttpServer_Method HttpServer_GetMethod(const HttpServer_Context* ctx) {
   return HTTP_SERVER_UNKNOWN;
 }
 const char* HttpServer_GetFrom(const HttpServer_Context* ctx) { return ctx->from; }
+
+void HttpServer_SetCloudAddWebsocketToken(HttpServer_Context* ctx, const char* websocketPath, const char* jsonPath)
+{
+  if (!ctx || !ctx->cloudWrite || !websocketPath || !jsonPath) return;
+  if (ctx->responseState != RESPONSE_IDLE) return;
+  ctx->cloudWebsocketPath = websocketPath;
+  if (ctx->cloudJsonPathCount < sizeof ctx->cloudJsonPathes / sizeof ctx->cloudJsonPathes[0]) {
+    ctx->cloudJsonPathes[ctx->cloudJsonPathCount++] = jsonPath;
+  }
+}
 
 const char* HttpServer_MethodName(HttpServer_Method method)
 {
@@ -213,6 +226,25 @@ static esp_err_t HttpServer_PrepareResponse(HttpServer_Context* ctx, int code, c
     for (const HttpServer_Header* p = headers; p && p->name; p++) {
       if (!p->value || strcasecmp(p->name, "content-type") == 0) { cJSON_Delete(envelope); return ESP_ERR_INVALID_ARG; }
       cJSON_AddStringToObject(h, p->name, p->value);
+    }
+    if (ctx->cloudWebsocketPath && ctx->cloudJsonPathCount > 0) {
+      cJSON* cloud = cJSON_CreateObject();
+      cJSON* add = cJSON_CreateObject();
+      cJSON* paths = cJSON_CreateArray();
+      if (!cloud || !add || !paths) {
+        cJSON_Delete(cloud);
+        cJSON_Delete(add);
+        cJSON_Delete(paths);
+        cJSON_Delete(envelope);
+        return ESP_ERR_NO_MEM;
+      }
+      for (size_t i = 0; i < ctx->cloudJsonPathCount; i++) {
+        cJSON_AddItemToArray(paths, cJSON_CreateString(ctx->cloudJsonPathes[i]));
+      }
+      cJSON_AddItemToObject(add, "jsonPathes", paths);
+      cJSON_AddStringToObject(add, "websocketPath", ctx->cloudWebsocketPath);
+      cJSON_AddItemToObject(cloud, "addWebsocketToken", add);
+      cJSON_AddItemToObject(envelope, "cloud", cloud);
     }
     char* text = cJSON_PrintUnformatted(envelope);
     cJSON_Delete(envelope);
@@ -1187,6 +1219,7 @@ static esp_err_t HttpServer_StartWithConfig(bool pairing)
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_OpenApiRegister(), "openapi routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_PinRegister(), "pin routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_UartRegister(), "uart routes failed");
+    TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_DapRegister(), "dap routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_SpiRegister(), "spi routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_I2cRegister(), "i2c routes failed");
     TOOL_CHECK_ESP_OK_OR_LOG_RETURN(Route_LockRegister(), "lock routes failed");

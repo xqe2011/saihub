@@ -39,6 +39,7 @@ esp_err_t HttpServer_RegisterRoutes(const HttpServer_Route* routes, size_t count
 const char* HttpServer_GetUri(const HttpServer_Context* ctx);
 HttpServer_Method HttpServer_GetMethod(const HttpServer_Context* ctx);
 const char* HttpServer_GetFrom(const HttpServer_Context* ctx);
+void HttpServer_SetCloudAddWebsocketToken(HttpServer_Context* ctx, const char* websocketPath, const char* jsonPath);
 esp_err_t HttpServer_GetHeader(HttpServer_Context* ctx, const char* name, char* out, size_t outLen);
 esp_err_t HttpServer_GetQuery(HttpServer_Context* ctx, char* out, size_t outLen);
 esp_err_t HttpServer_QueryValue(const char* query, const char* name, char* out, size_t outLen);

@@ -54,4 +54,20 @@ esp_err_t Cloud_RevokeGrantSecret(const char* grantSecret);
 bool Cloud_PairingSessionIsLive(void);
 void Cloud_PairingApprove(void);
 
+bool Cloud_FormatTcpStreamUrl(const char* service, char* out, size_t outLen);
+
+/** Listen wake fd for select. -1 when the service name is unknown. */
+int Cloud_TcpEventFd(const char* service);
+/**
+ * Half-open → open (ESP_OK) returns clientFd after tcpStreamOpenResponse success.
+ * Half-open → fail (err) sends reason and returns -1. -1 if nothing is pending.
+ */
+int Cloud_TcpAccept(const char* service, esp_err_t err, const char* reason);
+/** Like recv on a cloud clientFd. >0 data, 0 empty, -1 peer EOF. */
+int Cloud_TcpRecv(int fd, void* buf, size_t len);
+esp_err_t Cloud_TcpSend(int fd, const void* data, size_t len);
+void Cloud_TcpClose(int fd);
+/** Session task exit: fail pending accepts and drop the listen eventfd. */
+void Cloud_TcpRelease(const char* service);
+
 #endif

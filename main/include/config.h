@@ -20,6 +20,9 @@
 /* Set to the deployed worker origin, e.g. wss://saihub-cloud.example.workers.dev. */
 #define CONFIG_CLOUD_URL "wss://saihub.xqe2011.com"
 #define CONFIG_CLOUD_MAX_MESSAGE_BYTES (72 * 1024)
+/* Cloud TCP stream pool. Ring is allocated per connection; initial byteCredits match the ring size. */
+#define CONFIG_CLOUD_TCP_MAX_CONNECTIONS 4
+#define CONFIG_CLOUD_TCP_STREAM_RX_BYTES (4 * 1024)
 #define CONFIG_CLOUD_GRANT_SECRET_LEN 32
 #define CONFIG_CLOUD_GRANT_NAME_MAX 32
 #define CONFIG_CLOUD_GRANT_MAX 16
@@ -63,6 +66,24 @@
 #define CONFIG_UART_RX_BUF_BYTES 4096
 #define CONFIG_UART_MAX_PAYLOAD_BYTES 2048
 
+/* RFC2217 serial-over-TCP. One listener; the UART id is chosen when mode is rfc2217. */
+#define CONFIG_RFC2217_TCP_PORT 4442
+#define CONFIG_RFC2217_LOCAL_STATUS_PROMPT \
+  "RFC2217 serial-over-TCP is running. Connect a compatible client using the ip and port from this status."
+#define CONFIG_RFC2217_CLOUD_STATUS_PROMPT \
+  "RFC2217 serial-over-TCP is running. Run this Node.js bridge (npm i ws), then point an RFC2217 client at 127.0.0.1:4442. Replace status.url with the url from this status.\n" \
+  "import { createServer } from 'node:net';\n" \
+  "import WebSocket from 'ws';\n" \
+  "createServer((tcp) => {\n" \
+  "  const ws = new WebSocket(status.url);\n" \
+  "  const ping = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('ping'); }, 10000);\n" \
+  "  const stop = () => { clearInterval(ping); tcp.destroy(); ws.close(); };\n" \
+  "  tcp.pause();\n" \
+  "  tcp.on('error', stop); tcp.on('close', stop); ws.on('error', stop); ws.on('close', stop);\n" \
+  "  ws.on('open', () => { tcp.resume(); tcp.on('data', (buf) => ws.send(buf)); });\n" \
+  "  ws.on('message', (data, isBinary) => { if (isBinary) tcp.write(data); });\n" \
+  "}).listen(4442, '127.0.0.1');\n"
+
 /* Product SPI id -> hardware host number. Id 0 is host 2. */
 #define CONFIG_SPI_ID_TO_HOST {1}
 /* Variable-length slave events. The oldest events are dropped when this buffer is full. */
@@ -101,5 +122,30 @@
 #define CONFIG_OTA_HTTP_IMAGE_TIMEOUT_MS 60000
 #define CONFIG_OTA_MANIFEST_MAX_BYTES (8 * 1024)
 #define CONFIG_OTA_URL_MAX_BYTES 512
+
+/* CMSIS-DAP over TCP. Logical pins follow CONFIG_GPIO_LOGICAL_TO_HW. nRESET -1 leaves reset unwired. */
+#define CONFIG_DAP_TCP_PORT 4441
+#define CONFIG_DAP_PACKET_SIZE 1024
+#define CONFIG_DAP_PACKET_COUNT 8
+#define CONFIG_DAP_SWCLK_LOGICAL 0
+#define CONFIG_DAP_SWDIO_LOGICAL 1
+#define CONFIG_DAP_NRESET_LOGICAL -1
+#define CONFIG_DAP_DEFAULT_CLOCK_HZ 1000000
+#define CONFIG_DAP_LOCAL_STATUS_PROMPT \
+  "CMSIS-DAP over TCP Service is running. If you can use OpenOCD, connect with cmsis-dap TCP backend using the ip and port from this status."
+#define CONFIG_DAP_CLOUD_STATUS_PROMPT \
+  "CMSIS-DAP over TCP is running. Run this Node.js bridge (npm i ws), then point OpenOCD (cmsis-dap TCP) or any DAP client at 127.0.0.1:4441. Replace status.url with the url from this status.\n" \
+  "import { createServer } from 'node:net';\n" \
+  "import WebSocket from 'ws';\n" \
+  "createServer((tcp) => {\n" \
+  "  const ws = new WebSocket(status.url);\n" \
+  "  const ping = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('ping'); }, 10000);\n" \
+  "  const stop = () => { clearInterval(ping); tcp.destroy(); ws.close(); };\n" \
+  "  tcp.pause();\n" \
+  "  tcp.on('error', stop); tcp.on('close', stop); ws.on('error', stop); ws.on('close', stop);\n" \
+  "  ws.on('open', () => { tcp.resume(); tcp.on('data', (buf) => ws.send(buf)); });\n" \
+  "  ws.on('message', (data, isBinary) => { if (isBinary) tcp.write(data); });\n" \
+  "}).listen(4441, '127.0.0.1');\n"
+
 
 #endif

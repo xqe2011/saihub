@@ -1,4 +1,6 @@
 import { URL } from "node:url";
+import { cloudStreamUrl, hardwareTarget, startCloudTcpProxy, type CloudTcpProxy, type StreamStatus } from "../library/cloud-stream.ts";
+import { Dap, testDapFraming } from "./dap.ts";
 
 const DEFAULT_TARGET = "192.168.88.160";
 const OUTPUT_A = 6;
@@ -10,6 +12,8 @@ const PWM_SLOT_FREQUENCIES = [500, 2000, 10000, 50000] as const;
 const UART_ID = 0;
 const SPI_PINS = { miso: 0, mosi: 1, clk: 2, cs: 3 } as const;
 const I2C_PINS = { sda: 0, scl: 1 } as const;
+const DAP_PINS = { swclk: 0, swdio: 1, nreset: 2 } as const;
+const DAP_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_DAP_TIMEOUT_MS ?? "1500", 10);
 const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_REQUEST_TIMEOUT_MS ?? "5000", 10);
 const UART_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_UART_TIMEOUT_MS ?? "1500", 10);
 const SPI_TIMEOUT_MS = Number.parseInt(process.env.SAIHUB_SPI_TIMEOUT_MS ?? "1500", 10);
@@ -30,6 +34,11 @@ const EXPECTED_MCP_TOOLS = [
   "uart_transmit",
   "uart_receive",
   "uart_flush",
+  "uart_get_dtr",
+  "uart_get_rts",
+  "uart_set_dtr",
+  "uart_set_rts",
+  "get_uart_rfc2217_status",
   "list_spis",
   "configure_spi",
   "spi_master_transceive",
@@ -40,6 +49,8 @@ const EXPECTED_MCP_TOOLS = [
   "i2c_master_transceive",
   "i2c_slave_receive",
   "i2c_slave_transmit",
+  "configure_dap",
+  "get_dap_status",
   "play_buzzer",
   "create_lock",
   "renew_lock",
@@ -66,7 +77,7 @@ type UartConfig = {
   parity: "none" | "even" | "odd";
   stopBits: 1 | 2;
   encoding: "utf8" | "byte";
-  pins: { rx: number | null; tx: number | null };
+  pins: { rx: number | null; tx: number | null; rts: number | null; dtr: number | null };
 };
 type SpiConfig = {
   id?: number;
@@ -108,6 +119,7 @@ let snapshot: Snapshot | undefined;
 let mutationStarted = false;
 let spiTouched = false;
 let i2cTouched = false;
+let dapTouched = false;
 const deferredFailures: string[] = [];
 
 function fail(message: string): never {
@@ -129,15 +141,8 @@ function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function normalizeTarget(value: string): URL {
-  const withProtocol = /^https?:\/\//i.test(value) ? value : `http://${value}`;
-  const url = new URL(withProtocol);
-  url.pathname = url.pathname.replace(/\/$/, "");
-  return url;
-}
-
-const target = normalizeTarget(process.env.SAIHUB_TARGET ?? process.env.SAIHUB_IP ?? DEFAULT_TARGET);
 const routingToken = process.env.SAIHUB_ROUTING_TOKEN?.trim();
+const target = hardwareTarget(process.env.SAIHUB_TARGET ?? process.env.SAIHUB_IP ?? DEFAULT_TARGET, Boolean(routingToken));
 
 function targetUrl(path: string): URL {
   const basePath = `${target.pathname.replace(/\/$/, "")}/`;
@@ -301,7 +306,7 @@ const disabledUart: UartConfig = {
   parity: "none",
   stopBits: 1,
   encoding: "byte",
-  pins: { rx: null, tx: null },
+  pins: { rx: null, tx: null, rts: null, dtr: null },
 };
 
 function loopbackUart(
@@ -312,8 +317,10 @@ function loopbackUart(
   parity: "none" | "even" | "odd" = "none",
   stopBits: 1 | 2 = 1,
   encoding: "utf8" | "byte" = "byte",
+  rts: number | null = null,
+  dtr: number | null = null,
 ): JsonObject {
-  return { enable: true, baudRate, dataBits, parity, stopBits, encoding, pins: { rx, tx } };
+  return { enable: true, baudRate, dataBits, parity, stopBits, encoding, pins: { rx, tx, rts, dtr } };
 }
 
 async function captureSnapshot(): Promise<Snapshot> {
@@ -346,12 +353,17 @@ async function captureSnapshot(): Promise<Snapshot> {
   assert(i2cList.i2cs[0]?.id === 0, "REST I2C inventory omitted I2C 0");
   const i2c = i2cList.i2cs[0]!;
   assert(!i2c.enable, "I2C must be disabled before the smoke test");
+  const dapStatus = await rawRequest("GET", "/dap/status");
+  assert(dapStatus.status === 503, "DAP must be disabled before the smoke test");
   const uart = uartList.uarts[0];
   assert(uart !== undefined && uart.id === UART_ID, "REST UART inventory omitted UART 0");
   if (uart.enable) {
-    const assigned = [uart.pins.rx, uart.pins.tx].filter((pin): pin is number => pin !== null);
-    assert(assigned.every((pin) => pin === OUTPUT_A || pin === OUTPUT_B), "Refusing to disturb an enabled UART using pins other than 6 and 7");
+    const assigned = [uart.pins.rx, uart.pins.tx, uart.pins.rts, uart.pins.dtr].filter((pin): pin is number => pin !== null);
+    assert(assigned.every((pin) => pin === OUTPUT_A || pin === OUTPUT_B || pin === 4 || pin === 5),
+      "Refusing to disturb an enabled UART using unexpected pins");
   }
+  assert(uart.pins.rts !== undefined && uart.pins.dtr !== undefined, "UART inventory omitted rts/dtr pins");
+  assert(!("dtr" in uart) && !("rts" in uart), "UART inventory must not embed dtr/rts states");
 
   const power3v3 = await requestJson<{ enable: boolean; time: number; reason?: string }>("GET", "/power/3v3");
   const power5v = await requestJson<{ enable: boolean; time: number; reason?: string }>("GET", "/power/5v");
@@ -889,6 +901,72 @@ async function testUartPayloadsAndRaces(): Promise<void> {
   await mcpTool("configure_uart", { id: UART_ID, ...uartBody(disabledUart) });
 }
 
+async function testUartControlLines(): Promise<void> {
+  log("UART DTR/RTS active-low states measured through the 6/7 loop over REST/MCP");
+  // Test one control output at a time so the existing jumper needs no extra wiring.
+  // UART requires RX or TX; use the idle, unconnected pin 0 for RX.
+  for (const line of ["rts", "dtr"] as const) {
+    for (const [output, input] of [[OUTPUT_A, OUTPUT_B], [OUTPUT_B, OUTPUT_A]] as const) {
+      for (const mcp of [false, true]) {
+        await requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204);
+        await disableTestPins();
+        await configureRestPin(input, "digitalInput", true);
+        const config = {
+          ...uartBody(disabledUart), enable: true,
+          pins: { rx: 0, tx: null, rts: null, dtr: null, [line]: output },
+        };
+        if (mcp) await mcpTool("configure_uart", { id: UART_ID, ...config });
+        else await requestJson<void>("POST", `/uart/${UART_ID}/config`, config, 204);
+        const label = `UART ${line.toUpperCase()} ${output}->${input} (${mcp ? "MCP" : "REST"} config)`;
+        const verify = async (active: boolean): Promise<void> => {
+          const rest = await requestJson<{ active: boolean }>("GET", `/uart/${UART_ID}/${line}`);
+          const tool = await mcpTool<{ active: boolean }>(`uart_get_${line}`, { id: UART_ID });
+          const pinLevel = active ? 0 : 1;
+          assert(rest.active === active && tool.active === active, `${label} active should be ${active}`);
+          assert((await waitForRestLevel(input, pinLevel)) === pinLevel, `${label} REST pin level should be ${pinLevel}`);
+          assert((await waitForMcpLevel(input, pinLevel)) === pinLevel, `${label} MCP pin level should be ${pinLevel}`);
+        };
+        await verify(false);
+        await expectStatus("PUT", `/pin/${output}`, 423, {
+          mode: "digitalOutput", openDrain: false, pullUp: false, pullDown: false,
+        });
+        for (const setViaMcp of [false, true]) {
+          for (const active of [false, true]) {
+            if (setViaMcp) await mcpTool(`uart_set_${line}`, { id: UART_ID, active });
+            else await requestJson<void>("POST", `/uart/${UART_ID}/${line}`, { active }, 204);
+            await verify(active);
+          }
+        }
+        // Re-enabling after assertion must release the line.
+        await mcpTool(`uart_set_${line}`, { id: UART_ID, active: true });
+        await verify(true);
+        await requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204);
+        if (mcp) await mcpTool("configure_uart", { id: UART_ID, ...config });
+        else await requestJson<void>("POST", `/uart/${UART_ID}/config`, config, 204);
+        await verify(false);
+      }
+    }
+  }
+
+  await requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204);
+  await disableTestPins();
+  await requestJson<void>("POST", `/uart/${UART_ID}/config`, {
+    ...uartBody(disabledUart), enable: true, pins: { rx: 0, tx: null, rts: null, dtr: null },
+  }, 204);
+  for (const line of ["rts", "dtr"] as const) {
+    await expectStatus("GET", `/uart/${UART_ID}/${line}`, 422);
+    await expectStatus("POST", `/uart/${UART_ID}/${line}`, 400, { active: 1 });
+    await expectStatus("POST", `/uart/${UART_ID}/${line}`, 422, { active: true });
+    for (const action of ["get", "set"] as const) {
+      const response = await mcpRequest("tools/call", {
+        name: `uart_${action}_${line}`, arguments: { id: UART_ID, ...(action === "set" ? { active: true } : {}) },
+      });
+      assert(response?.result?.isError === true, `MCP UART ${action} ${line} should reject a missing pin`);
+    }
+  }
+  await mcpTool("configure_uart", { id: UART_ID, ...uartBody(disabledUart) });
+}
+
 // Pins 0-3 have no peer; only completion, framing and idle behavior are meaningful here.
 async function testOpenEndSpi(): Promise<void> {
   log("open-end SPI master transfers and non-blocking slave APIs over REST/MCP");
@@ -1024,6 +1102,125 @@ async function disableTestI2c(): Promise<void> {
   if (!i2cTouched) return;
   await requestJson<void>("POST", "/i2c/0/config", i2cBody(disabledI2c), 204);
   for (const pin of Object.values(I2C_PINS)) await configureRestPin(pin, "disable");
+}
+
+// No debug target is attached. Exercise adapter behavior without asserting target IDs or memory contents.
+async function testOpenEndDap(): Promise<void> {
+  log("open-end DAP configuration, TCP framing, SWD failure, and pin reservation over REST/MCP");
+  const promptly = async <T>(label: string, action: () => Promise<T>): Promise<T> => {
+    const started = performance.now();
+    const result = await action();
+    assert(performance.now() - started < DAP_TIMEOUT_MS, `${label} did not complete promptly without a target`);
+    return result;
+  };
+  await expectStatus("GET", "/dap/status", 503);
+  const idleConfig = await requestJson<JsonObject>("GET", "/dap/config");
+  assert(idleConfig.enable === false, "DAP config should be disabled before the test");
+  assert(isObject(idleConfig.pins), "DAP config omitted pins");
+  await expectStatus("POST", "/dap/config", 400, { enable: true });
+  await expectStatus("POST", "/dap/config", 400, { enable: true, pins: { swclk: 0, swdio: 0 } });
+  await expectStatus("POST", "/dap/config", 400, { enable: true, pins: { ...DAP_PINS, nreset: 0 } });
+  await expectStatus("POST", "/dap/config", 400, { enable: true, pins: { ...DAP_PINS, swdio: 99 } });
+  dapTouched = true;
+  for (const mcp of [false, true]) {
+    const config = { enable: true, pins: { ...DAP_PINS, nreset: mcp ? null : DAP_PINS.nreset } };
+    await promptly("DAP enable", () => mcp
+      ? mcpTool("configure_dap", config)
+      : requestJson<void>("POST", "/dap/config", config, 204));
+    const status = await requestJson<StreamStatus>("GET", "/dap/status");
+    const liveConfig = await requestJson<JsonObject>("GET", "/dap/config");
+    assert(liveConfig.enable === true, "DAP config enable did not stick");
+    assert(isObject(liveConfig.pins) && liveConfig.pins.swclk === config.pins.swclk &&
+      liveConfig.pins.swdio === config.pins.swdio && liveConfig.pins.nreset === config.pins.nreset,
+      "DAP config pins did not match the request");
+    assert(typeof status.prompt === "string" && status.prompt.length > 0, "DAP status omitted connection instructions");
+    const mcpStatus = await mcpTool<StreamStatus>("get_dap_status", {});
+    assert(mcpStatus.prompt === status.prompt, "REST/MCP DAP status prompts disagreed");
+    await expectStatus("PUT", `/pin/${DAP_PINS.swclk}`, 423, { mode: "digitalOutput" });
+    await expectStatus("POST", "/spi/0/config", 409, spiBody({ ...disabledSpi, enable: true, pins: SPI_PINS }));
+
+    let proxy: CloudTcpProxy | undefined;
+    let host: string;
+    let port: number;
+    if (routingToken) {
+      // REST and MCP each issue their own stream token.
+      const restUrl = cloudStreamUrl(status, target, "dap");
+      const mcpUrl = cloudStreamUrl(mcpStatus, target, "dap");
+      proxy = await startCloudTcpProxy(async () => mcp ? mcpUrl : restUrl, log);
+      ({ host, port } = proxy);
+    } else {
+      const { ip, port: localPort } = status;
+      assert(typeof localPort === "number" && Number.isInteger(localPort) && localPort > 0 && localPort <= 65535,
+        "DAP status returned invalid port");
+      assert(typeof ip === "string" && ip !== "0.0.0.0", "DAP status returned invalid IP");
+      assert(mcpStatus.url === undefined && mcpStatus.port === localPort && mcpStatus.ip === ip,
+        "REST/MCP DAP status addresses disagreed");
+      host = process.env.SAIHUB_DAP_HOST ?? (target.pathname.includes("/device/") ? ip : target.hostname);
+      assert(host.length > 0, "Set SAIHUB_DAP_HOST to the directly reachable DAP address");
+      port = localPort;
+    }
+    let connection: Dap | undefined;
+    try {
+      const dap = await Dap.open(host, port, DAP_TIMEOUT_MS);
+      connection = dap;
+      await testDapFraming(dap);
+      const command = async (data: number[], expected: number[], label: string): Promise<void> => {
+        const response = await promptly(label, () => dap.command(Buffer.from(data)));
+        assert(response.equals(Buffer.from(expected)), `${label} returned ${response.toString("hex")}`);
+      };
+      await command([2, 1], [2, 1], "SWD adapter connect");
+      await command([0x11, 0x40, 0x42, 0x0f, 0], [0x11, 0], "SWD clock setup");
+      await command([0x13, 0], [0x13, 0], "SWD setup");
+      await command([4, 0, 0, 0, 0, 0], [4, 0], "Disable transfer retries");
+      await command([0x12, 56, ...Array(7).fill(255)], [0x12, 0], "SWD line reset");
+      const transfer = await promptly("Open-end register read", () => dap.command(Buffer.from([5, 0, 1, 2])));
+      assert(transfer.length === 3 && transfer[1] === 0 && [2, 4, 8].includes(transfer[2]!),
+        `Open-end register read did not report a failed transfer: ${transfer.toString("hex")}`);
+      const block = await promptly("Open-end block read", () => dap.command(Buffer.from([6, 0, 4, 0, 2])));
+      assert(block.length === 4 && block.readUInt16LE(1) === 0 && [2, 4, 8].includes(block[3]!),
+        `Open-end block read did not report a failed transfer: ${block.toString("hex")}`);
+      await command([6, 0, 0, 0, 2], [6, 0, 0, 1], "Empty block read");
+      await command([0x11, 0, 0, 0, 0], [0x11, 255], "Reject zero clock");
+      // Control APIs must stay responsive after a failed SWD transaction.
+      await promptly("System read during DAP session", () => requestJson<JsonObject>("GET", "/system"));
+      await command([0, 254], [0, 1, 8], "Info after failed transfers");
+    } finally {
+      try {
+        await connection?.close();
+      } finally {
+        await proxy?.close();
+      }
+    }
+    await promptly("DAP disable", () => mcp
+      ? mcpTool("configure_dap", { ...config, enable: false })
+      : requestJson<void>("POST", "/dap/config", { ...config, enable: false }, 204));
+    await expectStatus("GET", "/dap/status", 503);
+    const stoppedConfig = await requestJson<JsonObject>("GET", "/dap/config");
+    assert(stoppedConfig.enable === false, "DAP config stayed enabled after disable");
+    for (const pin of Object.values(DAP_PINS)) await configureRestPin(pin, "disable");
+  }
+}
+
+async function disableTestDap(): Promise<void> {
+  if (!dapTouched) return;
+  await requestJson<void>("POST", "/dap/config", { enable: false, pins: DAP_PINS }, 204);
+  await expectStatus("GET", "/dap/status", 503);
+  for (const pin of Object.values(DAP_PINS)) await configureRestPin(pin, "disable");
+}
+
+async function testCloudRfc2217Status(): Promise<void> {
+  log("RFC2217 cloud stream URLs over REST/MCP");
+  const configPath = `/uart/${UART_ID}/config`;
+  try {
+    await requestJson<void>("POST", configPath, { enable: true, mode: "rfc2217", pins: { rx: 2, tx: 3 } }, 204);
+    const rest = await requestJson<StreamStatus>("GET", `/uart/${UART_ID}/rfc2217`);
+    const mcp = await mcpTool<StreamStatus>("get_uart_rfc2217_status", { id: UART_ID });
+    cloudStreamUrl(rest, target, "rfc2217");
+    cloudStreamUrl(mcp, target, "rfc2217");
+    assert(rest.prompt === mcp.prompt, "REST/MCP RFC2217 status prompts disagreed");
+  } finally {
+    await requestJson<void>("POST", configPath, uartBody(disabledUart), 204);
+  }
 }
 
 function hardwareScript(output: number, input: number, marker: string): string {
@@ -1395,6 +1592,7 @@ async function cleanup(): Promise<void> {
     }
   };
 
+  await attempt("disable DAP", disableTestDap);
   if (spiTouched) {
     await attempt("disable SPI", disableTestSpi);
     await attempt("restore SPI config", () =>
@@ -1433,13 +1631,16 @@ async function main(): Promise<void> {
   if (process.argv.includes("--help")) {
     console.log("SAIHUB_TARGET=192.168.88.160 bun tests/hardware/smoke.ts");
     console.log("Cloud: SAIHUB_TARGET=https://<cloud-host>/device/<device-digest> SAIHUB_ROUTING_TOKEN=<token> bun tests/hardware/smoke.ts");
-    console.log("Pins 6 and 7 must be jumpered. Leave idle pins 0-3 unconnected for open-end SPI; SPI must be disabled.");
-    console.log("Four-channel PWM drives 0-2 plus 6 and probes pin 7. SPI uses 0-3; other tests drive only 6 and 7.");
+    console.log("Jumper pins 6/7. Leave idle pins 0-3 unconnected. SPI, I2C and DAP must be disabled before testing.");
+    console.log("PWM drives 0-2 plus 6 and probes 7. SPI uses 0-3; I2C uses 0/1; DAP uses 0-2; loopback uses 6/7.");
+    console.log("UART RTS/DTR reuse the 6/7 loop one at a time, with RX on idle pin 0; no extra jumper is needed.");
+    console.log("Optional: SAIHUB_DAP_HOST selects the direct DAP address; SAIHUB_DAP_TIMEOUT_MS=1500 bounds operations.");
     console.log("Optional: SAIHUB_SPI_TIMEOUT_MS=1500 bounds each non-blocking SPI operation, including transport time.");
     return;
   }
   assert(Number.isFinite(REQUEST_TIMEOUT_MS) && REQUEST_TIMEOUT_MS > 0, "SAIHUB_REQUEST_TIMEOUT_MS must be positive");
   assert(Number.isFinite(SPI_TIMEOUT_MS) && SPI_TIMEOUT_MS > 0, "SAIHUB_SPI_TIMEOUT_MS must be positive");
+  assert(Number.isFinite(DAP_TIMEOUT_MS) && DAP_TIMEOUT_MS > 0, "SAIHUB_DAP_TIMEOUT_MS must be positive");
   assert(Number.isFinite(UART_TIMEOUT_MS) && UART_TIMEOUT_MS > 0, "SAIHUB_UART_TIMEOUT_MS must be positive");
   assert(Number.isInteger(SOAK_ITERATIONS) && SOAK_ITERATIONS >= 0 && SOAK_ITERATIONS <= 100,
     "SAIHUB_SOAK_ITERATIONS must be an integer from 0 to 100");
@@ -1461,8 +1662,14 @@ async function main(): Promise<void> {
   await runSection("reset after MCP UART", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
   await runSection("UART payloads and races", testUartPayloadsAndRaces);
   await runSection("reset after UART stress", () => requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204));
+  await runSection("UART RTS/DTR loopback", testUartControlLines, async () => {
+    await requestJson<void>("POST", `/uart/${UART_ID}/config`, uartBody(disabledUart), 204);
+    await disableTestPins();
+  });
   await runSection("open-end SPI", testOpenEndSpi, disableTestSpi);
   await runSection("open-end I2C", testOpenEndI2c, disableTestI2c);
+  await runSection("open-end DAP", testOpenEndDap, disableTestDap);
+  if (routingToken) await runSection("cloud RFC2217 status", testCloudRfc2217Status);
   await runSection("buzzer", testBuzzer);
   await runSection("scripts", testScripts);
   await runSection("concurrency", testConcurrency, releaseTestLocks);
@@ -1493,5 +1700,5 @@ if (failure !== undefined) {
   console.error(failure instanceof Error ? failure.stack ?? failure.message : String(failure));
   process.exitCode = 1;
 } else if (!process.argv.includes("--help")) {
-  log("PASS: REST, MCP, pins 6/7, UART loopback, open-end SPI, buzzer, scripts, locks, trace, PWM, and active power toggles");
+  log("PASS: REST, MCP, pins 6/7, UART, open-end SPI/I2C/DAP, buzzer, scripts, locks, trace, PWM, and power toggles");
 }

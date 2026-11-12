@@ -33,25 +33,34 @@
 
 ## What it is
 
-SAIHub is a pocket IO companion for coding agents. Flash it, join Wi-Fi, paste an MCP URL, and the agent gets a hand on real hardware:
+SAIHub is a pocket IO and debug companion for coding agents. Flash it, join Wi-Fi, paste an MCP URL, and the agent gets a hand on real hardware:
 
-- **GPIO / PWM / programmable power** — toggle pins, generate PWM up to 50 kHz, capture edges like a logic analyzer, and switch the 3.3 V / 5 V rails on and off, all over MCP.
-- **On-device scripting** — the agent can upload Lua scripts and run them on the board itself, so timing-critical or multi-step logic executes locally without a round-trip per pin.
+- **Wireless flashing & debugging** — expose CMSIS-DAP (SWD) and RFC2217 (serial-over-TCP) on the LAN or through the cloud relay, so OpenOCD, GDB, and serial flashers can program and step-debug targets like STM32, RP2040, nRF52, Arduino, or ESP32 remotely.
+- **Bus debugging & emulation** — probe and drive UART, SPI, and I2C buses directly, or run SPI and I2C in slave mode to capture bus transactions from the target and emulate sensors or peripherals with programmable response maps.
+- **GPIO / PWM / trace / programmable power** — toggle pins, generate pulses and PWM up to 50 kHz, capture multi-pin edges like a logic analyzer, and switch fault-protected 3.3 V / 5 V rails on and off, all over MCP.
+- **On-device scripting** — the agent can upload Lua scripts and run them on the board itself, so timing-critical or multi-step logic executes locally without a network round-trip per operation.
 
-The board is **SAIHub-Mini**: 48 × 28 mm, ESP32-C5, USB-C, a BOOT button, a 12-pin header, and an external U.FL antenna. Pinout and electrical details: [docs/hardware.md](docs/hardware.md). Firmware, KiCad design, and the relay server all live in this repo.
+The board is **SAIHub-Mini**: 48 × 28 mm, ESP32-C5, USB-C, a 12-pin header, fault-latched programmable 3.3 V / 5 V outputs, and an onboard buzzer. Pinout and electrical details: [docs/hardware.md](docs/hardware.md). Firmware, KiCad design, and the relay server all live in this repo.
 
 You do not have to use our board — the firmware runs on any ESP32-C5. See [bring your own board](docs/bring-your-own-board.md) for what changes and where to remap the GPIOs.
 
 ## What you can do with it
 
-**Buy an agent a hand.** Drop SAIHub next to a DUT and let the agent debug a real embedded board: drive GPIO, generate PWM, capture traces, and speak UART instead of asking you to probe every line.
+**Zero-PC firmware development with cloud agents.** You don't even need a computer at the bench. Power SAIHub from a USB charger, wire it to your target board, and connect **Cursor Cloud Agents**, **Claude Code cloud sessions**, or **OpenAI Codex Cloud** through the cloud relay. Running entirely in the cloud, the agent can:
 
-**An agent-ready IO board.** The simplest way to hang other IO off an agent:
+1. **Provision the build & debug environment** in its cloud sandbox — install toolchains, OpenOCD, GDB, or serial flashers, then write and compile the firmware.
+2. **Remotely flash and step-debug** the target over tunneled CMSIS-DAP (SWD) or RFC2217 serial-over-TCP.
+3. **Automated hardware testing** — power-cycle the 3.3 V / 5 V rails, watch pin signals and PWM timing with `trace_pins`, inspect UART logs, capture SPI/I2C traffic, or **fake SPI/I2C sensors** in slave mode to verify driver behavior against synthetic data.
+4. **Deliver tested, runnable firmware** directly in a pull request — verified on real hardware with zero manual probing or local setup.
+
+**Give your local agent a hand on the bench.** Drop SAIHub next to a target board and let Cursor, Claude Code, or Codex CLI drive GPIO, generate PWM, capture waveforms, probe I2C/SPI, and flash over SWD/UART instead of asking you to move jumpers and scope probes by hand.
+
+**An agent-ready IO board.** The simplest way to hang real-world IO off an agent:
 
 - Sweep a **servo** from a Lua script while the agent watches the mechanism.
-- Dim a **light** or blink a status LED over PWM.
+- Dim a **light**, blink a status LED over PWM, or chime the onboard **buzzer** when a build or test finishes.
 - Close an **electromagnetic relay** to switch a pump, a lock, or a heater.
-- Power a 3.3 V sensor from the switched rail, then read it over UART or GPIO.
+- Power a 3.3 V or 5 V sensor from the switched, fault-protected rails, then read it over I2C, SPI, UART, or GPIO.
 
 ## Quick start
 
@@ -92,12 +101,14 @@ Nothing here ties you to us:
 
 | Area | What the agent gets |
 | --- | --- |
-| GPIO 0–7 | Digital in / out / open-drain, pulse, PWM up to 50 kHz |
-| Trace | Edge capture on one or more pins (up to 60 s) |
-| UART | One product UART, UTF-8 or raw bytes |
-| Power | Switched **3V3** and **5V** rails (off by default) |
-| Scripts | Sandboxed Lua 5.4 on-device |
-| Access | Streamable HTTP MCP on port 80, REST + OpenAPI, optional cloud relay |
+| GPIO 0–7 | Digital in / out / open-drain, microsecond pulse, PWM up to 50 kHz |
+| Trace | Edge capture on one or more pins (up to 60 s), like a pocket logic analyzer |
+| SWD debug | CMSIS-DAP over TCP for OpenOCD / GDB on LAN or cloud relay |
+| UART | One product UART with RTS / DTR for auto-flashing circuits, plus RFC2217 serial-over-TCP |
+| SPI | Master (up to 10 MHz) and Slave — capture, generate, and emulate bus traffic |
+| I2C | Master (up to 1 MHz) and Slave, 7 / 10-bit addressing — capture, generate, and emulate bus traffic |
+| Power | Switched **3V3** and **5V** rails with overcurrent / fault protection |
+| Buzzer | Onboard Morse-code passive buzzer |
 
 Logic pins are **3.3 V only** — full electrical limits in [docs/hardware.md](docs/hardware.md).
 

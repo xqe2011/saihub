@@ -4,6 +4,8 @@ export interface Env {
   AUTH_TIMEOUT_MS: string;
   REQUEST_TIMEOUT_MS: string;
   ROUTING_TOKEN_SECRET: string;
+  WEBSOCKET_TOKEN_SECRET: string;
+  WEBSOCKET_TOKEN_TTL_S: string;
   ADMIN_TOKEN: string;
 }
 

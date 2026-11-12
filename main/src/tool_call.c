@@ -8,6 +8,7 @@
 #include "buzzer.h"
 #include "cloud.h"
 #include "config.h"
+#include "dap_ctrl.h"
 #include "gpio_ctrl.h"
 #include "http_server.h"
 #include "lock.h"
@@ -531,6 +532,7 @@ static cJSON* ToolCall_UartStateJson(int id, const UartCtrl_Config* cfg)
   cJSON* item = cJSON_CreateObject();
   cJSON_AddNumberToObject(item, "id", id);
   cJSON_AddBoolToObject(item, "enable", cfg->enable);
+  cJSON_AddStringToObject(item, "mode", UartCtrl_ModeToString(cfg->mode));
   cJSON_AddNumberToObject(item, "baudRate", cfg->baudRate);
   cJSON_AddNumberToObject(item, "dataBits", cfg->dataBits);
   cJSON_AddStringToObject(item, "parity", UartCtrl_ParityToString(cfg->parity));
@@ -539,6 +541,8 @@ static cJSON* ToolCall_UartStateJson(int id, const UartCtrl_Config* cfg)
   cJSON* pins = cJSON_CreateObject();
   ToolCall_AddOptionalPin(pins, "rx", cfg->rxPin);
   ToolCall_AddOptionalPin(pins, "tx", cfg->txPin);
+  ToolCall_AddOptionalPin(pins, "rts", cfg->rtsPin);
+  ToolCall_AddOptionalPin(pins, "dtr", cfg->dtrPin);
   cJSON_AddItemToObject(item, "pins", pins);
   return item;
 }
@@ -584,6 +588,16 @@ static ToolCall_Result ToolCall_ListUarts(void)
   return ToolCall_Ok(root);
 }
 
+static bool ToolCall_UartRfc2217Busy(int id, char* reason, size_t reasonLen)
+{
+  UartCtrl_Config cfg;
+  if (UartCtrl_GetConfig(id, &cfg) != ESP_OK || !cfg.enable || cfg.mode != UART_CTRL_MODE_RFC2217) return false;
+  snprintf(reason, reasonLen,
+           "UART %d mode is rfc2217. Data and control lines are owned by the TCP bridge. POST /uart/%d/config with mode native to use this API.",
+           id, id);
+  return true;
+}
+
 static ToolCall_Result ToolCall_ConfigureUart(cJSON* args)
 {
   char reason[256];
@@ -593,6 +607,7 @@ static ToolCall_Result ToolCall_ConfigureUart(cJSON* args)
   UartCtrl_Config cfg;
   memset(&cfg, 0, sizeof(cfg));
   cJSON* enableItem = cJSON_GetObjectItem(args, "enable");
+  cJSON* modeItem = cJSON_GetObjectItem(args, "mode");
   cJSON* baudItem = cJSON_GetObjectItem(args, "baudRate");
   cJSON* dataBitsItem = cJSON_GetObjectItem(args, "dataBits");
   cJSON* parityItem = cJSON_GetObjectItem(args, "parity");
@@ -601,26 +616,42 @@ static ToolCall_Result ToolCall_ConfigureUart(cJSON* args)
   cJSON* pinsItem = cJSON_GetObjectItem(args, "pins");
 
   if (!cJSON_IsBool(enableItem)) return ToolCall_Err("enable must be boolean.");
-  if (!cJSON_IsNumber(baudItem)) return ToolCall_Err("baudRate must be a positive integer.");
-  if (!cJSON_IsNumber(dataBitsItem)) return ToolCall_Err("dataBits must be 5, 6, 7, or 8.");
-  if (!cJSON_IsString(parityItem) || !UartCtrl_ParityFromString(parityItem->valuestring, &cfg.parity)) {
-    return ToolCall_Err("parity must be one of: none, even, odd.");
+  if (modeItem == NULL) cfg.mode = UART_CTRL_MODE_NATIVE;
+  else if (!cJSON_IsString(modeItem) || !UartCtrl_ModeFromString(modeItem->valuestring, &cfg.mode)) {
+    return ToolCall_Err("mode must be one of: native, rfc2217.");
   }
-  if (!cJSON_IsNumber(stopBitsItem)) return ToolCall_Err("stopBits must be 1 or 2.");
-  if (!cJSON_IsString(encodingItem) || !UartCtrl_EncodingFromString(encodingItem->valuestring, &cfg.encoding)) {
-    return ToolCall_Err("encoding must be one of: utf8, byte.");
-  }
-  if (!cJSON_IsObject(pinsItem)) return ToolCall_Err("pins must be an object with optional rx and tx.");
-  if (ToolCall_ParseOptionalUartPin(pinsItem, "rx", &cfg.rxPin, reason, sizeof(reason)) != 0) {
-    return ToolCall_Err(reason);
-  }
-  if (ToolCall_ParseOptionalUartPin(pinsItem, "tx", &cfg.txPin, reason, sizeof(reason)) != 0) {
-    return ToolCall_Err(reason);
-  }
+  if (!cJSON_IsObject(pinsItem)) return ToolCall_Err("pins must be an object with optional rx, tx, rts, and dtr.");
+  if (ToolCall_ParseOptionalUartPin(pinsItem, "rx", &cfg.rxPin, reason, sizeof(reason)) != 0) return ToolCall_Err(reason);
+  if (ToolCall_ParseOptionalUartPin(pinsItem, "tx", &cfg.txPin, reason, sizeof(reason)) != 0) return ToolCall_Err(reason);
+  if (ToolCall_ParseOptionalUartPin(pinsItem, "rts", &cfg.rtsPin, reason, sizeof(reason)) != 0) return ToolCall_Err(reason);
+  if (ToolCall_ParseOptionalUartPin(pinsItem, "dtr", &cfg.dtrPin, reason, sizeof(reason)) != 0) return ToolCall_Err(reason);
   cfg.enable = cJSON_IsTrue(enableItem);
-  cfg.baudRate = baudItem->valueint;
-  cfg.dataBits = dataBitsItem->valueint;
-  cfg.stopBits = stopBitsItem->valueint;
+
+  if (cfg.mode == UART_CTRL_MODE_RFC2217) {
+    if (baudItem != NULL || dataBitsItem != NULL || parityItem != NULL || stopBitsItem != NULL || encodingItem != NULL) {
+      return ToolCall_Err("mode rfc2217 only accepts enable, pins, and mode.");
+    }
+    UartCtrl_Config current;
+    if (UartCtrl_GetConfig(id, &current) != ESP_OK) return ToolCall_Fail(500, "internal");
+    cfg.baudRate = current.baudRate;
+    cfg.dataBits = current.dataBits;
+    cfg.parity = current.parity;
+    cfg.stopBits = current.stopBits;
+    cfg.encoding = current.encoding;
+  } else {
+    if (!cJSON_IsNumber(baudItem)) return ToolCall_Err("baudRate must be a positive integer.");
+    if (!cJSON_IsNumber(dataBitsItem)) return ToolCall_Err("dataBits must be 5, 6, 7, or 8.");
+    if (!cJSON_IsString(parityItem) || !UartCtrl_ParityFromString(parityItem->valuestring, &cfg.parity)) {
+      return ToolCall_Err("parity must be one of: none, even, odd.");
+    }
+    if (!cJSON_IsNumber(stopBitsItem)) return ToolCall_Err("stopBits must be 1 or 2.");
+    if (!cJSON_IsString(encodingItem) || !UartCtrl_EncodingFromString(encodingItem->valuestring, &cfg.encoding)) {
+      return ToolCall_Err("encoding must be one of: utf8, byte.");
+    }
+    cfg.baudRate = baudItem->valueint;
+    cfg.dataBits = dataBitsItem->valueint;
+    cfg.stopBits = stopBitsItem->valueint;
+  }
 
   const char* lockId = ToolCall_GetLockId(args);
   int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
@@ -694,6 +725,7 @@ static ToolCall_Result ToolCall_UartTransmit(cJSON* args)
   const char* lockId = ToolCall_GetLockId(args);
   int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
   if (lockSt) return ToolCall_Fail(lockSt, reason);
+  if (ToolCall_UartRfc2217Busy(id, reason, sizeof(reason))) return ToolCall_Fail(409, reason);
 
   UartCtrl_Config cfg;
   UartCtrl_GetConfig(id, &cfg);
@@ -719,6 +751,7 @@ static ToolCall_Result ToolCall_UartReceive(cJSON* args)
   const char* lockId = ToolCall_GetLockId(args);
   int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_UART, id, LOCK_METHOD_READ, reason, sizeof(reason));
   if (lockSt) return ToolCall_Fail(lockSt, reason);
+  if (ToolCall_UartRfc2217Busy(id, reason, sizeof(reason))) return ToolCall_Fail(409, reason);
 
   UartCtrl_Config cfg;
   UartCtrl_GetConfig(id, &cfg);
@@ -772,11 +805,101 @@ static ToolCall_Result ToolCall_UartFlush(cJSON* args)
   const char* lockId = ToolCall_GetLockId(args);
   int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
   if (lockSt) return ToolCall_Fail(lockSt, reason);
+  if (ToolCall_UartRfc2217Busy(id, reason, sizeof(reason))) return ToolCall_Fail(409, reason);
   esp_err_t ret = UartCtrl_Flush(id, reason, sizeof(reason));
   if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
   if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
   Lock_Touch(lockId);
   return ToolCall_OkEmpty();
+}
+
+static ToolCall_Result ToolCall_UartGetControlLine(cJSON* args, esp_err_t (*getter)(int, bool*, char*, size_t))
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseUartId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_UART, id, LOCK_METHOD_READ, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  if (ToolCall_UartRfc2217Busy(id, reason, sizeof(reason))) return ToolCall_Fail(409, reason);
+  bool active = false;
+  esp_err_t ret = getter(id, &active, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddBoolToObject(root, "active", active);
+  cJSON_AddNumberToObject(root, "time", (double)HttpServer_NowUs());
+  Lock_Touch(lockId);
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_UartSetControlLine(cJSON* args, esp_err_t (*setter)(int, bool, char*, size_t))
+{
+  char reason[256];
+  int id = 0;
+  if (!ToolCall_ParseUartId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  cJSON* activeItem = cJSON_GetObjectItem(args, "active");
+  if (!cJSON_IsBool(activeItem)) return ToolCall_Err("active must be boolean.");
+  const char* lockId = ToolCall_GetLockId(args);
+  int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_UART, id, LOCK_METHOD_WRITE, reason, sizeof(reason));
+  if (lockSt) return ToolCall_Fail(lockSt, reason);
+  if (ToolCall_UartRfc2217Busy(id, reason, sizeof(reason))) return ToolCall_Fail(409, reason);
+  esp_err_t ret = setter(id, cJSON_IsTrue(activeItem), reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_ARG) return ToolCall_Err(reason);
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(422, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  Lock_Touch(lockId);
+  return ToolCall_OkEmpty();
+}
+
+static ToolCall_Result ToolCall_UartGetDtr(cJSON* args)
+{
+  return ToolCall_UartGetControlLine(args, UartCtrl_GetDtrActive);
+}
+
+static ToolCall_Result ToolCall_UartGetRts(cJSON* args)
+{
+  return ToolCall_UartGetControlLine(args, UartCtrl_GetRtsActive);
+}
+
+static ToolCall_Result ToolCall_UartSetDtr(cJSON* args)
+{
+  return ToolCall_UartSetControlLine(args, UartCtrl_SetDtr);
+}
+
+static ToolCall_Result ToolCall_UartSetRts(cJSON* args)
+{
+  return ToolCall_UartSetControlLine(args, UartCtrl_SetRts);
+}
+
+static bool ToolCall_FromCloud(const char* via)
+{
+  return via != NULL && strstr(via, "/cloud") != NULL;
+}
+
+static ToolCall_Result ToolCall_GetUartRfc2217Status(cJSON* args, const char* via)
+{
+  char reason[160];
+  int id = 0;
+  if (!ToolCall_ParseUartId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
+  UartCtrl_Rfc2217Status status;
+  bool cloud = ToolCall_FromCloud(via);
+  esp_err_t err = UartCtrl_GetRfc2217Status(id, cloud, &status);
+  if (err == ESP_ERR_INVALID_STATE) {
+    snprintf(reason, sizeof(reason),
+             "RFC2217 is not running. POST /uart/%d/config with enable true and mode rfc2217 first.", id);
+    return ToolCall_Fail(503, reason);
+  }
+  if (err != ESP_OK) return ToolCall_Fail(500, "internal");
+  cJSON* root = cJSON_CreateObject();
+  if (root == NULL) return ToolCall_Fail(500, "internal");
+  cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
+  if (status.cloud) cJSON_AddStringToObject(root, "url", status.url);
+  else {
+    cJSON_AddNumberToObject(root, "port", status.port);
+    cJSON_AddStringToObject(root, "ip", status.ip);
+  }
+  return ToolCall_Ok(root);
 }
 
 static cJSON* ToolCall_SpiStateJson(int id, const SpiCtrl_Config* cfg)
@@ -1602,6 +1725,20 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
   } else if (strcmp(name, "uart_flush") == 0) {
     TOOL_CALL_LOG("%s uart_flush(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
                   ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "uart_get_dtr") == 0) {
+    TOOL_CALL_LOG("%s uart_get_dtr(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "uart_get_rts") == 0) {
+    TOOL_CALL_LOG("%s uart_get_rts(id=%d, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "uart_set_dtr") == 0) {
+    TOOL_CALL_LOG("%s uart_set_dtr(id=%d, active=%s, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgBool(args, "active"), ToolCall_ArgStr(args, "lockId"));
+  } else if (strcmp(name, "get_uart_rfc2217_status") == 0) {
+    TOOL_CALL_LOG("%s get_uart_rfc2217_status(id=%d)", via, ToolCall_ArgInt(args, "id", -1));
+  } else if (strcmp(name, "uart_set_rts") == 0) {
+    TOOL_CALL_LOG("%s uart_set_rts(id=%d, active=%s, lockId=%s)", via, ToolCall_ArgInt(args, "id", -1),
+                  ToolCall_ArgBool(args, "active"), ToolCall_ArgStr(args, "lockId"));
   } else if (strcmp(name, "list_spis") == 0) {
     TOOL_CALL_LOG("%s list_spis()", via);
   } else if (strcmp(name, "configure_spi") == 0) {
@@ -1632,6 +1769,11 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
                   ToolCall_ArgStr(args, "lockId"));
   } else if (strcmp(name, "play_buzzer") == 0) {
     TOOL_CALL_LOG("%s play_buzzer(sequence=%s)", via, ToolCall_ArgStr(args, "sequence"));
+  } else if (strcmp(name, "get_dap_status") == 0) {
+    TOOL_CALL_LOG("%s get_dap_status()", via);
+  } else if (strcmp(name, "configure_dap") == 0) {
+    TOOL_CALL_LOG("%s configure_dap(enable=%s, lockId=%s)", via, ToolCall_ArgBool(args, "enable"),
+                  ToolCall_ArgStr(args, "lockId"));
   } else if (strcmp(name, "get_cloud_status") == 0) {
     TOOL_CALL_LOG("%s get_cloud_status()", via);
   } else if (strcmp(name, "get_system_info") == 0) {
@@ -1651,6 +1793,86 @@ static bool ToolCall_IsSystemTool(const char* name)
 {
   return name && (strcmp(name, "get_system_info") == 0 || strcmp(name, "check_system_ota") == 0 ||
                   strcmp(name, "get_system_ota") == 0 || strcmp(name, "upgrade_system_ota") == 0);
+}
+
+static int ToolCall_ParseDapPin(cJSON* pinsObj, const char* key, int* pinOut, bool required, char* reason, size_t reasonLen)
+{
+  cJSON* item = cJSON_GetObjectItem(pinsObj, key);
+  if (item == NULL || cJSON_IsNull(item)) {
+    if (required) {
+      snprintf(reason, reasonLen, "pins.%s is required.", key);
+      return -1;
+    }
+    *pinOut = -1;
+    return 0;
+  }
+  if (!cJSON_IsNumber(item)) {
+    snprintf(reason, reasonLen, "pins.%s must be an integer pin%s.", key, required ? "" : ", null, or omitted");
+    return -1;
+  }
+  *pinOut = item->valueint;
+  return 0;
+}
+
+static ToolCall_Result ToolCall_GetDapStatus(const char* via)
+{
+  DapCtrl_Status status;
+  bool cloud = ToolCall_FromCloud(via);
+  esp_err_t err = DapCtrl_GetStatus(cloud, &status);
+  if (err == ESP_ERR_INVALID_STATE) {
+    return ToolCall_Fail(503, "CMSIS-DAP is not running. POST /dap/config with enable true first.");
+  }
+  if (err != ESP_OK) return ToolCall_Fail(500, "internal");
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return ToolCall_Fail(500, "internal");
+  cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
+  if (status.cloud) cJSON_AddStringToObject(root, "url", status.url);
+  else {
+    cJSON_AddNumberToObject(root, "port", status.port);
+    cJSON_AddStringToObject(root, "ip", status.ip);
+  }
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_ConfigureDap(cJSON* args)
+{
+  char reason[256];
+  DapCtrl_Config cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cJSON* enableItem = cJSON_GetObjectItem(args, "enable");
+  cJSON* pinsItem = cJSON_GetObjectItem(args, "pins");
+  if (!cJSON_IsBool(enableItem)) return ToolCall_Err("enable must be boolean.");
+  if (!cJSON_IsObject(pinsItem)) return ToolCall_Err("pins must be an object with swclk, swdio, and optional nreset.");
+  if (ToolCall_ParseDapPin(pinsItem, "swclk", &cfg.swclkPin, true, reason, sizeof(reason)) != 0 ||
+      ToolCall_ParseDapPin(pinsItem, "swdio", &cfg.swdioPin, true, reason, sizeof(reason)) != 0 ||
+      ToolCall_ParseDapPin(pinsItem, "nreset", &cfg.nresetPin, false, reason, sizeof(reason)) != 0) {
+    return ToolCall_Err(reason);
+  }
+  cfg.enable = cJSON_IsTrue(enableItem);
+
+  const char* lockId = ToolCall_GetLockId(args);
+  int pins[3];
+  size_t count = 0;
+  pins[count++] = cfg.swclkPin;
+  pins[count++] = cfg.swdioPin;
+  if (cfg.nresetPin >= 0) pins[count++] = cfg.nresetPin;
+  DapCtrl_Config current;
+  DapCtrl_GetConfig(&current);
+  for (size_t i = 0; i < count; i++) {
+    int lockSt = HttpServer_LockStatusId(lockId, LOCK_KIND_GPIO, pins[i], LOCK_METHOD_WRITE, reason, sizeof(reason));
+    /* DAP may reconfigure or release its own pins; other lock failures still apply. */
+    bool owned = current.enable &&
+                 (pins[i] == current.swclkPin || pins[i] == current.swdioPin || pins[i] == current.nresetPin);
+    if (lockSt == 423 && owned) lockSt = 0;
+    if (lockSt) return ToolCall_Fail(lockSt, reason);
+  }
+
+  esp_err_t ret = DapCtrl_SetConfig(&cfg, reason, sizeof(reason));
+  if (ret == ESP_ERR_INVALID_ARG) return ToolCall_Err(reason);
+  if (ret == ESP_ERR_INVALID_STATE) return ToolCall_Fail(409, reason);
+  if (ret != ESP_OK) return ToolCall_Fail(500, reason[0] ? reason : "internal");
+  Lock_Touch(lockId);
+  return ToolCall_OkEmpty();
 }
 
 static ToolCall_Result ToolCall_GetCloudStatus(void)
@@ -1767,6 +1989,16 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
     r = ToolCall_UartReceive(args);
   else if (strcmp(name, "uart_flush") == 0)
     r = ToolCall_UartFlush(args);
+  else if (strcmp(name, "uart_get_dtr") == 0)
+    r = ToolCall_UartGetDtr(args);
+  else if (strcmp(name, "uart_get_rts") == 0)
+    r = ToolCall_UartGetRts(args);
+  else if (strcmp(name, "uart_set_dtr") == 0)
+    r = ToolCall_UartSetDtr(args);
+  else if (strcmp(name, "uart_set_rts") == 0)
+    r = ToolCall_UartSetRts(args);
+  else if (strcmp(name, "get_uart_rfc2217_status") == 0)
+    r = ToolCall_GetUartRfc2217Status(args, via);
   else if (strcmp(name, "list_spis") == 0)
     r = ToolCall_ListSpis();
   else if (strcmp(name, "configure_spi") == 0)
@@ -1789,6 +2021,10 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
     r = ToolCall_I2cSlaveReceive(args);
   else if (strcmp(name, "play_buzzer") == 0)
     r = ToolCall_PlayBuzzer(args);
+  else if (strcmp(name, "get_dap_status") == 0)
+    r = ToolCall_GetDapStatus(via);
+  else if (strcmp(name, "configure_dap") == 0)
+    r = ToolCall_ConfigureDap(args);
   else if (strcmp(name, "get_cloud_status") == 0)
     r = ToolCall_GetCloudStatus();
   else if (strcmp(name, "get_system_info") == 0)

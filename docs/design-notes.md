@@ -17,6 +17,7 @@ The device always dials out; no inbound connections or port forwarding are neede
 
 - WebSocket endpoint at `<origin>/cloud/device/<digest>` (upgrade required, no bearer auth — the device proves key ownership during the handshake).
 - Client HTTP surface at `<origin>/device/<digest>/<path>` guarded by a routing token bound to that digest, JSON-only.
+- Client TCP byte streams at `<origin>/device/<digest>/tcp-stream/dap` and `/tcp-stream/rfc2217` (WebSocket upgrade, `token` query). See TCP byte streams below.
 - The auth handshake, request/response message contract, limits, heartbeat eviction, and timeouts described below.
 - OAuth endpoints for MCP clients (metadata, register, token, browser pairing page) per the MCP authorization spec.
 
@@ -156,8 +157,8 @@ These routes do not grant API access. MCP and REST still require a routing token
 ## Device-side implementation notes (`main/src/cloud.c`)
 
 - One FreeRTOS task (`cloud-relay`, 6 KB stack) owns receive parsing and dispatch; sends from HTTP handlers go through `Cloud_Write` under a mutex.
-- Receive path: fragments (opcodes 0/1) are reassembled; control frames may interleave. Oversize or malformed buffers trigger a relay restart. Each queued message carries the connection generation; stale messages are dropped.
-- Message handling: `pong` is ignored; `authRequest` is answered only while unauthenticated; `authResult` sets the authenticated flag; `pairingSessionRequest` runs in `cloud.c` (no `requestId`); holding BOOT sends one unsolicited `pairingSessionTokenResponse`; `request` is dispatched synchronously on the relay task (cloud-side timeouts bound the work) after `grantSecret` is checked.
+- Receive path: text fragments (opcodes 0/1) and binary fragments (opcodes 2/0) are reassembled separately, both up to `CONFIG_CLOUD_MAX_MESSAGE_BYTES`. Control frames may interleave. An oversize buffer, allocation failure, or full queue restarts the relay. Each queued message carries the connection generation; stale messages are dropped.
+- Message handling: `pong` is ignored; `authRequest` is answered only while unauthenticated; `authResult` sets the authenticated flag; `pairingSessionRequest` runs in `cloud.c` (no `requestId`); holding BOOT sends one unsolicited `pairingSessionTokenResponse`; `request` is dispatched synchronously on the relay task (cloud-side timeouts bound the work) after `grantSecret` is checked. `tcpStreamOpenRequest` allocates a half-open connection (max 4) and wakes the session listen fd; open response is deferred until `Cloud_TcpAccept` or a 2s half-open timeout. `tcpStreamCloseRequest` is answered on the relay, which then wakes the cloud client fd. Binary frames go into that connection's ring.
 - Requests arriving during Wi-Fi pairing or with the API server down get `503 device API unavailable` from the device itself.
 
 ## Constants
@@ -168,6 +169,8 @@ These routes do not grant API access. MCP and REST still require a routing token
 | Public key / signature | 65 / 64 bytes | `PUBLIC_KEY_BYTES`, `SIGNATURE_BYTES` |
 | Digest | 20-byte payload + 4-byte checksum, Base58Check | `DIGEST_PAYLOAD_BYTES`, `DIGEST_CHECKSUM_BYTES` |
 | Max device WS message (firmware) | 72 KB | `CONFIG_CLOUD_MAX_MESSAGE_BYTES` |
+| Cloud TCP max connections | 4 | `CONFIG_CLOUD_TCP_MAX_CONNECTIONS` |
+| Cloud TCP stream receive window | 16 KB | `CONFIG_CLOUD_TCP_STREAM_RX_BYTES` |
 | Max proxied request body | 64 KB | `MAX_BODY_BYTES` |
 | Max device response body | 1 MB (serialized) | reference `device.ts` |
 | Max path / headers / name / value | 1024 / 16 / 64 / 512 | `MAX_PATH_LEN`, `MAX_HEADERS`, … |
@@ -183,4 +186,18 @@ These routes do not grant API access. MCP and REST still require a routing token
 - Domain separation (`saihub/cloud-auth/v1\0`) prevents cross-protocol signature reuse.
 - Possession of the digest alone grants nothing: the WebSocket requires a valid challenge signature, and client HTTP requires a sealed routing token bound to that digest.
 - Routing tokens double as OAuth codes and long-lived bearer tokens; rotating the relay secret invalidates all of them at once.
-- The relay is JSON-only and strips hop-by-hop headers, which keeps the proxy surface small but rules out SSE/binary streaming until revisited.
+- Proxied HTTP stays JSON and strips hop-by-hop headers. TCP byte streams use a separate WebSocket, described below.
+
+## TCP byte streams
+
+DAP and RFC2217 can be reached through the relay without opening a LAN port.
+
+- Client WebSocket: `GET /device/<digest>/tcp-stream/dap` or `/tcp-stream/rfc2217`, query `token`.
+- The token is sealed with `WEBSOCKET_TOKEN_SECRET` (AES-GCM, same packing as a routing token). Payload: `{ expireAt, devicePublicKeyDigest, path, grantSecret }`. `expireAt` is unix seconds, `WEBSOCKET_TOKEN_TTL_S` after mint. `path` is `/tcp-stream/dap` or `/tcp-stream/rfc2217`. The relay checks digest, expiry, and `path` against the request path, then forwards `grantSecret` to the device.
+- The relay sends `tcpStreamOpenRequest` (`requestId`, `service`, `grantSecret`) on the existing device socket. Firmware allocates a pool slot (`CONFIG_CLOUD_TCP_MAX_CONNECTIONS` half-open+open), creates the RX `Tool_Ring` then, status half-open, and wakes the service listen eventfd. Immediate rejects use `too many connections` or `Insufficient memory for new connections`. Freeing the connection releases the ring. The session calls `Cloud_TcpAccept(service, err, reason)`: OK → half-open→open, returns a clientFd, and sends success with internal `channelId` (0–3) plus `byteCredits`; non-OK → fail response with reason and `-1`. A 2s half-open timeout in `cloud.c` logs and fails with `timeout`. DAP/RFC2217 never see channel ids; they use `Cloud_TcpSend` / `Cloud_TcpRecv` / `Cloud_TcpClose` on the accepted fd (same shape as LAN `send`/`recv`/`close`). RFC2217 greets after a successful accept. One client per session task: busy rejects with `client already connected`.
+- After open, the client socket accepts binary frames only. Text `ping` / `pong` are the heartbeat (about every 10 seconds). The relay auto-responds `pong` and does not deliver those frames to the Durable Object. Any other text frame closes the socket.
+- The relay holds client bytes, up to 1 MB, in Durable Object storage (`tcpStream:<channelId>`: credits plus pending `ArrayBuffer`) so queued bytes survive hibernation. It forwards only while `byteCredits` is greater than zero. Each forwarded chunk decreases that count. The device pulls bytes from its ring via `Cloud_TcpRecv`, then sends `tcpStreamAck` with `length` set to the bytes just pulled. The relay adds `length` back onto the budget, never above the initial `byteCredits`. A client frame that would pass 1 MB closes that client. A device frame that does not fit the ring restarts the relay.
+- Client binary that is forwarded is prefixed with the channel id byte. Device binary starts with that channel id; the relay strips it and forwards the rest to the matching client.
+- Client disconnect sends `tcpStreamCloseRequest` (`requestId`, `channelId`, `grantSecret`). The device answers `tcpStreamCloseResponse` on the relay, marks peer EOF, and wakes the cloud client fd. The session does not call back.
+- Listen wake and per-connection data wake use eventfds cloud owns. Outbound bytes are one WebSocket binary message: channel id, then the existing buffer, without copying into a larger buffer.
+- Status responses from the cloud (`GET /dap/status`, `GET /uart/{id}/rfc2217`, and the matching tools) return `prompt` and `url` instead of `ip` and `port`. The device puts `$WEBSOCKET_TOKEN$` in `url` and sets `cloud.addWebsocketToken` to `{ jsonPathes, websocketPath }`. The relay mints one token for that response and replaces the first placeholder in each listed string (one `replace`, not every occurrence). `websocketPath` is what gets sealed into the token and checked on connect.
