@@ -872,22 +872,33 @@ static ToolCall_Result ToolCall_UartSetRts(cJSON* args)
   return ToolCall_UartSetControlLine(args, UartCtrl_SetRts);
 }
 
-static ToolCall_Result ToolCall_GetUartRfc2217Status(cJSON* args)
+static bool ToolCall_FromCloud(const char* via)
+{
+  return via != NULL && strstr(via, "/cloud") != NULL;
+}
+
+static ToolCall_Result ToolCall_GetUartRfc2217Status(cJSON* args, const char* via)
 {
   char reason[160];
   int id = 0;
   if (!ToolCall_ParseUartId(args, &id, reason, sizeof(reason))) return ToolCall_Err(reason);
   UartCtrl_Rfc2217Status status;
-  if (UartCtrl_GetRfc2217Status(id, &status) != ESP_OK) {
+  bool cloud = ToolCall_FromCloud(via);
+  esp_err_t err = UartCtrl_GetRfc2217Status(id, cloud, &status);
+  if (err == ESP_ERR_INVALID_STATE) {
     snprintf(reason, sizeof(reason),
              "RFC2217 is not running. POST /uart/%d/config with enable true and mode rfc2217 first.", id);
     return ToolCall_Fail(503, reason);
   }
+  if (err != ESP_OK) return ToolCall_Fail(500, "internal");
   cJSON* root = cJSON_CreateObject();
   if (root == NULL) return ToolCall_Fail(500, "internal");
   cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
-  cJSON_AddNumberToObject(root, "port", status.port);
-  cJSON_AddStringToObject(root, "ip", status.ip);
+  if (status.cloud) cJSON_AddStringToObject(root, "url", status.url);
+  else {
+    cJSON_AddNumberToObject(root, "port", status.port);
+    cJSON_AddStringToObject(root, "ip", status.ip);
+  }
   return ToolCall_Ok(root);
 }
 
@@ -1803,17 +1814,23 @@ static int ToolCall_ParseDapPin(cJSON* pinsObj, const char* key, int* pinOut, bo
   return 0;
 }
 
-static ToolCall_Result ToolCall_GetDapStatus(void)
+static ToolCall_Result ToolCall_GetDapStatus(const char* via)
 {
   DapCtrl_Status status;
-  if (DapCtrl_GetStatus(&status) != ESP_OK) {
+  bool cloud = ToolCall_FromCloud(via);
+  esp_err_t err = DapCtrl_GetStatus(cloud, &status);
+  if (err == ESP_ERR_INVALID_STATE) {
     return ToolCall_Fail(503, "CMSIS-DAP is not running. POST /dap/config with enable true first.");
   }
+  if (err != ESP_OK) return ToolCall_Fail(500, "internal");
   cJSON* root = cJSON_CreateObject();
   if (!root) return ToolCall_Fail(500, "internal");
   cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
-  cJSON_AddNumberToObject(root, "port", status.port);
-  cJSON_AddStringToObject(root, "ip", status.ip);
+  if (status.cloud) cJSON_AddStringToObject(root, "url", status.url);
+  else {
+    cJSON_AddNumberToObject(root, "port", status.port);
+    cJSON_AddStringToObject(root, "ip", status.ip);
+  }
   return ToolCall_Ok(root);
 }
 
@@ -1981,7 +1998,7 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
   else if (strcmp(name, "uart_set_rts") == 0)
     r = ToolCall_UartSetRts(args);
   else if (strcmp(name, "get_uart_rfc2217_status") == 0)
-    r = ToolCall_GetUartRfc2217Status(args);
+    r = ToolCall_GetUartRfc2217Status(args, via);
   else if (strcmp(name, "list_spis") == 0)
     r = ToolCall_ListSpis();
   else if (strcmp(name, "configure_spi") == 0)
@@ -2005,7 +2022,7 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
   else if (strcmp(name, "play_buzzer") == 0)
     r = ToolCall_PlayBuzzer(args);
   else if (strcmp(name, "get_dap_status") == 0)
-    r = ToolCall_GetDapStatus();
+    r = ToolCall_GetDapStatus(via);
   else if (strcmp(name, "configure_dap") == 0)
     r = ToolCall_ConfigureDap(args);
   else if (strcmp(name, "get_cloud_status") == 0)

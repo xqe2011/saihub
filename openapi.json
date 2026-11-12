@@ -1498,7 +1498,7 @@
           "dap"
         ],
         "summary": "CMSIS-DAP TCP status",
-        "description": "prompt explains how to connect. port and ip are the address.",
+        "description": "prompt explains how to connect.",
         "responses": {
           "200": {
             "description": "Service is running",
@@ -1677,7 +1677,7 @@
           "uart"
         ],
         "summary": "RFC2217 TCP status",
-        "description": "prompt explains how to connect. port and ip are the address. 503 when this UART is not enabled in rfc2217 mode.",
+        "description": "prompt explains how to connect. 503 when this UART is not enabled in rfc2217 mode.",
         "parameters": [
           {
             "$ref": "#/components/parameters/UartPath"
@@ -3309,25 +3309,31 @@
           }
         }
       },
-      "DapStatus": {
+      "DapStatusLocal": {
         "type": "object",
-        "required": [
-          "prompt",
-          "port",
-          "ip"
-        ],
+        "required": ["prompt", "port", "ip"],
         "additionalProperties": false,
         "properties": {
-          "prompt": {
-            "type": "string"
-          },
-          "port": {
-            "type": "integer"
-          },
-          "ip": {
-            "type": "string"
-          }
+          "prompt": {"type": "string"},
+          "port": {"type": "integer"},
+          "ip": {"type": "string"}
         }
+      },
+      "DapStatusCloud": {
+        "type": "object",
+        "required": ["prompt", "url"],
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {"type": "string"},
+          "url": {"type": "string", "description": "WebSocket URL for the TCP byte stream."}
+        }
+      },
+      "DapStatus": {
+        "description": "Local responses include prompt, port, and ip. Cloud responses include prompt and url.",
+        "oneOf": [
+          {"$ref": "#/components/schemas/DapStatusLocal"},
+          {"$ref": "#/components/schemas/DapStatusCloud"}
+        ]
       },
       "UartEncoding": {
         "type": "string",
@@ -3483,25 +3489,31 @@
           }
         ]
       },
-      "Rfc2217Status": {
+      "Rfc2217StatusLocal": {
         "type": "object",
-        "required": [
-          "prompt",
-          "port",
-          "ip"
-        ],
+        "required": ["prompt", "port", "ip"],
         "additionalProperties": false,
         "properties": {
-          "prompt": {
-            "type": "string"
-          },
-          "port": {
-            "type": "integer"
-          },
-          "ip": {
-            "type": "string"
-          }
+          "prompt": {"type": "string"},
+          "port": {"type": "integer"},
+          "ip": {"type": "string"}
         }
+      },
+      "Rfc2217StatusCloud": {
+        "type": "object",
+        "required": ["prompt", "url"],
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {"type": "string"},
+          "url": {"type": "string", "description": "WebSocket URL for the TCP byte stream."}
+        }
+      },
+      "Rfc2217Status": {
+        "description": "Local responses include prompt, port, and ip. Cloud responses include prompt and url.",
+        "oneOf": [
+          {"$ref": "#/components/schemas/Rfc2217StatusLocal"},
+          {"$ref": "#/components/schemas/Rfc2217StatusCloud"}
+        ]
       },
       "UartLineBody": {
         "type": "object",

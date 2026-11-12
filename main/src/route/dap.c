@@ -111,12 +111,20 @@ static esp_err_t Route_DapStatusHandler(HttpServer_Context* ctx)
 {
   HttpServer_LogCall(ctx);
   DapCtrl_Status status;
-  if (DapCtrl_GetStatus(&status) != ESP_OK) return HttpServer_SendError(ctx, 503, notRunning);
+  bool cloud = strcmp(HttpServer_GetFrom(ctx), "cloud") == 0;
+  esp_err_t err = DapCtrl_GetStatus(cloud, &status);
+  if (err == ESP_ERR_INVALID_STATE) return HttpServer_SendError(ctx, 503, notRunning);
+  if (err != ESP_OK) return HttpServer_SendError(ctx, 500, "internal");
   cJSON* root = cJSON_CreateObject();
   if (root == NULL) return HttpServer_SendError(ctx, 500, "internal");
   cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
-  cJSON_AddNumberToObject(root, "port", status.port);
-  cJSON_AddStringToObject(root, "ip", status.ip);
+  if (status.cloud) {
+    cJSON_AddStringToObject(root, "url", status.url);
+    HttpServer_SetCloudAddWebsocketToken(ctx, "/tcp-stream/dap", "/url");
+  } else {
+    cJSON_AddNumberToObject(root, "port", status.port);
+    cJSON_AddStringToObject(root, "ip", status.ip);
+  }
   return HttpServer_SendJson(ctx, 200, root);
 }
 

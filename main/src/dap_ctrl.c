@@ -8,6 +8,7 @@
  */
 #include "dap_ctrl.h"
 
+#include "cloud.h"
 #include "config.h"
 #include "gpio_ctrl.h"
 #include "lock.h"
@@ -1173,7 +1174,7 @@ esp_err_t DapCtrl_SetConfig(const DapCtrl_Config* cfg, char* reason, size_t reas
   return ESP_OK;
 }
 
-esp_err_t DapCtrl_GetStatus(DapCtrl_Status* out)
+esp_err_t DapCtrl_GetStatus(bool cloud, DapCtrl_Status* out)
 {
   if (out == NULL) return ESP_ERR_INVALID_ARG;
   xSemaphoreTake(mutex, portMAX_DELAY);
@@ -1182,7 +1183,13 @@ esp_err_t DapCtrl_GetStatus(DapCtrl_Status* out)
   if (!running) return ESP_ERR_INVALID_STATE;
 
   memset(out, 0, sizeof(*out));
-  out->prompt = CONFIG_DAP_STATUS_PROMPT;
+  out->cloud = cloud;
+  if (cloud) {
+    out->prompt = CONFIG_DAP_CLOUD_STATUS_PROMPT;
+    if (!Cloud_FormatTcpStreamUrl("dap", out->url, sizeof out->url)) return ESP_FAIL;
+    return ESP_OK;
+  }
+  out->prompt = CONFIG_DAP_LOCAL_STATUS_PROMPT;
   out->port = CONFIG_DAP_TCP_PORT;
   char ip[16];
   ip[0] = '\0';

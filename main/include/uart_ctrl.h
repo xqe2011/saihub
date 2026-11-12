@@ -42,9 +42,11 @@ typedef struct {
 } UartCtrl_Config;
 
 typedef struct {
-  const char* prompt; /* points at CONFIG_RFC2217_STATUS_PROMPT; not owned */
-  int port;
-  char ip[16]; /* STA IPv4 text, or empty if none — never "0.0.0.0" */
+  bool cloud;
+  const char* prompt; /* local or cloud prompt; not owned */
+  int port;           /* local */
+  char ip[16];        /* local STA IPv4 text, or empty if none — never "0.0.0.0" */
+  char url[640];      /* cloud WebSocket URL with a token placeholder */
 } UartCtrl_Rfc2217Status;
 
 bool UartCtrl_IsValidId(int id);
@@ -58,8 +60,8 @@ esp_err_t UartCtrl_GetConfig(int id, UartCtrl_Config* out);
  * RFC2217 line changes call this too; mode gating for HTTP/MCP lives in the routes.
  */
 esp_err_t UartCtrl_SetConfig(int id, const UartCtrl_Config* cfg, char* reason, size_t reasonLen);
-/** ESP_ERR_INVALID_STATE when this UART is not enabled in rfc2217 mode (route → 503). */
-esp_err_t UartCtrl_GetRfc2217Status(int id, UartCtrl_Rfc2217Status* out);
+/** ESP_ERR_INVALID_STATE when this UART is not enabled in rfc2217 mode (route → 503). ESP_FAIL when a cloud URL cannot be built. */
+esp_err_t UartCtrl_GetRfc2217Status(int id, bool cloud, UartCtrl_Rfc2217Status* out);
 esp_err_t UartCtrl_Transmit(int id, const uint8_t* data, size_t len, char* reason, size_t reasonLen);
 /** Drain up to maxLen bytes from RX into out. *outLen is set to bytes written. */
 esp_err_t UartCtrl_Receive(int id, uint8_t* out, size_t maxLen, size_t* outLen, char* reason, size_t reasonLen);

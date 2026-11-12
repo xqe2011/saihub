@@ -503,17 +503,25 @@ static esp_err_t Route_UartGetRfc2217Handler(HttpServer_Context* ctx)
   if (pr != 0) return Route_UartIdError(ctx, pr);
 
   UartCtrl_Rfc2217Status status;
-  if (UartCtrl_GetRfc2217Status(id, &status) != ESP_OK) {
+  bool cloud = strcmp(HttpServer_GetFrom(ctx), "cloud") == 0;
+  esp_err_t err = UartCtrl_GetRfc2217Status(id, cloud, &status);
+  if (err == ESP_ERR_INVALID_STATE) {
     char reason[160];
     snprintf(reason, sizeof(reason),
              "RFC2217 is not running. POST /uart/%d/config with enable true and mode rfc2217 first.", id);
     return HttpServer_SendError(ctx, 503, reason);
   }
+  if (err != ESP_OK) return HttpServer_SendError(ctx, 500, "internal");
   cJSON* root = cJSON_CreateObject();
   if (root == NULL) return HttpServer_SendError(ctx, 500, "internal");
   cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
-  cJSON_AddNumberToObject(root, "port", status.port);
-  cJSON_AddStringToObject(root, "ip", status.ip);
+  if (status.cloud) {
+    cJSON_AddStringToObject(root, "url", status.url);
+    HttpServer_SetCloudAddWebsocketToken(ctx, "/tcp-stream/rfc2217", "/url");
+  } else {
+    cJSON_AddNumberToObject(root, "port", status.port);
+    cJSON_AddStringToObject(root, "ip", status.ip);
+  }
   return HttpServer_SendJson(ctx, 200, root);
 }
 

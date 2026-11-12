@@ -306,6 +306,12 @@ static cJSON* Route_McpHandleToolsCall(HttpServer_Context* ctx, cJSON* params)
   char from[48];
   snprintf(from, sizeof(from), "mcp/%s", HttpServer_GetFrom(ctx));
   ToolCall_Result tr = ToolCall_Invoke(from, name, args);
+  if (tr.ok && strcmp(HttpServer_GetFrom(ctx), "cloud") == 0) {
+    if (strcmp(name, "get_dap_status") == 0) HttpServer_SetCloudAddWebsocketToken(ctx, "/tcp-stream/dap", "/result/content/0/text");
+    else if (strcmp(name, "get_uart_rfc2217_status") == 0) {
+      HttpServer_SetCloudAddWebsocketToken(ctx, "/tcp-stream/rfc2217", "/result/content/0/text");
+    }
+  }
   cJSON* out = !tr.ok ? Route_McpToolResultErr(tr.reason) : Route_McpToolResultOk(tr.payload);
   if (ownedArgs) cJSON_Delete(args);
   return out;

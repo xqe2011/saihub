@@ -14,7 +14,9 @@
 
 #include <esp_app_desc.h>
 #include <esp_crt_bundle.h>
+#include <esp_vfs_eventfd.h>
 #include <esp_websocket_client.h>
+#include <fcntl.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
@@ -35,6 +37,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #if !defined(CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN) || !CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN
 #error "Cloud identity requires CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN"
@@ -459,6 +462,24 @@ const char* Cloud_GetLandingPageUrl(void)
   return landingPageUrl;
 }
 
+bool Cloud_FormatTcpStreamUrl(const char* service, char* out, size_t outLen)
+{
+  if (!out || outLen == 0) return false;
+  out[0] = '\0';
+  if (!service || !service[0] || CONFIG_CLOUD_URL[0] == '\0' || publicKeyDigest[0] == '\0') return false;
+  const char* scheme = NULL;
+  const char* host = NULL;
+  if (strncmp(CONFIG_CLOUD_URL, "wss://", 6) == 0) {
+    scheme = "wss://";
+    host = CONFIG_CLOUD_URL + 6;
+  } else if (strncmp(CONFIG_CLOUD_URL, "ws://", 5) == 0) {
+    scheme = "ws://";
+    host = CONFIG_CLOUD_URL + 5;
+  } else return false;
+  int n = snprintf(out, outLen, "%s%s/device/%s/tcp-stream/%s?token=$WEBSOCKET_TOKEN$", scheme, host, publicKeyDigest, service);
+  return n > 0 && (size_t)n < outLen;
+}
+
 esp_err_t Cloud_SignChallenge(const uint8_t* challenge, size_t challengeLen,
                               uint8_t signature[CLOUD_SIGNATURE_BYTES], size_t* signatureLenOut)
 {
@@ -588,14 +609,21 @@ static _Atomic(TaskHandle_t) streamOwner;
 static char* receiveBuffer;
 static size_t receiveLength;
 static unsigned receiveGeneration;
+static bool receiveBinary;
 
-typedef struct { char* text; unsigned generation; } Cloud_Message;
+typedef struct {
+  char* text;
+  uint8_t* bin;
+  size_t binLen;
+  unsigned generation;
+} Cloud_Message;
 
 static void Cloud_ResetReceive(void)
 {
   free(receiveBuffer);
   receiveBuffer = NULL;
   receiveLength = 0;
+  receiveBinary = false;
 }
 
 static bool Cloud_ConnectionCurrent(unsigned expected)
@@ -907,6 +935,500 @@ static void Cloud_Authenticate(cJSON* message, unsigned expected)
   Cloud_SendJson(expected, response);
 }
 
+#define CLOUD_TCP_HALF_OPEN_MS 2000
+#define CLOUD_TCP_REQUEST_ID_MAX 64
+
+typedef enum {
+  CLOUD_TCP_FREE = 0,
+  CLOUD_TCP_HALF_OPEN,
+  CLOUD_TCP_OPEN,
+} Cloud_TcpStatus;
+
+typedef struct {
+  const char* service;
+  const char* taskName;
+  const char* notRunning;
+  int listenFd;
+  SemaphoreHandle_t mutex;
+} Cloud_TcpListener;
+
+typedef struct {
+  Cloud_TcpStatus status;
+  const char* service;
+  int clientFd;
+  bool peerEof;
+  Tool_Ring ring;
+  SemaphoreHandle_t mutex;
+  char requestId[CLOUD_TCP_REQUEST_ID_MAX];
+  unsigned generation;
+  TickType_t halfOpenAt;
+} Cloud_TcpConn;
+
+static Cloud_TcpListener tcpListeners[] = {
+  {.service = "dap", .taskName = "saihub_dap", .notRunning = "CMSIS-DAP is not running", .listenFd = -1},
+  {.service = "rfc2217", .taskName = "saihub_rfc2217", .notRunning = "RFC2217 is not running", .listenFd = -1},
+};
+
+static Cloud_TcpConn tcpConns[CONFIG_CLOUD_TCP_MAX_CONNECTIONS];
+static SemaphoreHandle_t tcpPoolMutex;
+static bool tcpPoolReady;
+
+static void Cloud_TcpPoolEnsure(void)
+{
+  if (tcpPoolReady) return;
+  for (size_t i = 0; i < CONFIG_CLOUD_TCP_MAX_CONNECTIONS; i++) tcpConns[i].clientFd = -1;
+  tcpPoolReady = true;
+}
+
+static Cloud_TcpListener* Cloud_TcpFindListener(const char* service)
+{
+  if (!service) return NULL;
+  for (size_t i = 0; i < sizeof tcpListeners / sizeof tcpListeners[0]; i++) {
+    if (strcmp(tcpListeners[i].service, service) == 0) return &tcpListeners[i];
+  }
+  return NULL;
+}
+
+static Cloud_TcpConn* Cloud_TcpFindByFd(int fd)
+{
+  if (fd < 0) return NULL;
+  for (size_t i = 0; i < CONFIG_CLOUD_TCP_MAX_CONNECTIONS; i++) {
+    if (tcpConns[i].clientFd == fd) return &tcpConns[i];
+  }
+  return NULL;
+}
+
+static size_t Cloud_TcpActiveCount(void)
+{
+  size_t n = 0;
+  for (size_t i = 0; i < CONFIG_CLOUD_TCP_MAX_CONNECTIONS; i++) {
+    if (tcpConns[i].status != CLOUD_TCP_FREE) n++;
+  }
+  return n;
+}
+
+static esp_err_t Cloud_TcpEventfdEnsure(void)
+{
+  static bool ready;
+  if (ready) return ESP_OK;
+  esp_vfs_eventfd_config_t config = {.max_fds = 8};
+  esp_err_t err = esp_vfs_eventfd_register(&config);
+  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return err;
+  ready = true;
+  return ESP_OK;
+}
+
+static int Cloud_TcpMakeEventFd(void)
+{
+  if (Cloud_TcpEventfdEnsure() != ESP_OK) return -1;
+  int fd = eventfd(0, 0);
+  if (fd < 0) return -1;
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags < 0) flags = 0;
+  fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+  return fd;
+}
+
+static void Cloud_TcpWakeFd(int fd)
+{
+  if (fd < 0) return;
+  uint64_t one = 1;
+  (void)write(fd, &one, sizeof one);
+}
+
+static void Cloud_TcpReplyOpen(unsigned expected, const char* requestId, bool success, int channelId, const char* reason)
+{
+  cJSON* root = cJSON_CreateObject();
+  if (!root || !requestId) {
+    cJSON_Delete(root);
+    return;
+  }
+  cJSON_AddStringToObject(root, "type", "tcpStreamOpenResponse");
+  cJSON_AddStringToObject(root, "requestId", requestId);
+  cJSON_AddBoolToObject(root, "success", success);
+  if (success && channelId >= 0) {
+    cJSON_AddNumberToObject(root, "channelId", channelId);
+    cJSON_AddNumberToObject(root, "byteCredits", CONFIG_CLOUD_TCP_STREAM_RX_BYTES);
+  }
+  if (!success) cJSON_AddStringToObject(root, "reason", reason ? reason : "internal");
+  Cloud_SendJson(expected, root);
+}
+
+static void Cloud_TcpFreeConn(Cloud_TcpConn* conn)
+{
+  if (!conn) return;
+  int fd = conn->clientFd;
+  conn->clientFd = -1;
+  conn->status = CLOUD_TCP_FREE;
+  conn->peerEof = false;
+  Tool_RingRelease(&conn->ring);
+  conn->service = NULL;
+  conn->requestId[0] = '\0';
+  conn->generation = 0;
+  if (fd >= 0) close(fd);
+}
+
+static void Cloud_TcpNotifyClose(Cloud_TcpConn* conn)
+{
+  if (!conn || !conn->mutex) return;
+  xSemaphoreTake(conn->mutex, portMAX_DELAY);
+  if (conn->status == CLOUD_TCP_OPEN) {
+    conn->peerEof = true;
+    Tool_RingClear(&conn->ring);
+    Cloud_TcpWakeFd(conn->clientFd);
+  }
+  xSemaphoreGive(conn->mutex);
+}
+
+static void Cloud_TcpReset(void)
+{
+  if (!tcpPoolMutex) return;
+  xSemaphoreTake(tcpPoolMutex, portMAX_DELAY);
+  for (size_t i = 0; i < CONFIG_CLOUD_TCP_MAX_CONNECTIONS; i++) {
+    Cloud_TcpConn* conn = &tcpConns[i];
+    if (conn->status == CLOUD_TCP_FREE) continue;
+    if (conn->status == CLOUD_TCP_HALF_OPEN) {
+      ESP_LOGI(tag, "tcp stream reset half-open service=%s channel=%u", conn->service ? conn->service : "?", (unsigned)i);
+      unsigned generation = conn->generation;
+      char requestId[CLOUD_TCP_REQUEST_ID_MAX];
+      snprintf(requestId, sizeof requestId, "%s", conn->requestId);
+      Cloud_TcpFreeConn(conn);
+      xSemaphoreGive(tcpPoolMutex);
+      Cloud_TcpReplyOpen(generation, requestId, false, -1, "cloud relay reset");
+      xSemaphoreTake(tcpPoolMutex, portMAX_DELAY);
+      continue;
+    }
+    ESP_LOGI(tag, "tcp stream reset service=%s channel=%u", conn->service ? conn->service : "?", (unsigned)i);
+    xSemaphoreGive(tcpPoolMutex);
+    Cloud_TcpNotifyClose(conn);
+    xSemaphoreTake(tcpPoolMutex, portMAX_DELAY);
+  }
+  xSemaphoreGive(tcpPoolMutex);
+}
+
+static void Cloud_TcpKickHalfOpen(void)
+{
+  if (!tcpPoolMutex) return;
+  TickType_t now = xTaskGetTickCount();
+  xSemaphoreTake(tcpPoolMutex, portMAX_DELAY);
+  for (size_t i = 0; i < CONFIG_CLOUD_TCP_MAX_CONNECTIONS; i++) {
+    Cloud_TcpConn* conn = &tcpConns[i];
+    if (conn->status != CLOUD_TCP_HALF_OPEN) continue;
+    if ((TickType_t)(now - conn->halfOpenAt) < pdMS_TO_TICKS(CLOUD_TCP_HALF_OPEN_MS)) continue;
+    ESP_LOGW(tag, "tcp stream accept timeout service=%s channel=%u", conn->service ? conn->service : "?", (unsigned)i);
+    unsigned generation = conn->generation;
+    char requestId[CLOUD_TCP_REQUEST_ID_MAX];
+    snprintf(requestId, sizeof requestId, "%s", conn->requestId);
+    Cloud_TcpFreeConn(conn);
+    xSemaphoreGive(tcpPoolMutex);
+    Cloud_TcpReplyOpen(generation, requestId, false, -1, "timeout");
+    xSemaphoreTake(tcpPoolMutex, portMAX_DELAY);
+  }
+  xSemaphoreGive(tcpPoolMutex);
+}
+
+static bool Cloud_TcpAppend(Cloud_TcpConn* conn, const uint8_t* data, size_t len)
+{
+  if (!conn || !conn->mutex || !data || len == 0) return false;
+  if (xSemaphoreTake(conn->mutex, pdMS_TO_TICKS(2000)) != pdTRUE) return false;
+  bool overflow = false;
+  bool ok = false;
+  if (conn->status == CLOUD_TCP_OPEN) {
+    if (len > Tool_RingFree(&conn->ring)) overflow = true;
+    else ok = Tool_RingWrite(&conn->ring, data, len);
+  }
+  int wakeFd = ok ? conn->clientFd : -1;
+  xSemaphoreGive(conn->mutex);
+  if (overflow) Cloud_RequestRestart("Cloud message too large.");
+  if (ok) Cloud_TcpWakeFd(wakeFd);
+  return ok;
+}
+
+static void Cloud_TcpIngest(uint8_t channelId, const uint8_t* data, size_t len)
+{
+  if (channelId >= CONFIG_CLOUD_TCP_MAX_CONNECTIONS || len == 0) return;
+  Cloud_TcpConn* conn = &tcpConns[channelId];
+  if (conn->status != CLOUD_TCP_OPEN) return;
+  (void)Cloud_TcpAppend(conn, data, len);
+}
+
+static void Cloud_TcpSendAck(uint8_t channelId, size_t length)
+{
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return;
+  cJSON_AddStringToObject(root, "type", "tcpStreamAck");
+  cJSON_AddNumberToObject(root, "channelId", channelId);
+  cJSON_AddNumberToObject(root, "length", (double)length);
+  Cloud_SendJson(atomic_load(&generation), root);
+}
+
+static esp_err_t Cloud_TcpSendBinary(uint8_t channelId, const uint8_t* data, size_t length)
+{
+  unsigned expected = atomic_load(&generation);
+  if (xSemaphoreTake(sendMutex, pdMS_TO_TICKS(2000)) != pdTRUE) return ESP_ERR_TIMEOUT;
+  if (!Cloud_ConnectionCurrent(expected) || !atomic_load(&authenticated)) {
+    xSemaphoreGive(sendMutex);
+    return ESP_ERR_INVALID_STATE;
+  }
+  char id = (char)channelId;
+  bool ok = esp_websocket_client_send_bin_partial(client, &id, 1, pdMS_TO_TICKS(10000)) == 1;
+  if (ok && length > 0 && data != NULL) {
+    ok = esp_websocket_client_send_cont_msg(client, (const char*)data, (int)length, pdMS_TO_TICKS(10000)) == (int)length;
+  }
+  if (!ok || esp_websocket_client_send_fin(client, pdMS_TO_TICKS(10000)) < 0) {
+    xSemaphoreGive(sendMutex);
+    Cloud_RequestRestart("Cloud send failed.");
+    return ESP_FAIL;
+  }
+  xSemaphoreGive(sendMutex);
+  return ESP_OK;
+}
+
+static void Cloud_HandleTcpOpen(cJSON* message, unsigned expected)
+{
+  cJSON* requestId = cJSON_GetObjectItemCaseSensitive(message, "requestId");
+  cJSON* service = cJSON_GetObjectItemCaseSensitive(message, "service");
+  cJSON* grantSecret = cJSON_GetObjectItemCaseSensitive(message, "grantSecret");
+  if (!cJSON_IsString(requestId) || !requestId->valuestring[0]) return;
+  const char* reason = NULL;
+  Cloud_TcpListener* listener = NULL;
+  if (!cJSON_IsString(grantSecret) || !Cloud_HasGrantSecret(grantSecret->valuestring)) reason = "grantSecret not found";
+  else if (!cJSON_IsString(service) || (listener = Cloud_TcpFindListener(service->valuestring)) == NULL) reason = "unknown service";
+  else if (listener->listenFd < 0) reason = listener->notRunning;
+  else if (strlen(requestId->valuestring) >= CLOUD_TCP_REQUEST_ID_MAX) reason = "invalid requestId";
+  else {
+    Cloud_TcpPoolEnsure();
+    if (!tcpPoolMutex) {
+      tcpPoolMutex = xSemaphoreCreateMutex();
+      if (!tcpPoolMutex) reason = "Insufficient memory for new connections";
+    }
+    if (reason == NULL) {
+      xSemaphoreTake(tcpPoolMutex, portMAX_DELAY);
+      if (Cloud_TcpActiveCount() >= CONFIG_CLOUD_TCP_MAX_CONNECTIONS) reason = "too many connections";
+      else {
+        Cloud_TcpConn* slot = NULL;
+        for (size_t i = 0; i < CONFIG_CLOUD_TCP_MAX_CONNECTIONS; i++) {
+          if (tcpConns[i].status == CLOUD_TCP_FREE) {
+            slot = &tcpConns[i];
+            if (!slot->mutex) {
+              slot->mutex = xSemaphoreCreateMutex();
+              if (!slot->mutex) {
+                reason = "Insufficient memory for new connections";
+                break;
+              }
+            }
+            if (!Tool_RingCreate(&slot->ring, CONFIG_CLOUD_TCP_STREAM_RX_BYTES)) {
+              reason = "Insufficient memory for new connections";
+              break;
+            }
+            slot->status = CLOUD_TCP_HALF_OPEN;
+            slot->service = listener->service;
+            slot->clientFd = -1;
+            slot->peerEof = false;
+            slot->generation = expected;
+            slot->halfOpenAt = xTaskGetTickCount();
+            snprintf(slot->requestId, sizeof slot->requestId, "%s", requestId->valuestring);
+            ESP_LOGI(tag, "tcp stream half-open service=%s channel=%u", listener->service, (unsigned)(slot - tcpConns));
+            Cloud_TcpWakeFd(listener->listenFd);
+            break;
+          }
+        }
+        if (reason == NULL && slot == NULL) reason = "Insufficient memory for new connections";
+      }
+      xSemaphoreGive(tcpPoolMutex);
+    }
+  }
+  if (reason != NULL) Cloud_TcpReplyOpen(expected, requestId->valuestring, false, -1, reason);
+}
+
+static void Cloud_HandleTcpClose(cJSON* message, unsigned expected)
+{
+  cJSON* requestId = cJSON_GetObjectItemCaseSensitive(message, "requestId");
+  cJSON* grantSecret = cJSON_GetObjectItemCaseSensitive(message, "grantSecret");
+  cJSON* channelId = cJSON_GetObjectItemCaseSensitive(message, "channelId");
+  if (!cJSON_IsString(requestId) || !requestId->valuestring[0]) return;
+  const char* reason = NULL;
+  Cloud_TcpConn* conn = NULL;
+  int ch = -1;
+  if (!cJSON_IsString(grantSecret) || !Cloud_HasGrantSecret(grantSecret->valuestring)) reason = "grantSecret not found";
+  else if (!cJSON_IsNumber(channelId) || channelId->valueint < 0 ||
+           channelId->valueint >= CONFIG_CLOUD_TCP_MAX_CONNECTIONS) {
+    reason = "invalid channelId";
+  } else {
+    ch = channelId->valueint;
+    conn = &tcpConns[ch];
+    if (conn->status != CLOUD_TCP_OPEN) reason = "unknown channel";
+  }
+  cJSON* root = cJSON_CreateObject();
+  if (root) {
+    cJSON_AddStringToObject(root, "type", "tcpStreamCloseResponse");
+    cJSON_AddStringToObject(root, "requestId", requestId->valuestring);
+    cJSON_AddBoolToObject(root, "success", reason == NULL);
+    if (reason) cJSON_AddStringToObject(root, "reason", reason);
+    Cloud_SendJson(expected, root);
+  }
+  if (reason == NULL && conn) {
+    ESP_LOGI(tag, "tcp stream close service=%s channel=%d", conn->service ? conn->service : "?", ch);
+    Cloud_TcpNotifyClose(conn);
+  }
+}
+
+int Cloud_TcpEventFd(const char* service)
+{
+  Cloud_TcpListener* listener = Cloud_TcpFindListener(service);
+  if (!listener) return -1;
+  if (listener->listenFd >= 0) return listener->listenFd;
+  if (!listener->mutex) {
+    listener->mutex = xSemaphoreCreateMutex();
+    if (!listener->mutex) return -1;
+  }
+  int fd = Cloud_TcpMakeEventFd();
+  if (fd < 0) return -1;
+  xSemaphoreTake(listener->mutex, portMAX_DELAY);
+  if (listener->listenFd >= 0) {
+    close(fd);
+    fd = listener->listenFd;
+  } else {
+    listener->listenFd = fd;
+  }
+  xSemaphoreGive(listener->mutex);
+  return fd;
+}
+
+int Cloud_TcpAccept(const char* service, esp_err_t err, const char* reason)
+{
+  Cloud_TcpListener* listener = Cloud_TcpFindListener(service);
+  if (!listener || !tcpPoolMutex) return -1;
+  xSemaphoreTake(tcpPoolMutex, portMAX_DELAY);
+  Cloud_TcpConn* conn = NULL;
+  size_t channelId = 0;
+  for (size_t i = 0; i < CONFIG_CLOUD_TCP_MAX_CONNECTIONS; i++) {
+    if (tcpConns[i].status == CLOUD_TCP_HALF_OPEN && tcpConns[i].service == listener->service) {
+      conn = &tcpConns[i];
+      channelId = i;
+      break;
+    }
+  }
+  if (!conn) {
+    xSemaphoreGive(tcpPoolMutex);
+    return -1;
+  }
+  unsigned generation = conn->generation;
+  char requestId[CLOUD_TCP_REQUEST_ID_MAX];
+  snprintf(requestId, sizeof requestId, "%s", conn->requestId);
+  if (err != ESP_OK) {
+    Cloud_TcpFreeConn(conn);
+    xSemaphoreGive(tcpPoolMutex);
+    Cloud_TcpReplyOpen(generation, requestId, false, -1, reason && reason[0] ? reason : "could not open stream");
+    return -1;
+  }
+  int clientFd = Cloud_TcpMakeEventFd();
+  if (clientFd < 0) {
+    Cloud_TcpFreeConn(conn);
+    xSemaphoreGive(tcpPoolMutex);
+    Cloud_TcpReplyOpen(generation, requestId, false, -1, "Insufficient memory for new connections");
+    return -1;
+  }
+  if (!conn->mutex) {
+    conn->mutex = xSemaphoreCreateMutex();
+    if (!conn->mutex) {
+      close(clientFd);
+      Cloud_TcpFreeConn(conn);
+      xSemaphoreGive(tcpPoolMutex);
+      Cloud_TcpReplyOpen(generation, requestId, false, -1, "Insufficient memory for new connections");
+      return -1;
+    }
+  }
+  xSemaphoreTake(conn->mutex, portMAX_DELAY);
+  conn->clientFd = clientFd;
+  conn->status = CLOUD_TCP_OPEN;
+  conn->peerEof = false;
+  Tool_RingClear(&conn->ring);
+  xSemaphoreGive(conn->mutex);
+  xSemaphoreGive(tcpPoolMutex);
+  Cloud_TcpReplyOpen(generation, requestId, true, (int)channelId, NULL);
+  ESP_LOGI(tag, "tcp stream open service=%s channel=%u fd=%d", listener->service, (unsigned)channelId, clientFd);
+  return clientFd;
+}
+
+int Cloud_TcpRecv(int fd, void* buf, size_t len)
+{
+  Cloud_TcpConn* conn = Cloud_TcpFindByFd(fd);
+  if (!conn || !buf || len == 0 || !conn->mutex) return 0;
+  uint64_t count = 0;
+  (void)read(fd, &count, sizeof count);
+  if (xSemaphoreTake(conn->mutex, pdMS_TO_TICKS(2000)) != pdTRUE) return 0;
+  size_t n = 0;
+  int result = 0;
+  uint8_t channelId = (uint8_t)(conn - tcpConns);
+  size_t have = Tool_RingLen(&conn->ring);
+  if (conn->status == CLOUD_TCP_OPEN && have > 0) {
+    n = len < have ? len : have;
+    if (!Tool_RingRead(&conn->ring, buf, n)) n = 0;
+    // Keep the descriptor readable while more bytes are buffered.
+    if (n > 0 && n < have) Cloud_TcpWakeFd(fd);
+    result = (int)n;
+  } else if (conn->peerEof || conn->status != CLOUD_TCP_OPEN) {
+    conn->peerEof = false;
+    result = -1;
+  }
+  xSemaphoreGive(conn->mutex);
+  if (n > 0) Cloud_TcpSendAck(channelId, n);
+  return result;
+}
+
+esp_err_t Cloud_TcpSend(int fd, const void* data, size_t len)
+{
+  Cloud_TcpConn* conn = Cloud_TcpFindByFd(fd);
+  if (!conn || conn->status != CLOUD_TCP_OPEN) return ESP_ERR_INVALID_STATE;
+  uint8_t channelId = (uint8_t)(conn - tcpConns);
+  return Cloud_TcpSendBinary(channelId, data, len);
+}
+
+void Cloud_TcpClose(int fd)
+{
+  if (!tcpPoolMutex || fd < 0) return;
+  xSemaphoreTake(tcpPoolMutex, portMAX_DELAY);
+  Cloud_TcpConn* conn = Cloud_TcpFindByFd(fd);
+  if (conn) {
+    ESP_LOGI(tag, "tcp stream local close service=%s channel=%u", conn->service ? conn->service : "?", (unsigned)(conn - tcpConns));
+    Cloud_TcpFreeConn(conn);
+  }
+  xSemaphoreGive(tcpPoolMutex);
+}
+
+void Cloud_TcpRelease(const char* service)
+{
+  Cloud_TcpListener* listener = Cloud_TcpFindListener(service);
+  if (!listener) return;
+  if (tcpPoolMutex) {
+    xSemaphoreTake(tcpPoolMutex, portMAX_DELAY);
+    for (size_t i = 0; i < CONFIG_CLOUD_TCP_MAX_CONNECTIONS; i++) {
+      Cloud_TcpConn* conn = &tcpConns[i];
+      if (conn->service != listener->service) continue;
+      if (conn->status == CLOUD_TCP_HALF_OPEN) {
+        unsigned generation = conn->generation;
+        char requestId[CLOUD_TCP_REQUEST_ID_MAX];
+        snprintf(requestId, sizeof requestId, "%s", conn->requestId);
+        Cloud_TcpFreeConn(conn);
+        xSemaphoreGive(tcpPoolMutex);
+        Cloud_TcpReplyOpen(generation, requestId, false, -1, listener->notRunning);
+        xSemaphoreTake(tcpPoolMutex, portMAX_DELAY);
+      } else if (conn->status == CLOUD_TCP_OPEN) {
+        Cloud_TcpFreeConn(conn);
+      }
+    }
+    xSemaphoreGive(tcpPoolMutex);
+  }
+  if (listener->mutex) {
+    xSemaphoreTake(listener->mutex, portMAX_DELAY);
+    int fd = listener->listenFd;
+    listener->listenFd = -1;
+    xSemaphoreGive(listener->mutex);
+    if (fd >= 0) close(fd);
+  }
+}
+
 static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* eventData)
 {
   (void)arg;
@@ -920,9 +1442,10 @@ static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* e
   }
   if (event != WEBSOCKET_EVENT_DATA) return;
   esp_websocket_event_data_t* data = eventData;
-  if (data->op_code != 1 && data->op_code != 0) return; /* Control frames may interrupt fragments. */
-  if (data->op_code == 1 && data->payload_offset == 0) {
+  if (data->op_code != 0 && data->op_code != 1 && data->op_code != 2) return;
+  if ((data->op_code == 1 || data->op_code == 2) && data->payload_offset == 0) {
     Cloud_ResetReceive();
+    receiveBinary = data->op_code == 2;
     receiveGeneration = atomic_load(&generation);
     receiveBuffer = malloc(1);
   }
@@ -942,13 +1465,20 @@ static void Cloud_Event(void* arg, esp_event_base_t base, int32_t event, void* e
   receiveLength += data->data_len;
   receiveBuffer[receiveLength] = '\0';
   if (!data->fin || data->payload_offset + data->data_len != data->payload_len) return;
-  Cloud_Message message = {.text = receiveBuffer, .generation = receiveGeneration};
+  Cloud_Message message = {.generation = receiveGeneration};
+  if (receiveBinary) {
+    message.bin = (uint8_t*)receiveBuffer;
+    message.binLen = receiveLength;
+  } else {
+    message.text = receiveBuffer;
+  }
   if (xQueueSend(incoming, &message, 0) != pdTRUE) {
-    free(message.text);
+    free(receiveBuffer);
     Cloud_RequestRestart("Cloud message queue full.");
   }
   receiveBuffer = NULL;
   receiveLength = 0;
+  receiveBinary = false;
 }
 
 /* Timer callbacks must not wait on a streamed response or network writes. */
@@ -966,6 +1496,7 @@ static void Cloud_RelayTask(void* arg)
   for (;;) {
     bool ready = Wifi_IsConnected() && !Wifi_IsPairing() && Ntp_IsSynced();
     if (running && (!ready || atomic_load(&restart))) {
+      Cloud_TcpReset();
       Cloud_SetAuthenticated(false);
       atomic_fetch_add(&generation, 1);
       /* Writers notice the generation change and release their fragment lock. */
@@ -984,9 +1515,20 @@ static void Cloud_RelayTask(void* arg)
     xSemaphoreTake(grantMutex, portMAX_DELAY);
     if (pairing.used && time(NULL) >= pairing.expiredAtS) memset(&pairing, 0, sizeof(pairing));
     xSemaphoreGive(grantMutex);
+    Cloud_TcpKickHalfOpen();
     Cloud_Message message;
     if (xQueueReceive(incoming, &message, pdMS_TO_TICKS(200)) != pdTRUE) continue;
-    if (!Cloud_ConnectionCurrent(message.generation)) { free(message.text); continue; }
+    if (!Cloud_ConnectionCurrent(message.generation)) {
+      free(message.text);
+      free(message.bin);
+      continue;
+    }
+    if (message.bin) {
+      if (atomic_load(&authenticated) && message.binLen >= 1) Cloud_TcpIngest(message.bin[0], message.bin + 1, message.binLen - 1);
+      free(message.bin);
+      continue;
+    }
+    if (!message.text) continue;
     if (strcmp(message.text, "pong") == 0) { free(message.text); continue; }
     cJSON* root = cJSON_Parse(message.text);
     cJSON* type = cJSON_GetObjectItemCaseSensitive(root, "type");
@@ -1013,6 +1555,10 @@ static void Cloud_RelayTask(void* arg)
           dispatched = true;
         }
         if (!dispatched) Cloud_RequestRestart("Cloud request dispatch failed.");
+      } else if (strcmp(type->valuestring, "tcpStreamOpenRequest") == 0 && atomic_load(&authenticated)) {
+        Cloud_HandleTcpOpen(root, message.generation);
+      } else if (strcmp(type->valuestring, "tcpStreamCloseRequest") == 0 && atomic_load(&authenticated)) {
+        Cloud_HandleTcpClose(root, message.generation);
       }
     }
     if (!dispatched) cJSON_Delete(root);

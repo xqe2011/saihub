@@ -19,9 +19,11 @@ typedef struct {
 } DapCtrl_Config;
 
 typedef struct {
-  const char* prompt; /* points at CONFIG_DAP_STATUS_PROMPT; not owned */
-  int port;
-  char ip[16]; /* STA IPv4 text, or empty if none — never "0.0.0.0" */
+  bool cloud;
+  const char* prompt; /* local or cloud prompt; not owned */
+  int port;           /* local */
+  char ip[16];        /* local STA IPv4 text, or empty if none — never "0.0.0.0" */
+  char url[640];      /* cloud WebSocket URL with a token placeholder */
 } DapCtrl_Status;
 
 /** Transport sends one CMSIS-DAP response. data is only valid for the call. */
@@ -30,8 +32,8 @@ typedef void (*DapCtrl_SendFn)(void* user, const uint8_t* data, size_t length);
 esp_err_t DapCtrl_Init(void);
 esp_err_t DapCtrl_GetConfig(DapCtrl_Config* out);
 esp_err_t DapCtrl_SetConfig(const DapCtrl_Config* cfg, char* reason, size_t reasonLen);
-/** ESP_ERR_INVALID_STATE when the TCP service is not running (route → 503). */
-esp_err_t DapCtrl_GetStatus(DapCtrl_Status* out);
+/** ESP_ERR_INVALID_STATE when the TCP service is not running (route → 503). ESP_FAIL when a cloud URL cannot be built. */
+esp_err_t DapCtrl_GetStatus(bool cloud, DapCtrl_Status* out);
 
 /**
  * One debugger session. ESP_ERR_INVALID_STATE when a session is already active or DAP is disabled.

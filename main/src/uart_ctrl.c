@@ -5,6 +5,7 @@
  */
 #include "uart_ctrl.h"
 
+#include "cloud.h"
 #include "config.h"
 #include "gpio_ctrl.h"
 #include "lock.h"
@@ -635,7 +636,7 @@ done:
   return err;
 }
 
-esp_err_t UartCtrl_GetRfc2217Status(int id, UartCtrl_Rfc2217Status* out)
+esp_err_t UartCtrl_GetRfc2217Status(int id, bool cloud, UartCtrl_Rfc2217Status* out)
 {
   if (!UartCtrl_IsValidId(id) || out == NULL) return ESP_ERR_INVALID_ARG;
   xSemaphoreTake(mutex, portMAX_DELAY);
@@ -646,7 +647,13 @@ esp_err_t UartCtrl_GetRfc2217Status(int id, UartCtrl_Rfc2217Status* out)
   if (!running) return ESP_ERR_INVALID_STATE;
 
   memset(out, 0, sizeof(*out));
-  out->prompt = CONFIG_RFC2217_STATUS_PROMPT;
+  out->cloud = cloud;
+  if (cloud) {
+    out->prompt = CONFIG_RFC2217_CLOUD_STATUS_PROMPT;
+    if (!Cloud_FormatTcpStreamUrl("rfc2217", out->url, sizeof out->url)) return ESP_FAIL;
+    return ESP_OK;
+  }
+  out->prompt = CONFIG_RFC2217_LOCAL_STATUS_PROMPT;
   out->port = CONFIG_RFC2217_TCP_PORT;
   char ip[16];
   ip[0] = '\0';

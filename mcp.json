@@ -917,7 +917,7 @@
     },
     {
       "name": "get_uart_rfc2217_status",
-      "description": "Read RFC2217 status for one UART. prompt explains how to connect. port and ip are the address. Fails when that UART is not enabled in rfc2217 mode.",
+      "description": "Read RFC2217 status for one UART. prompt explains how to connect. Fails when that UART is not enabled in rfc2217 mode.",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false
@@ -1729,7 +1729,7 @@
     },
     {
       "name": "get_dap_status",
-      "description": "Read the CMSIS-DAP status. prompt explains how to connect. port and ip are the address.",
+      "description": "Read the CMSIS-DAP status. prompt explains how to connect.",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false

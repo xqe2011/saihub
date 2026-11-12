@@ -7,11 +7,13 @@
  */
 #include "tcp.h"
 
+#include "cloud.h"
 #include "config.h"
 #include "dap_ctrl.h"
 
 #include <errno.h>
 #include <esp_log.h>
+#include <esp_vfs.h>
 #include <esp_wifi.h>
 #include <fcntl.h>
 #include <freertos/FreeRTOS.h>
@@ -40,12 +42,20 @@ static SemaphoreHandle_t stopped;
 static bool sendFailed;
 static bool restoreWifiPs;
 static wifi_ps_type_t savedWifiPs;
+static bool cloudClient;
+static int eventFd = -1;
 static uint8_t stream[2 * (TCP_HEADER + CONFIG_DAP_PACKET_SIZE)];
 static uint8_t frame[TCP_HEADER + CONFIG_DAP_PACKET_SIZE];
 static size_t frameLen;
 
 static void Tcp_DapFlush(void)
 {
+  if (frameLen == 0) return;
+  if (cloudClient) {
+    if (Cloud_TcpSend(clientFd, frame, frameLen) != ESP_OK) sendFailed = true;
+    frameLen = 0;
+    return;
+  }
   size_t off = 0;
   while (off < frameLen) {
     int n = send(clientFd, frame + off, frameLen - off, 0);
@@ -87,8 +97,10 @@ static void Tcp_DapDrop(size_t* buffered)
 {
   if (clientFd < 0) return;
   DapCtrl_OnDisconnect();
-  close(clientFd);
+  if (cloudClient) Cloud_TcpClose(clientFd);
+  else close(clientFd);
   clientFd = -1;
+  cloudClient = false;
   if (restoreWifiPs) {
     esp_wifi_set_ps(savedWifiPs);
     restoreWifiPs = false;
@@ -139,6 +151,14 @@ static void Tcp_DapTask(void* arg)
   if (flags < 0) flags = 0;
   fcntl(fd, F_SETFL, flags | O_NONBLOCK);
   listenFd = fd;
+  eventFd = Cloud_TcpEventFd("dap");
+  if (eventFd < 0) {
+    ESP_LOGE(tag, "cloud wake setup failed");
+    close(fd);
+    listenFd = -1;
+    Tcp_DapExit(0);
+    return;
+  }
   running = true;
   ESP_LOGI(tag, "CMSIS-DAP listening on %d", CONFIG_DAP_TCP_PORT);
   if (starter != NULL) xTaskNotify(starter, 1, eSetValueWithOverwrite);
@@ -153,9 +173,13 @@ static void Tcp_DapTask(void* arg)
       FD_SET(clientFd, &readable);
       if (clientFd > maxFd) maxFd = clientFd;
     }
+    if (eventFd >= 0) {
+      FD_SET(eventFd, &readable);
+      if (eventFd > maxFd) maxFd = eventFd;
+    }
 
     struct timeval wait = {.tv_sec = 0, .tv_usec = 200000};
-    int ready = select(maxFd + 1, &readable, NULL, NULL, &wait);
+    int ready = esp_vfs_select(maxFd + 1, &readable, NULL, NULL, &wait);
     if (stopRequested) break;
     if (ready < 0) {
       if (errno == EINTR) continue;
@@ -163,6 +187,31 @@ static void Tcp_DapTask(void* arg)
       break;
     }
     if (ready == 0) continue;
+
+    if (eventFd >= 0 && FD_ISSET(eventFd, &readable)) {
+      uint64_t count = 0;
+      (void)read(eventFd, &count, sizeof count);
+      if (clientFd >= 0 || stopRequested) {
+        (void)Cloud_TcpAccept("dap", ESP_ERR_INVALID_STATE, "client already connected");
+      } else if (DapCtrl_OnConnect(Tcp_DapSend, NULL) != ESP_OK) {
+        (void)Cloud_TcpAccept("dap", ESP_FAIL, "could not start debugger session");
+      } else {
+        int accepted = Cloud_TcpAccept("dap", ESP_OK, NULL);
+        if (accepted < 0) {
+          DapCtrl_OnDisconnect();
+        } else {
+          clientFd = accepted;
+          cloudClient = true;
+          buffered = 0;
+          sendFailed = false;
+          frameLen = 0;
+          if (esp_wifi_get_ps(&savedWifiPs) == ESP_OK && savedWifiPs != WIFI_PS_NONE) {
+            restoreWifiPs = esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK;
+          }
+          ESP_LOGI(tag, "cloud client connected");
+        }
+      }
+    }
 
     int readyClient = -1;
     if (clientFd >= 0 && FD_ISSET(clientFd, &readable)) readyClient = clientFd;
@@ -189,6 +238,7 @@ static void Tcp_DapTask(void* arg)
           setsockopt(accepted, SOL_SOCKET, SO_SNDTIMEO, &sendTimeout, sizeof sendTimeout);
 
           clientFd = accepted;
+          cloudClient = false;
           buffered = 0;
           sendFailed = false;
           if (DapCtrl_OnConnect(Tcp_DapSend, NULL) != ESP_OK) {
@@ -212,10 +262,11 @@ static void Tcp_DapTask(void* arg)
         ESP_LOGW(tag, "receive buffer full");
         Tcp_DapDrop(&buffered);
       } else {
-        int n = recv(clientFd, stream + buffered, sizeof stream - buffered, 0);
-        if (n <= 0) {
+        int n = cloudClient ? Cloud_TcpRecv(clientFd, stream + buffered, sizeof stream - buffered)
+                            : recv(clientFd, stream + buffered, sizeof stream - buffered, 0);
+        if (n < 0 || (!cloudClient && n == 0)) {
           Tcp_DapDrop(&buffered);
-        } else {
+        } else if (n > 0) {
           buffered += (size_t)n;
           size_t consumed = 0;
           while (clientFd >= 0 && buffered - consumed >= TCP_HEADER) {
@@ -255,6 +306,8 @@ static void Tcp_DapTask(void* arg)
   }
 
   Tcp_DapDrop(&buffered);
+  Cloud_TcpRelease("dap");
+  eventFd = -1;
   if (listenFd >= 0) {
     close(listenFd);
     listenFd = -1;
@@ -303,8 +356,13 @@ esp_err_t Tcp_DapStop(void)
   if (!running && dapTask == NULL) return ESP_OK;
   stopRequested = true;
   if (listenFd >= 0) shutdown(listenFd, SHUT_RDWR);
+  if (eventFd >= 0) {
+    uint64_t one = 1;
+    (void)write(eventFd, &one, sizeof one);
+  }
   if (stopped != NULL) xSemaphoreTake(stopped, portMAX_DELAY);
   dapTask = NULL;
+  eventFd = -1;
   stopRequested = false;
   return ESP_OK;
 }
