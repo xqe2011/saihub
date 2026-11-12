@@ -296,7 +296,7 @@ static void Wifi_PairCloseCallback(TimerHandle_t timer)
   Wifi_FinishPairingStop();
 }
 
-esp_err_t Wifi_StartPairing(void)
+static esp_err_t Wifi_StartPairingInternal(bool playSound)
 {
   if (isPairing) return ESP_OK;
 
@@ -337,7 +337,9 @@ esp_err_t Wifi_StartPairing(void)
 
   ESP_LOGI(tag, "Pairing AP started: %s", pairingApSsid);
   TOOL_EXECUTE_CALLBACKS(pairingStartedCallbacks);
-  Buzzer_Play(CONFIG_WIFI_PAIRING_BUZZER_SEQUENCE, NULL, 0);
+  if (playSound) {
+    Buzzer_Play(CONFIG_WIFI_PAIRING_BUZZER_SEQUENCE, NULL, 0);
+  }
   return ESP_OK;
 
 pairing_failed:
@@ -346,6 +348,11 @@ pairing_failed:
   allowReconnect = resumeReconnect;
   if (allowReconnect) xTimerReset(reconnectTimer, portMAX_DELAY);
   return err;
+}
+
+esp_err_t Wifi_StartPairing(void)
+{
+  return Wifi_StartPairingInternal(true);
 }
 
 esp_err_t Wifi_StopPairing(void)
@@ -402,7 +409,7 @@ static void Wifi_OnGotIp(void)
 static void Wifi_AutoPairTask(void* arg)
 {
   (void)arg;
-  if (Wifi_StartPairing() != ESP_OK) {
+  if (Wifi_StartPairingInternal(false) != ESP_OK) {
     ESP_LOGE(tag, "Auto pairing failed");
   }
   vTaskDelete(NULL);
