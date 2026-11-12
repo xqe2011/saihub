@@ -9,8 +9,10 @@ import { createConnection, createServer, type Socket } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { cloudStreamUrl, hardwareTarget, startCloudTcpProxy, type CloudTcpProxy, type StreamStatus } from "../library/cloud-stream.ts";
 
 const FIXTURE = new URL("../fixtures/swd/", import.meta.url);
+const routingToken = process.env.SAIHUB_ROUTING_TOKEN?.trim();
 type Manifest = {
   file: string; size: number; sha256: string; flashAddress: number; dpidr: number; cpuid: number;
   magic: number; fixtureVersion: number; systemClockHz: number; defaultPeriodMs: number; scratchWords: number;
@@ -266,8 +268,8 @@ class Tcl {
   }
 }
 
-async function runCommand(command: string[], timeoutMs: number) {
-  const child = Bun.spawn(command, { stdout: "pipe", stderr: "pipe" });
+async function runCommand(command: string[], timeoutMs: number, output: "pipe" | "inherit" = "pipe") {
+  const child = Bun.spawn(command, { stdout: output, stderr: output });
   let timedOut = false;
   const timeout = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, timeoutMs);
   try {
@@ -311,6 +313,7 @@ async function freePort(): Promise<number> {
 }
 
 type TestContext = {
+  target: URL;
   host: string;
   dapPort: number;
   manifest: Manifest;
@@ -340,13 +343,15 @@ function errorMessage(error: unknown): string {
 }
 
 async function requestJson<T>(
-  host: string, method: string, path: string, body?: unknown, expectedStatus = 200,
+  target: URL, method: string, path: string, body?: unknown, expectedStatus = 200,
 ): Promise<T> {
+  const url = `${target.origin}${target.pathname.replace(/\/$/, "")}${path}`;
   const command = [
     "curl", "--noproxy", "*", "--silent", "--show-error", "--max-time", "10",
-    "--request", method, "--url", `http://${host}${path}`, "--write-out", "\n%{http_code}",
+    "--request", method, "--url", url, "--write-out", "\n%{http_code}",
     "--header", "Accept: application/json",
   ];
+  if (routingToken) command.push("--header", `Authorization: Bearer ${routingToken}`);
   if (body !== undefined) {
     command.push("--header", "Content-Type: application/json", "--data-binary", JSON.stringify(body));
   }
@@ -365,26 +370,28 @@ async function requestJson<T>(
   }
 }
 
-async function cleanup(host: string): Promise<void> {
+async function cleanup(target: URL): Promise<void> {
   log("disabling DAP and releasing test pins");
   try {
-    await requestJson<void>(host, "POST", "/dap/config", {
+    await requestJson<void>(target, "POST", "/dap/config", {
       enable: false, pins: { swclk: 0, swdio: 1, nreset: null },
     }, 204);
   } finally {
-    await requestJson<void>(host, "PUT", "/pin/2", { mode: "disable", pullUp: false, pullDown: false }, 204);
+    await requestJson<void>(target, "PUT", "/pin/2", { mode: "disable", pullUp: false, pullDown: false }, 204);
   }
 }
 
-async function configureTarget(host: string, dapPort: number): Promise<void> {
+async function configureTarget(target: URL, dapPort: number): Promise<void> {
   log("3.3 V power, DAP configuration and probe input");
-  await requestJson<void>(host, "POST", "/power/3v3", { enable: true }, 204);
-  assert((await requestJson<{ enable: boolean }>(host, "GET", "/power/3v3")).enable, "3.3 V output failed to enable");
+  await requestJson<void>(target, "POST", "/power/3v3", { enable: true }, 204);
+  const power = await requestJson<{ enable: boolean }>(target, "GET", "/power/3v3");
+  assert(power.enable, "3.3 V output failed to enable");
   const config = { enable: true, pins: { swclk: 0, swdio: 1, nreset: null } };
-  await requestJson<void>(host, "POST", "/dap/config", config, 204);
-  const status = await requestJson<{ port: number }>(host, "GET", "/dap/status");
-  assert(status.port === dapPort, "DAP status port mismatch");
-  await requestJson<void>(host, "PUT", "/pin/2", { mode: "digitalInput", pullUp: false, pullDown: false }, 204);
+  await requestJson<void>(target, "POST", "/dap/config", config, 204);
+  const status = await requestJson<StreamStatus>(target, "GET", "/dap/status");
+  if (routingToken) cloudStreamUrl(status, target, "dap");
+  else assert(status.port === dapPort, "DAP status port mismatch");
+  await requestJson<void>(target, "PUT", "/pin/2", { mode: "digitalInput", pullUp: false, pullDown: false }, 204);
 }
 
 async function serveOpenocd(common: string[]): Promise<void> {
@@ -427,13 +434,14 @@ async function testDapConnection(context: TestContext): Promise<void> {
 async function testFlash(context: TestContext): Promise<void> {
   const { common, imagePath, manifest } = context;
   // Flashing requires no target source tree, compiler, ELF or debug symbols.
-  const flash = await runCommand([...common, "-c", "gdb_port disabled", "-c", "tcl_port disabled",
-    "-c", "telnet_port disabled", "-c", `program {${imagePath}} ${manifest.flashAddress} verify reset exit`], 60000);
-  assert(flash.exitCode === 0, `Flash/verify failed:\n${flash.stdout}${flash.stderr}`);
+  const command = [...common, "-c", "gdb_port disabled", "-c", "tcl_port disabled",
+    "-c", "telnet_port disabled", "-c", `program {${imagePath}} ${manifest.flashAddress} verify reset exit`];
+  const { exitCode } = await runCommand(command, 60000, "inherit");
+  assert(exitCode === 0, `OpenOCD flash/verify exited with status ${exitCode}`);
 }
 
 async function testDebugger(context: TestContext): Promise<void> {
-  const { common, gdb, directory, manifest, symbol, host } = context;
+  const { common, gdb, directory, manifest, symbol, target } = context;
   const gdbPort = await freePort();
   let tclPort = await freePort();
   while (tclPort === gdbPort) tclPort = await freePort();
@@ -514,7 +522,7 @@ async function testDebugger(context: TestContext): Promise<void> {
       await tcl.write(symbol("debugOutputMode"), level);
       await Bun.sleep(650);
       assert(await tcl.read(symbol("debugOutputLevel")) === level, "Fixture output state mismatch");
-      const observed = await requestJson<{ level: number }>(host, "GET", "/pin/2/level");
+      const observed = await requestJson<{ level: number }>(target, "GET", "/pin/2/level");
       assert(observed.level === level, "Physical output signal mismatch");
     }
     log("programmable heartbeat and physical edge timing");
@@ -522,7 +530,7 @@ async function testDebugger(context: TestContext): Promise<void> {
     await tcl.write(symbol("debugOutputMode"), 2);
     await Bun.sleep(700);
     const { events } = await requestJson<{ events: { time: number; level: number }[] }>(
-      host, "GET", "/pin/2/trace?edge=both&duration=1400000");
+      target, "GET", "/pin/2/trace?edge=both&duration=1400000");
     const intervals = events.slice(1).map((event, index) => (event.time - events[index]!.time) / 1000);
     assert(events.length >= 5, "Too few heartbeat edges");
     assert(events.slice(1).every((event, index) => event.level !== events[index]!.level), "Repeated edge levels");
@@ -633,25 +641,30 @@ async function testDapTransfers(context: TestContext): Promise<void> {
 
 async function main(): Promise<void> {
   const { values: args } = parseArgs({ options: {
-    host: { type: "string", default: process.env.SAIHUB_IP ?? "192.168.88.165" },
-    "dap-port": { type: "string", default: "4441" },
+    host: { type: "string", default: process.env.SAIHUB_TARGET ?? process.env.SAIHUB_IP ?? "192.168.88.165" },
+    "dap-port": { type: "string" },
     openocd: { type: "string", default: process.env.OPENOCD },
     gdb: { type: "string", default: "arm-none-eabi-gdb" },
     report: { type: "string" }, serve: { type: "boolean", default: false }, help: { type: "boolean", default: false },
   } });
   if (args.help) {
     console.log("bun tests/hardware/dap.ts [--host HOST] [--dap-port 4441] [--openocd PATH] [--gdb PATH]");
+    console.log("Host defaults to SAIHUB_TARGET, SAIHUB_IP, or 192.168.88.165.");
+    console.log("Cloud mode uses SAIHUB_TARGET=http://RELAY/device/DIGEST and SAIHUB_ROUTING_TOKEN.");
+    console.log("In cloud mode --dap-port selects the loopback proxy port (automatic by default).");
     console.log("Optional: --report PATH writes JSON results, including failures and cleanup errors.");
     console.log("Flashes the checked-in SWD fixture and tests DAP, OpenOCD, GDB and physical IO.");
     console.log("Requires exclusive DAP access. Wiring: SWCLK pin 0, SWDIO pin 1, fixture output pin 2.");
     console.log("--serve enables 3.3 V and runs local OpenOCD without flashing or testing.");
     return;
   }
-  const dapPort = Number(args["dap-port"]);
+  const dapPort = Number(args["dap-port"] ?? "4441");
   assert(Number.isInteger(dapPort) && dapPort > 0 && dapPort <= 65535, "--dap-port must be an integer from 1 to 65535");
-  log(`target http://${args.host}; DAP port ${dapPort}`);
+  const target = hardwareTarget(args.host, Boolean(routingToken));
+  log(`target ${target.origin}${target.pathname}`);
   log("fixture integrity and debugger tools");
-  const manifest: Manifest = JSON.parse(await readFile(new URL("manifest.json", FIXTURE), "utf8"));
+  const manifestPath = Bun.fileURLToPath(new URL("manifest.json", FIXTURE));
+  const manifest: Manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const imagePath = Bun.fileURLToPath(new URL(manifest.file, FIXTURE));
   const image = await readFile(imagePath);
   assert(image.length === manifest.size && image.length % 4 === 0, "Fixture size mismatch");
@@ -659,32 +672,53 @@ async function main(): Promise<void> {
   const openocd = await findOpenocd(args.openocd);
   const gdb = Bun.which(args.gdb);
   assert(args.serve || gdb, "arm-none-eabi-gdb is required; use --gdb to select it");
-  const common = [openocd, "-c", `set SAIHUB_HOST ${args.host}`, "-c", `set SAIHUB_DAP_PORT ${dapPort}`,
-    "-f", Bun.fileURLToPath(new URL("openocd.cfg", FIXTURE))];
+  let proxy: CloudTcpProxy | undefined;
+  const configure = async () => {
+    await configureTarget(target, dapPort);
+    if (routingToken) {
+      proxy = await startCloudTcpProxy(async () => {
+        const status = await requestJson<StreamStatus>(target, "GET", "/dap/status");
+        return cloudStreamUrl(status, target, "dap");
+      }, log, args["dap-port"] === undefined ? 0 : dapPort);
+      log(`DAP cloud proxy listening on ${proxy.host}:${proxy.port}`);
+    }
+    const host = proxy?.host ?? target.hostname;
+    const port = proxy?.port ?? dapPort;
+    const common = [openocd, "-c", `set SAIHUB_HOST ${host}`, "-c", `set SAIHUB_DAP_PORT ${port}`,
+      "-f", Bun.fileURLToPath(new URL("openocd.cfg", FIXTURE))];
+    return { host, dapPort: port, common };
+  };
+  const cleanupTarget = async () => {
+    try {
+      await proxy?.close();
+    } finally {
+      await cleanup(target);
+    }
+  };
   if (args.serve) {
     try {
-      await configureTarget(args.host, dapPort);
+      const { common } = await configure();
       await serveOpenocd(common);
     } finally {
-      await cleanup(args.host);
+      await cleanupTarget();
     }
     return;
   }
   const directory = await mkdtemp(join(tmpdir(), "saihub-dap-"));
-  const context: TestContext = {
-    host: args.host, dapPort, manifest, imagePath, image, common, gdb: gdb!, directory,
-    symbol: (name: string): number => {
-      const address = manifest.symbols[name];
-      assert(address !== undefined, `Fixture symbol missing: ${name}`);
-      return address;
-    },
-  };
   const report: TestReport = {
     host: args.host, fixtureSha256: manifest.sha256, started: new Date().toISOString(), checks: [], failures: [],
   };
   let failure: unknown;
   try {
-    await configureTarget(args.host, dapPort);
+    const endpoint = await configure();
+    const context: TestContext = {
+      target, ...endpoint, manifest, imagePath, image, gdb: gdb!, directory,
+      symbol: (name: string): number => {
+        const address = manifest.symbols[name];
+        assert(address !== undefined, `Fixture symbol missing: ${name}`);
+        return address;
+      },
+    };
     await runSection(report, "TCP framing, SWD connect and completed AP reads", () => testDapConnection(context));
     await runSection(report, "OpenOCD flash and read-back verification", () => testFlash(context));
     await runSection(report, "debugger execution and physical IO", () => testDebugger(context));
@@ -693,7 +727,7 @@ async function main(): Promise<void> {
     failure = error;
   } finally {
     try {
-      await cleanup(args.host);
+      await cleanupTarget();
     } catch (error) {
       failure = failure === undefined ? error : new AggregateError([failure, error], "Test and cleanup both failed");
     }

@@ -4,8 +4,10 @@
  * SaiHub wiring: RX pin 2, TX pin 3, reset/EN pin 4 (RTS), BOOT/GPIO28 pin 5 (DTR), 5V and common ground.
  */
 import { parseArgs } from "node:util";
+import { cloudStreamUrl, hardwareTarget, startCloudTcpProxy, type CloudTcpProxy, type StreamStatus } from "../library/cloud-stream.ts";
 
 const fixture = Bun.fileURLToPath(new URL("../fixtures/rfc2217/firmware.hex", import.meta.url));
+const routingToken = process.env.SAIHUB_ROUTING_TOKEN?.trim();
 
 function log(message: string): void {
   console.log(`[hardware-rfc2217] ${message}`);
@@ -46,28 +48,31 @@ async function run(command: string[]): Promise<void> {
 
 async function request<T = void>(base: URL, path: string, body?: object): Promise<T> {
   const command = ["curl", "--noproxy", "*", "--fail-with-body", "--silent", "--show-error", "--max-time", "10"];
+  if (routingToken) command.push("--header", `Authorization: Bearer ${routingToken}`);
   if (body !== undefined) command.push("-H", "Content-Type: application/json", "--data", JSON.stringify(body));
-  const child = Bun.spawn([...command, new URL(path, base).href], { stdout: "pipe", stderr: "inherit" });
-  const [response, code] = await Promise.all([child.stdout.text(), child.exited]);
+  const url = `${base.origin}${base.pathname.replace(/\/$/, "")}${path}`;
+  const child = Bun.spawn([...command, url], { stdout: "pipe", stderr: "inherit" });
+  const [response, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
   if (code !== 0) throw new Error(`${path} failed: ${response || `curl exited with status ${code}`}`);
-  return response ? JSON.parse(response) : undefined;
+  return (response ? JSON.parse(response) : undefined) as T;
 }
 
 async function main(): Promise<void> {
   const { values: args } = parseArgs({ options: {
-    host: { type: "string", default: process.env.SAIHUB_IP ?? "192.168.88.165" },
+    host: { type: "string", default: process.env.SAIHUB_TARGET ?? process.env.SAIHUB_IP ?? "192.168.88.165" },
     help: { type: "boolean", default: false },
   } });
   if (args.help) {
     console.log("bun tests/hardware/rfc2217.ts [--host HOST]");
-    console.log("Host defaults to SAIHUB_IP or 192.168.88.165.");
+    console.log("Host defaults to SAIHUB_TARGET, SAIHUB_IP, or 192.168.88.165.");
+    console.log("Cloud mode uses SAIHUB_TARGET=http://RELAY/device/DIGEST and SAIHUB_ROUTING_TOKEN.");
     console.log("Requires Python with esptool and PySerial, and UART 0 disabled in native mode.");
     console.log("Flashes the checked-in HEX fixture and verifies reset and binary echo.");
     return;
   }
 
-  const base = new URL(`http://${args.host}`);
-  log(`target ${base.origin}`);
+  const base = hardwareTarget(args.host, Boolean(routingToken));
+  log(`target ${base.origin}${base.pathname}`);
   if (!(await Bun.file(fixture).exists())) throw new Error(`Missing fixture: ${fixture}`);
   const { uarts } = await request<{ uarts: { id: number; enable: boolean; mode: string }[] }>(base, "/uart/");
   const uart = uarts.find(({ id }) => id === 0);
@@ -85,18 +90,35 @@ async function main(): Promise<void> {
       await Bun.sleep(1000);
     }
     await request(base, configPath, { enable: true, mode: "rfc2217", pins: { rx: 2, tx: 3, rts: 4, dtr: 5 } });
+    let proxy: CloudTcpProxy | undefined;
     try {
-      const { port } = await request<{ port: number }>(base, `/uart/${id}/rfc2217`);
-      if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invalid RFC 2217 port: ${port}`);
-      const url = `rfc2217://${base.hostname}:${port}`;
+      const statusPath = `/uart/${id}/rfc2217`;
+      const status = await request<StreamStatus>(base, statusPath);
+      if (routingToken) {
+        cloudStreamUrl(status, base, "rfc2217");
+        proxy = await startCloudTcpProxy(async () => {
+          const current = await request<StreamStatus>(base, statusPath);
+          return cloudStreamUrl(current, base, "rfc2217");
+        }, log);
+        log(`RFC2217 cloud proxy listening on ${proxy.host}:${proxy.port}`);
+      }
+      const port = proxy?.port ?? status.port;
+      if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new Error(`Invalid RFC 2217 port: ${port}`);
+      }
+      const url = `rfc2217://${proxy?.host ?? base.hostname}:${port}`;
       log(`automatic download, flash and verification via ${url}`);
       await run(["python3", "-m", "esptool", "--chip", "esp32c5", "--port", url, "--baud", "460800",
         "--before", "default-reset", "--after", "hard-reset", "write-flash", "0x0", fixture]);
       log("RTS reset and binary echo");
       await run(["python3", "-c", verifyEcho, url]);
     } finally {
-      log("restoring UART and 5V settings");
-      await request(base, configPath, previous);
+      try {
+        await proxy?.close();
+      } finally {
+        log("restoring UART and 5V settings");
+        await request(base, configPath, previous);
+      }
     }
   } finally {
     if (!power.enable) await request(base, powerPath, { enable: false });

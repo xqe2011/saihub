@@ -1,4 +1,5 @@
 import { URL } from "node:url";
+import { cloudStreamUrl, hardwareTarget, startCloudTcpProxy, type CloudTcpProxy, type StreamStatus } from "../library/cloud-stream.ts";
 import { Dap, testDapFraming } from "./dap.ts";
 
 const DEFAULT_TARGET = "192.168.88.160";
@@ -99,7 +100,6 @@ type I2cConfig = {
   address?: number;
   pins: { sda: number | null; scl: number | null };
 };
-type DapStatus = { prompt: string; port: number; ip: string };
 type HttpResult = { status: number; headers: Headers; text: string };
 type McpEnvelope = { jsonrpc?: string; id?: number; result?: JsonObject; error?: JsonObject };
 
@@ -141,15 +141,8 @@ function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function normalizeTarget(value: string): URL {
-  const withProtocol = /^https?:\/\//i.test(value) ? value : `http://${value}`;
-  const url = new URL(withProtocol);
-  url.pathname = url.pathname.replace(/\/$/, "");
-  return url;
-}
-
-const target = normalizeTarget(process.env.SAIHUB_TARGET ?? process.env.SAIHUB_IP ?? DEFAULT_TARGET);
 const routingToken = process.env.SAIHUB_ROUTING_TOKEN?.trim();
+const target = hardwareTarget(process.env.SAIHUB_TARGET ?? process.env.SAIHUB_IP ?? DEFAULT_TARGET, Boolean(routingToken));
 
 function targetUrl(path: string): URL {
   const basePath = `${target.pathname.replace(/\/$/, "")}/`;
@@ -1134,27 +1127,42 @@ async function testOpenEndDap(): Promise<void> {
     await promptly("DAP enable", () => mcp
       ? mcpTool("configure_dap", config)
       : requestJson<void>("POST", "/dap/config", config, 204));
-    const status = await requestJson<DapStatus>("GET", "/dap/status");
+    const status = await requestJson<StreamStatus>("GET", "/dap/status");
     const liveConfig = await requestJson<JsonObject>("GET", "/dap/config");
     assert(liveConfig.enable === true, "DAP config enable did not stick");
     assert(isObject(liveConfig.pins) && liveConfig.pins.swclk === config.pins.swclk &&
       liveConfig.pins.swdio === config.pins.swdio && liveConfig.pins.nreset === config.pins.nreset,
       "DAP config pins did not match the request");
     assert(typeof status.prompt === "string" && status.prompt.length > 0, "DAP status omitted connection instructions");
-    assert(Number.isInteger(status.port) && status.port > 0 && status.port <= 65535,
-      "DAP status returned invalid port");
-    assert(typeof status.ip === "string" && status.ip !== "0.0.0.0", "DAP status returned invalid IP");
-    const mcpStatus = await mcpTool<DapStatus>("get_dap_status", {});
-    assert(mcpStatus.port === status.port && mcpStatus.ip === status.ip && mcpStatus.prompt === status.prompt,
-      "REST/MCP DAP status disagreed");
+    const mcpStatus = await mcpTool<StreamStatus>("get_dap_status", {});
+    assert(mcpStatus.prompt === status.prompt, "REST/MCP DAP status prompts disagreed");
     await expectStatus("PUT", `/pin/${DAP_PINS.swclk}`, 423, { mode: "digitalOutput" });
     await expectStatus("POST", "/spi/0/config", 409, spiBody({ ...disabledSpi, enable: true, pins: SPI_PINS }));
 
-    // REST/MCP may use the cloud relay, but DAP TCP needs a directly reachable device address.
-    const host = process.env.SAIHUB_DAP_HOST ?? (target.pathname.includes("/device/") ? status.ip : target.hostname);
-    assert(host.length > 0, "Set SAIHUB_DAP_HOST to the directly reachable DAP address");
-    const dap = await Dap.open(host, status.port, DAP_TIMEOUT_MS);
+    let proxy: CloudTcpProxy | undefined;
+    let host: string;
+    let port: number;
+    if (routingToken) {
+      // REST and MCP each issue their own stream token.
+      const restUrl = cloudStreamUrl(status, target, "dap");
+      const mcpUrl = cloudStreamUrl(mcpStatus, target, "dap");
+      proxy = await startCloudTcpProxy(async () => mcp ? mcpUrl : restUrl, log);
+      ({ host, port } = proxy);
+    } else {
+      const { ip, port: localPort } = status;
+      assert(typeof localPort === "number" && Number.isInteger(localPort) && localPort > 0 && localPort <= 65535,
+        "DAP status returned invalid port");
+      assert(typeof ip === "string" && ip !== "0.0.0.0", "DAP status returned invalid IP");
+      assert(mcpStatus.url === undefined && mcpStatus.port === localPort && mcpStatus.ip === ip,
+        "REST/MCP DAP status addresses disagreed");
+      host = process.env.SAIHUB_DAP_HOST ?? (target.pathname.includes("/device/") ? ip : target.hostname);
+      assert(host.length > 0, "Set SAIHUB_DAP_HOST to the directly reachable DAP address");
+      port = localPort;
+    }
+    let connection: Dap | undefined;
     try {
+      const dap = await Dap.open(host, port, DAP_TIMEOUT_MS);
+      connection = dap;
       await testDapFraming(dap);
       const command = async (data: number[], expected: number[], label: string): Promise<void> => {
         const response = await promptly(label, () => dap.command(Buffer.from(data)));
@@ -1177,7 +1185,11 @@ async function testOpenEndDap(): Promise<void> {
       await promptly("System read during DAP session", () => requestJson<JsonObject>("GET", "/system"));
       await command([0, 254], [0, 1, 8], "Info after failed transfers");
     } finally {
-      await dap.close();
+      try {
+        await connection?.close();
+      } finally {
+        await proxy?.close();
+      }
     }
     await promptly("DAP disable", () => mcp
       ? mcpTool("configure_dap", { ...config, enable: false })
@@ -1194,6 +1206,21 @@ async function disableTestDap(): Promise<void> {
   await requestJson<void>("POST", "/dap/config", { enable: false, pins: DAP_PINS }, 204);
   await expectStatus("GET", "/dap/status", 503);
   for (const pin of Object.values(DAP_PINS)) await configureRestPin(pin, "disable");
+}
+
+async function testCloudRfc2217Status(): Promise<void> {
+  log("RFC2217 cloud stream URLs over REST/MCP");
+  const configPath = `/uart/${UART_ID}/config`;
+  try {
+    await requestJson<void>("POST", configPath, { enable: true, mode: "rfc2217", pins: { rx: 2, tx: 3 } }, 204);
+    const rest = await requestJson<StreamStatus>("GET", `/uart/${UART_ID}/rfc2217`);
+    const mcp = await mcpTool<StreamStatus>("get_uart_rfc2217_status", { id: UART_ID });
+    cloudStreamUrl(rest, target, "rfc2217");
+    cloudStreamUrl(mcp, target, "rfc2217");
+    assert(rest.prompt === mcp.prompt, "REST/MCP RFC2217 status prompts disagreed");
+  } finally {
+    await requestJson<void>("POST", configPath, uartBody(disabledUart), 204);
+  }
 }
 
 function hardwareScript(output: number, input: number, marker: string): string {
@@ -1642,6 +1669,7 @@ async function main(): Promise<void> {
   await runSection("open-end SPI", testOpenEndSpi, disableTestSpi);
   await runSection("open-end I2C", testOpenEndI2c, disableTestI2c);
   await runSection("open-end DAP", testOpenEndDap, disableTestDap);
+  if (routingToken) await runSection("cloud RFC2217 status", testCloudRfc2217Status);
   await runSection("buzzer", testBuzzer);
   await runSection("scripts", testScripts);
   await runSection("concurrency", testConcurrency, releaseTestLocks);
