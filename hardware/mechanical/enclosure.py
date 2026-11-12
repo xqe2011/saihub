@@ -22,7 +22,13 @@ FLOOR = 1.0
 PCB_Z = 2.8  # 1.8 mm above the floor, clearing the available connector-tail model.
 SEAM_Z = 7.5
 LAP = 1.0
-ROOF_Z = 8.0  # Clears the available USB body model by 0.295 mm under a solid 1 mm roof.
+SNAP_DROP = 0.4  # Lower catches and windows together, leaving a 1 mm top strip.
+LED_BORE_RADIUS = 0.75
+LED_SLEEVE_WALL = 1.0
+LED_WELL_BOTTOM = 6.2  # Clears adjacent component models at z=5.945 by 0.255 mm.
+ROOF_Z = 8.5  # 4.1 mm above PCB top; 0.795 mm above the available USB model.
+USB_OPENING_TOP = SEAM_Z  # Align the visible top edge with the header opening.
+BUTTON_OPENING_W, BUTTON_OPENING_H, BUTTON_OPENING_Z = 3.0, 1.8, 4.4
 TEXT_DEPTH = 0.3  # Recessed lettering leaves 0.7 mm of the 1 mm roof.
 QR_INNER = 22.0
 QR_FRAME_WIDTH = 0.18  # Matches the ~0.177 mm stem of the 1.8 mm regular lettering.
@@ -74,9 +80,12 @@ def connector_clearances():
     # Openings extend through both the large socket and the smaller cover lip.
     return [
         # Side access only: stop every cut at or below the roof underside.
-        block(10.4, 10.2, ROOF_Z - (PCB_Z + 1.0),
+        block(10.4, 10.2, USB_OPENING_TOP - (PCB_Z + 1.0),
               x=48 - 42.8, y=3.0, z=PCB_Z + 1.0),
-        block(5.0, 5.4, 3.0, x=48 - 34.5, y=0.5, z=PCB_Z + 1.0),
+        # Small external actuator opening; wider body relief stays behind the face.
+        block(BUTTON_OPENING_W, 5.4, BUTTON_OPENING_H,
+              x=13.5, y=0.5, z=BUTTON_OPENING_Z),
+        block(5.0, 3.0, 2.2, x=13.5, y=1.7, z=PCB_Z + BOARD_T - 0.2),
         # Open to the base seam: remove the fragile 0.3 mm bar above the header.
         block(31.5, 12, SEAM_Z - (PCB_Z + 0.8),
               x=48 - (1.8 + 11 * 2.54 / 2), y=-2, z=PCB_Z + 0.8),
@@ -92,6 +101,10 @@ def make_enclosure():
     for x in (-0.4, 48.4):
         for y in (10.0, 17.0):
             base += block(1.6, 2.0, PCB_Z - FLOOR, x=x, y=y, z=FLOOR)
+
+    # Rear-edge ledges stay on the solid PCB (x <= 26.15), clear of the antenna notch.
+    for x in (0.8, 24.5):
+        base += block(2.0, 1.6, PCB_Z - FLOOR, x=x, y=28.4, z=FLOOR)
 
     cover = rounded_block(OUTER, WALL, ROOF_Z)
     # A small rolled top edge catches light without consuming the 1 mm roof.
@@ -112,21 +125,20 @@ def make_enclosure():
         base -= opening
         cover -= opening
 
-    # Opposed side cantilevers retain the lid vertically. Each hook cams inward
-    # 0.25 mm during insertion and catches a side window; press both to release.
+    # Solid ramp detents replace the thin cantilever arms. The base walls flex
+    # outward over the entry/release ramps; no inward-moving arms or release slots.
     for right in (False, True):
-        x = 47.7 if right else 0.3
-        # Free the arm from the nesting lip, retaining a 0.4 mm gap above it.
-        cover -= block(0.8, 7.8, 0.5, x=x, y=14.1, z=6.4)
-        cover += block(0.6, 7.5, 1.2, x=x, y=14.25, z=5.3)
-        cover += block(0.6, 1.5, 2.3, x=x, y=18.75, z=5.3)
-        # Free end hook: flat upper catch and sloping lower insertion face.
-        outline = [(0, 5.3), (-0.45, 5.9), (-0.45, 6.5), (0.6, 6.5), (0.6, 5.3)]
+        x = 47.6 if right else 0.4
+        cover += block(0.8, 4.0, 2.4 + SNAP_DROP, x=x, y=14.0, z=5.2 - SNAP_DROP)
+        # 0.8 mm projection from the lip, less 0.2 mm fit gap = 0.6 engagement.
+        outline = [(0, 5.2), (-0.8, 5.8), (-0.8, 6.1), (0, 6.7),
+                   (0.8, 6.7), (0.8, 5.2)]
+        outline = [(u, v - SNAP_DROP) for u, v in outline]
         if right:
             outline = [(48 - u, v) for u, v in outline]
         profile = Plane.XZ * Polygon(*outline, align=None)
-        cover += Pos(0, 10.5, 0) * extrude(profile, amount=1.5, dir=(0, 1, 0))
-        base -= block(2.0, 2.1, 1.5, x=48.7 if right else -0.7, y=11.25, z=5.2)
+        cover += Pos(0, 12.0, 0) * extrude(profile, amount=4.0, dir=(0, 1, 0))
+        base -= block(2.0, 4.6, 1.8, x=48.7 if right else -0.7, y=14.0, z=5.1 - SNAP_DROP)
 
     # Intaglio border with a square, full-size sticker bed flush with the cover.
     qr_z = ROOF_Z + WALL - QR_FRAME_DEPTH
@@ -137,18 +149,18 @@ def make_enclosure():
     # A quiet left-aligned wordmark and model line balance the larger QR area.
     cover -= text_cut("SAIHub", 1.0, 26.0, 3.5, anchor="left", bold=True)
     cover -= text_cut("MINI", 1.0, 21.7, 1.8, anchor="left")
-    # Physical pin order, reversed in this face view. User-facing channels 1–8
+    # Physical pin order, reversed in this face view. User-facing channels 0–7
     # correspond to the board's IO0–IO7. Every label gets one 2.54 mm pitch column.
-    pin_labels = ("3.3V", "GND", "5V", "GND", "1", "2", "3", "4", "5", "6", "7", "8")
+    pin_labels = ("3.3V", "GND", "5V", "GND", "0", "1", "2", "3", "4", "5", "6", "7")
     for i, label in enumerate(pin_labels):
         cover -= text_cut(label, 48 - (1.8 + 2.54 * i), 0.2, 1.8, rotation=90, anchor="bottom")
 
     # Individual wells prevent direct lateral light paths between adjacent lamps.
-    # Well bottoms clear the 0.55 mm LEDs by 0.4 mm; prototype visibility still needs checking.
-    well_bottom = PCB_Z + BOARD_T + 0.95
+    # Thick well walls clear adjacent components; prototype light isolation needs checking.
+    well_bottom = LED_WELL_BOTTOM
     for ref, label, x, y in indicators():
-        cover += Pos(x, y, well_bottom) * Cylinder(1.1, ROOF_Z-well_bottom+0.02, align=(Align.CENTER, Align.CENTER, Align.MIN))
-        cover -= Pos(x, y, well_bottom-0.02) * Cylinder(0.75, ROOF_Z+WALL-well_bottom+0.04, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        cover += Pos(x, y, well_bottom) * Cylinder(LED_BORE_RADIUS + LED_SLEEVE_WALL, ROOF_Z-well_bottom+0.02, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        cover -= Pos(x, y, well_bottom-0.02) * Cylinder(LED_BORE_RADIUS, ROOF_Z+WALL-well_bottom+0.04, align=(Align.CENTER, Align.CENTER, Align.MIN))
         cover -= text_cut(label, x-10.0, y, 1.6, anchor="left")
 
     base.label, cover.label = "Base", "Cover"
@@ -182,6 +194,7 @@ def populated_board():
     # These two custom footprints have no supplied component models. Their XY
     # dimensions/positions follow the board; the simplified heights are illustrative.
     for name, shape, rgb in [
+        ("Buzzer body envelope", block(5.2, 5.2, 2.0, x=48-28.49, y=24.82, z=PCB_Z + BOARD_T), (0.2, 0.2, 0.2)),
         ("Button body envelope", block(4.6, 2.2, 1.8, x=13.5, y=1.55, z=PCB_Z + BOARD_T), (0.65, 0.66, 0.67)),
         ("Button actuator envelope", block(2, 0.9, 1.0, x=13.5, y=0, z=PCB_Z + BOARD_T + 0.4), (0.20, 0.21, 0.22)),
         ("Module substrate envelope", block(16, 24, 0.8, x=39.15, y=16, z=PCB_Z + BOARD_T), (0.12, 0.29, 0.22)),
@@ -191,7 +204,7 @@ def populated_board():
         parts.append(shape)
     colors = {'D4':(0.1,0.8,0.2), 'D5':(0.1,0.8,0.2), 'D6':(0.9,0.1,0.1), 'D7':(0.1,0.3,1.0)}
     for ref, label, x, y in indicators():
-        led = block(.8, 1.6, .55, x=x, y=y, z=PCB_Z+BOARD_T)
+        led = block(.8, 1.6, .6, x=x, y=y, z=PCB_Z+BOARD_T)
         led.label, led.color = ref+' '+label+' LED envelope', Color(*colors[ref])
         parts.append(led)
     return Compound(label="PCB assembly reference", children=parts)
@@ -233,30 +246,50 @@ def validate(base, cover, board):
     bed = block(QR_INNER, QR_INNER, 0.1, x=QR_CENTER[0], y=QR_CENTER[1], z=top_z - 0.1)
     assert abs(intersection_volume(cover, bed) - bed.volume) < 1e-6, "QR sticker bed must stay flat"
     report.update({"assembled_size_mm": [*[round(d, 3) for d in OUTER], ROOF_Z + WALL],
+                   "pcb_top_to_roof_mm": round(ROOF_Z - PCB_Z - BOARD_T, 3),
+                   "usb_opening_mm": [10.4, round(USB_OPENING_TOP - PCB_Z - 1.0, 3)],
+                   "usb_top_strip_mm": round(ROOF_Z - USB_OPENING_TOP, 3),
+                   "button_opening_mm": [BUTTON_OPENING_W, BUTTON_OPENING_H],
                    "wall_mm": WALL, "each_mating_rim_mm": RIM, "nesting_clearance_per_side_mm": FIT,
                    "qr_clear_area_mm": [QR_INNER, QR_INNER], "qr_frame_outer_mm": [QR_OUTER, QR_OUTER],
                    "qr_frame_width_mm": QR_FRAME_WIDTH, "qr_frame_depth_mm": QR_FRAME_DEPTH, "qr_center_mm": list(QR_CENTER), "outer_corner_radius_mm": CORNER_RADIUS,
                    "text_engraving_depth_mm": TEXT_DEPTH, "snap_count": 2,
-                   "snap_engagement_mm": 0.25, "snap_beam_mm": [7.5, 0.6, 1.2],
+                   "pcb_support_count": 6, "rear_support_centres_mm": [[0.8, 28.4], [24.5, 28.4]],
+                   "snap_type": "Solid ramp detents; outward-flexing base walls",
+                   "snap_engagement_mm": 0.6, "snap_projection_mm": 0.8,
+                   "snap_window_top_strip_mm": round(SEAM_Z - (5.1 - SNAP_DROP + 1.8), 3),
+                   "snap_vertical_drop_mm": SNAP_DROP,
+                   "snap_width_mm": 4.0, "snap_window_mm": [4.6, 1.8],
                    "component_fit": "Prototype verification required"})
     return report
 
 
 def validate_components(base, cover, board):
-    """Check available geometry, plus conservative fully displaced snap-arm envelopes."""
+    """Check available geometry; solid detents do not deflect toward the board."""
     result = {}
-    for name, shape in [("base", base), ("cover", cover),
-                        ("left_snap_insertion", block(0.85, 7.5, 1.2, x=0.425, y=14.25, z=5.3)),
-                        ("right_snap_insertion", block(0.85, 7.5, 1.2, x=47.575, y=14.25, z=5.3))]:
+    reference_exceptions = []
+    for name, shape in [("base", base), ("cover", cover)]:
         collisions = []
         for child in board.children:
             volume = intersection_volume(shape, child)
             if volume > 1e-6:
-                collisions.append({"reference": child.label, "volume_mm3": round(volume, 6)})
+                # Physical fit testing confirms spare space above USB-C. Keep the
+                # supplied taller model unchanged and explicitly report its mismatch.
+                allowed = block(10.4, 10.2, 0.2051, x=5.2, y=3.0, z=USB_OPENING_TOP)
+                overlap = shape.intersect(child)
+                pieces = overlap if isinstance(overlap, list) else [overlap]
+                allowed_volume = sum(intersection_volume(piece, allowed) for piece in pieces)
+                if (name == "cover" and child.label.startswith("USB_C_Receptacle_")
+                        and abs(allowed_volume - volume) < 1e-6):
+                    reference_exceptions.append({"reference": child.label,
+                        "volume_mm3": round(volume, 6),
+                        "reason": "Supplied USB model extends 0.205 mm above opening; user physical fit test confirms clearance."})
+                else:
+                    collisions.append({"reference": child.label, "volume_mm3": round(volume, 6)})
         result[name] = collisions
-    assert not any(result.values()), f"Component or snap insertion interference: {result}"
-    return {"collisions": result,
-            "scope": "Available board models and illustrative envelopes; missing models, solder and snap forces unverified."}
+    assert not any(result.values()), f"Component interference: {result}"
+    return {"collisions": result, "reference_model_exceptions": reference_exceptions,
+            "scope": "Available board models and illustrative envelopes; base walls flex outward during snapping; missing models, solder, snap forces and fatigue unverified."}
 
 
 def validate_stl(path):
@@ -361,8 +394,11 @@ def main():
     assert len(lamps) == 4 and len({round(x, 4) for _, _, x, _ in lamps}) == 1
     assert all(abs(lamps[i+1][3]-lamps[i][3]-3.2)<1e-6 for i in range(3))
     report['indicator_bank'] = {'labels':[label for _,label,_,_ in lamps],
-                                'opening_diameter_mm':1.5, 'well_outer_diameter_mm':2.2,
-                                'led_top_clearance_mm':0.4, 'pitch_mm':3.2}
+                                'opening_diameter_mm':2 * LED_BORE_RADIUS,
+                                'well_outer_diameter_mm':2 * (LED_BORE_RADIUS + LED_SLEEVE_WALL),
+                                'sleeve_wall_mm':LED_SLEEVE_WALL,
+                                'led_top_clearance_mm':round(LED_WELL_BOTTOM - (PCB_Z + BOARD_T + 0.6), 3),
+                                'well_bottom_z_mm':LED_WELL_BOTTOM, 'pitch_mm':3.2}
     if args.check_components:
         checks = validate_components(base, cover, populated)
         (args.output / "component-clearance.json").write_text(json.dumps(checks, indent=2) + "\n")

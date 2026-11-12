@@ -1,9 +1,14 @@
 {
   "collisions": {
     "base": [],
-    "cover": [],
-    "left_snap_insertion": [],
-    "right_snap_insertion": []
+    "cover": []
   },
-  "scope": "Available board models and illustrative envelopes; missing models, solder and snap forces unverified."
+  "reference_model_exceptions": [
+    {
+      "reference": "USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal",
+      "volume_mm3": 1.76353,
+      "reason": "Supplied USB model extends 0.205 mm above opening; user physical fit test confirms clearance."
+    }
+  ],
+  "scope": "Available board models and illustrative envelopes; base walls flex outward during snapping; missing models, solder, snap forces and fatigue unverified."
 }

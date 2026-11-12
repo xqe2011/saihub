@@ -17,6 +17,11 @@ actual={(n.attrib['ref'],n.attrib['pin']):net.attrib['name'] for net in xml.find
 nets={n.GetNetname():n for n in b.GetNetInfo().NetsByNetcode().values()}
 for f in b.GetFootprints():
     ref=f.GetReference();a=parts[ref]
+    assert f.GetLayer()==p.F_Cu and a['side']=='top', f'{ref}: all components must be on the front surface'
+    f.SetLocked(a.get('locked', ref in {'J1','J2','SW1','U3','D4','D5','D6','D7'}))
+    assert all(abs(actual-expected)<1e-6 for actual,expected in zip(
+        (p.ToMM(f.GetPosition().x),p.ToMM(f.GetPosition().y)),a['pos'])), f'{ref}: placement metadata differs from board'
+    assert abs((f.GetOrientationDegrees()-a['rot']+180)%360-180)<1e-6, f'{ref}: rotation metadata differs from board'
     f.SetPath(p.KIID_PATH('/'+root+'/'+a['uuid']))
     f.SetValue(a['value'])
     f.GetField(p.FIELD_T_DATASHEET).SetText(a['url'])

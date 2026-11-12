@@ -1,5 +1,9 @@
 # Agent guidelines
 
+## Single-surface component placement
+
+All PCB components, including resistors and test pads, must be placed on the same surface: the front (top, `F.Cu`). Never place components on the back. Keep the board, placement generator, and design metadata consistent with this rule. Back-layer routing and through-hole pads are allowed.
+
 ## Do not touch `sdkconfig`
 
 `sdkconfig` and `sdkconfig.old` are generated and gitignored. Never create, edit, or commit them.

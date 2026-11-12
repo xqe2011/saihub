@@ -1,0 +1,40 @@
+{
+  "changed": "U10 replaced with TPD4E05U06DQAR; C21 supply-reference bypass removed",
+  "retained": "D2 input TVS",
+  "sources": [
+    "https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf",
+    "https://www.st.com/resource/en/datasheet/usblc6-2.pdf"
+  ],
+  "u10_pins": {
+    "1": "V3_SW",
+    "5": "V5_SW",
+    "3": "GND",
+    "8": "GND",
+    "2": "unconnected",
+    "4": "unconnected",
+    "6": "unconnected",
+    "7": "unconnected",
+    "9": "unconnected",
+    "10": "unconnected"
+  },
+  "normal_voltage_range_v": [
+    0,
+    5.5
+  ],
+  "protection_limit": "ESD shunts only; does not establish rail overvoltage protection or board-level ESD performance",
+  "fixed_positions_unchanged": [
+    "D4",
+    "D5",
+    "D6",
+    "D7",
+    "J1",
+    "J2",
+    "SW1",
+    "U3"
+  ],
+  "front_components": 64,
+  "drc_violations": 0,
+  "schematic_parity_issues": 0,
+  "unconnected_items": 0,
+  "board_sha256": "3dc1394879f61277a4e52349fca5bc77ab97ce85757a362c23e9ea1e69204853"
+}

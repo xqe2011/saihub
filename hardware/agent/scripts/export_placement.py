@@ -29,7 +29,11 @@ subprocess.run([PYTHON,str(ROOT/'agent/scripts/sync_board.py')],check=True)
 run('sch','erc','--exit-code-violations','-o',ROOT/'agent/validation/erc.rpt',schematic)
 run('pcb','drc','--schematic-parity','--format','json','-o',ROOT/f'agent/validation/{stage}-drc.json',board)
 report=json.loads((ROOT/f'agent/validation/{stage}-drc.json').read_text())
-if report['violations'] or report['schematic_parity'] or (options.routed and report['unconnected_items']):
+# Placement edits can leave useful trace stubs for subsequent rerouting. Retain
+# them and report them honestly; only a routed release requires their removal.
+routing_only={'track_dangling', 'via_dangling'}
+blocking=[v for v in report['violations'] if options.routed or v['type'] not in routing_only]
+if blocking or report['schematic_parity'] or (options.routed and report['unconnected_items']):
     raise SystemExit('Resolve DRC/parity findings and, in routed mode, every unconnected item before exporting.')
 run('pcb','drc','--schematic-parity','-o',ROOT/'agent/validation/drc.rpt',board)
 run('sch','export','pdf','-o',ROOT/'docs/schematic.pdf',schematic)
@@ -56,7 +60,7 @@ with (ROOT/'agent/validation/parts-placement.csv').open('w',newline='') as f:
     w.writerow(['Reference','Value','MPN_or_spec','Footprint','X_mm','Y_mm','Rotation_deg','Side','Notes','Source'])
     for a in data['parts']:
         w.writerow([a['ref'],a['value'],a['mpn'],a['foot'],*a['pos'],a['rot'],a['side'],a['desc'],a['url']])
-summary={**identity(),'board_mm':data['board_mm'],'status':'routed-cad-validated' if options.routed else 'placement-only-unrouted','drc_violations':len(report['violations']),'schematic_parity_issues':len(report['schematic_parity']),'unconnected_items':len(report['unconnected_items'])}
+summary={**identity(),'board_mm':data['board_mm'],'status':'routed-cad-validated' if options.routed else 'placement-only-unrouted','drc_violations':len(report['violations']),'placement_violations':len(blocking),'dangling_copper_items':sum(v['type'] in routing_only for v in report['violations']),'schematic_parity_issues':len(report['schematic_parity']),'unconnected_items':len(report['unconnected_items'])}
 data['status']=summary['status']
 (ROOT/'agent/design.json').write_text(json.dumps(data,indent=2)+'\n')
 (ROOT/f'agent/validation/{stage}-summary.json').write_text(json.dumps(summary,indent=2)+'\n')
