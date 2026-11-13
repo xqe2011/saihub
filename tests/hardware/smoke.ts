@@ -1,4 +1,9 @@
 import { URL } from "node:url";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import Ajv from "ajv";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 import { cloudStreamUrl, hardwareTarget, startCloudTcpProxy, type CloudTcpProxy, type StreamStatus } from "../library/cloud-stream.ts";
 import { Dap, testDapFraming } from "./dap.ts";
 
@@ -390,6 +395,53 @@ async function testRestMetadata(): Promise<void> {
   await expectStatus("PUT", "/pin/99", 404, { mode: "digitalInput", pullUp: false, pullDown: false });
 }
 
+async function testMcpSchemas(): Promise<void> {
+  log("MCP SDK connection, complete tool inventory, and JSON Schema compilation");
+  const client = new Client({ name: "hardware-smoke", version: "1.0.0" });
+  const transport = new StreamableHTTPClientTransport(targetUrl("/mcp"), {
+    requestInit: { headers: routingToken ? { Authorization: `Bearer ${routingToken}` } : {} },
+  });
+  const options = { timeout: REQUEST_TIMEOUT_MS };
+  const names = new Set<string>();
+  const cursors = new Set<string>();
+  try {
+    await client.connect(transport, options);
+    await client.ping(options);
+    let cursor: string | undefined;
+    do {
+      const page = await client.listTools(cursor === undefined ? undefined : { cursor }, options);
+      for (const tool of page.tools) {
+        assert(!names.has(tool.name), `MCP tools/list duplicated ${tool.name}`);
+        names.add(tool.name);
+        for (const field of ["inputSchema", "outputSchema"] as const) {
+          const schema = tool[field];
+          if (schema === undefined) continue;
+          try {
+            // MCP defaults to 2020-12; also accept explicitly declared draft-07 schemas.
+            // Use a fresh compiler so unrelated tools may reuse the same schema $id.
+            const settings = { strict: false, allErrors: true };
+            const ajv = schema.$schema === "http://json-schema.org/draft-07/schema#"
+              ? new Ajv(settings) : new Ajv2020(settings);
+            addFormats(ajv);
+            ajv.compile(schema);
+          } catch (error) {
+            fail(`MCP tool ${tool.name} ${field} is invalid: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      }
+      cursor = page.nextCursor;
+      if (cursor !== undefined) {
+        assert(!cursors.has(cursor), `MCP tools/list repeated cursor ${cursor}`);
+        cursors.add(cursor);
+      }
+    } while (cursor !== undefined);
+    for (const name of EXPECTED_MCP_TOOLS) assert(names.has(name), `MCP tools/list omitted ${name}`);
+    log(`MCP SDK accepted ${names.size} tools and their schemas`);
+  } finally {
+    await client.close();
+  }
+}
+
 async function testMcpProtocol(): Promise<void> {
   log("MCP initialization, notification, ping, and tool inventory");
   const initialized = await mcpRequest("initialize", {
@@ -427,17 +479,6 @@ async function testMcpProtocol(): Promise<void> {
       Accept: "application/json", "MCP-Protocol-Version": protocolVersion,
     });
     assert(supported.status === 200, `MCP supported protocol ${protocolVersion} returned ${supported.status}`);
-  }
-  try {
-    const listed = await mcpRequest("tools/list");
-    const tools = listed?.result?.tools;
-    assert(Array.isArray(tools), "MCP tools/list omitted tools");
-    const names = new Set(tools.map((tool) => (isObject(tool) ? tool.name : undefined)));
-    for (const name of EXPECTED_MCP_TOOLS) assert(names.has(name), `MCP tools/list omitted ${name}`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    deferredFailures.push(message);
-    log(`continuing after protocol failure: ${message}`);
   }
 }
 
@@ -1678,6 +1719,7 @@ async function main(): Promise<void> {
   assert(Number.isInteger(SOAK_ITERATIONS) && SOAK_ITERATIONS >= 0 && SOAK_ITERATIONS <= 100,
     "SAIHUB_SOAK_ITERATIONS must be an integer from 0 to 100");
   log(`target ${target.origin}${target.pathname}`);
+  await testMcpSchemas();
   await testRestMetadata();
   await testMcpProtocol();
   await runSection("system info", testSystemInfo);

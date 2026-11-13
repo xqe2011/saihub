@@ -1,0 +1,10 @@
+{
+  "name": "saihub-hardware-tests",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.26.0",
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1"
+  }
+}
