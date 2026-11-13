@@ -53,7 +53,7 @@ jobs:
 
   cloud-cache:
     runs-on: ubuntu-latest
-    environment: cloud
+    environment: production
     env:
       ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
       ADMIN_URL: ${{ vars.ADMIN_URL }}
@@ -66,7 +66,7 @@ jobs:
           if [ -n "${ADMIN_URL}" ] && [ -n "${ADMIN_TOKEN}" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Skipping cloud cache upload; set environment cloud var ADMIN_URL and secret ADMIN_TOKEN."
+            echo "Skipping cloud cache upload; set environment production var ADMIN_URL and secret ADMIN_TOKEN."
           fi
       - uses: actions/checkout@v4
         if: steps.config.outputs.configured == 'true'
