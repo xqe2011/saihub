@@ -16,18 +16,22 @@
 #include <esp_https_ota.h>
 #include <esp_log.h>
 #include <esp_system.h>
+#include <esp_timer.h>
 #include <esp_tls_errors.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static const char* tag = "SAIHub-System";
 
+static atomic_uint cpuUsageTenthsPercent;
 static portMUX_TYPE otaMux = portMUX_INITIALIZER_UNLOCKED;
 static System_OtaState otaState = SYSTEM_OTA_IDLE;
 static int otaProgress = -1;
+static bool rebootPending;
 static char otaFailReason[192];
 
 typedef struct {
@@ -48,13 +52,65 @@ static void System_OtaSetState(System_OtaState state, int progress, const char* 
   portEXIT_CRITICAL(&otaMux);
 }
 
+void System_SampleCpuUsage(void)
+{
+  static uint64_t previousTime;
+  static uint64_t previousIdle;
+  uint64_t idle = 0;
+  for (BaseType_t core = 0; core < configNUMBER_OF_CORES; core++) {
+    idle += ulTaskGetIdleRunTimeCounterForCore(core);
+  }
+  uint64_t now = (uint64_t)esp_timer_get_time();
+  uint64_t elapsed = (now - previousTime) * configNUMBER_OF_CORES;
+  uint64_t idleElapsed = idle - previousIdle;
+  if (elapsed > 0) {
+    unsigned usage = idleElapsed >= elapsed ? 0 : (unsigned)(((elapsed - idleElapsed) * 1000) / elapsed);
+    atomic_store_explicit(&cpuUsageTenthsPercent, usage, memory_order_relaxed);
+  }
+  previousTime = now;
+  previousIdle = idle;
+}
+
 void System_GetInfo(System_Info* out)
 {
   if (!out) return;
   const esp_app_desc_t* desc = esp_app_get_description();
+  out->cpuUsageTenthsPercent = atomic_load_explicit(&cpuUsageTenthsPercent, memory_order_relaxed);
+  out->freeHeap = esp_get_free_heap_size();
+  out->minFreeHeapSinceBoot = esp_get_minimum_free_heap_size();
   out->digest = Cloud_GetPublicKeyDigest();
   out->version = desc->version;
   snprintf(out->compiledDate, sizeof(out->compiledDate), "%s %s", desc->date, desc->time);
+}
+
+static void System_RebootTask(void* arg)
+{
+  (void)arg;
+  /* Allow local and relayed API responses to leave before restarting. */
+  vTaskDelay(pdMS_TO_TICKS(1000));
+  esp_restart();
+}
+
+esp_err_t System_Reboot(void)
+{
+  portENTER_CRITICAL(&otaMux);
+  if (otaState == SYSTEM_OTA_UPGRADING) {
+    portEXIT_CRITICAL(&otaMux);
+    return ESP_ERR_INVALID_STATE;
+  }
+  if (rebootPending) {
+    portEXIT_CRITICAL(&otaMux);
+    return ESP_OK;
+  }
+  rebootPending = true;
+  portEXIT_CRITICAL(&otaMux);
+  if (xTaskCreate(System_RebootTask, "system_reboot", 2048, NULL, 5, NULL) != pdPASS) {
+    portENTER_CRITICAL(&otaMux);
+    rebootPending = false;
+    portEXIT_CRITICAL(&otaMux);
+    return ESP_ERR_NO_MEM;
+  }
+  return ESP_OK;
 }
 
 bool System_OtaIsUpgrading(void)
@@ -432,7 +488,18 @@ esp_err_t System_OtaUpgrade(const char* url, const char* sha256, char* reason, s
   memcpy(job->url, url, n + 1);
   memcpy(job->expectSha, expect, 32);
 
-  System_OtaSetState(SYSTEM_OTA_UPGRADING, 0, NULL);
+  portENTER_CRITICAL(&otaMux);
+  if (rebootPending || otaState == SYSTEM_OTA_UPGRADING) {
+    portEXIT_CRITICAL(&otaMux);
+    free(job->url);
+    free(job);
+    snprintf(reason, reasonLen, "Firmware update or reboot in progress.");
+    return ESP_ERR_INVALID_STATE;
+  }
+  otaState = SYSTEM_OTA_UPGRADING;
+  otaProgress = 0;
+  otaFailReason[0] = '\0';
+  portEXIT_CRITICAL(&otaMux);
   if (xTaskCreate(System_OtaTask, "system_ota", 12288, job, 5, NULL) != pdPASS) {
     System_OtaSetState(SYSTEM_OTA_IDLE, -1, NULL);
     free(job->url);

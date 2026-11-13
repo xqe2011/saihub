@@ -979,6 +979,7 @@ static void Script_OpenSandbox(lua_State* L)
       "get_dap_status",
       "configure_dap",
       "play_buzzer",
+      "reboot_system",
       "create_lock",
       "renew_lock",
       "delete_lock",

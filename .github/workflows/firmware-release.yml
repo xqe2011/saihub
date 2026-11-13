@@ -29,7 +29,7 @@ jobs:
           idf.py merge-bin --output "saihub-${TARGET}-merged.bin"
           mkdir -p release
           cp "build/saihub-${TARGET}-merged.bin" release/
-          cp build/saihub.bin "release/saihub-${TARGET}.bin"
+          cp build/saihub.bin "release/saihub-${TARGET}-ota.bin"
           python3 - <<'PY'
           import struct, pathlib
           data = pathlib.Path("build/saihub.bin").read_bytes()
@@ -44,7 +44,7 @@ jobs:
           print("app_elf_sha256", sha)
           PY
           cd release
-          sha256sum "saihub-${TARGET}-merged.bin" "saihub-${TARGET}.bin" > SHA256SUMS
+          sha256sum "saihub-${TARGET}-merged.bin" "saihub-${TARGET}-ota.bin" > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: firmware-release
@@ -96,7 +96,7 @@ jobs:
         run: |
           set -euo pipefail
           TARGET=esp32c5
-          APP_BIN="saihub-${TARGET}.bin"
+          APP_BIN="saihub-${TARGET}-ota.bin"
           MERGED_BIN="saihub-${TARGET}-merged.bin"
           APP_SHA=$(tr -d '[:space:]' < release/app-elf-sha256.txt)
           APP_SIZE=$(wc -c < "release/${APP_BIN}" | tr -d ' ')

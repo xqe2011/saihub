@@ -1,0 +1,70 @@
+name: Update release manifest
+
+on:
+  workflow_dispatch:
+  repo_dispatch:
+    types: [update-release-manifest]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-manifest
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect releases into releases.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Near 100 newest releases (skip drafts); assets keyed by name → browser_download_url.
+          gh api "repos/${GH_REPO}/releases?per_page=100" \
+            --jq '[.[] | select(.draft == false) | {
+              tag: .tag_name,
+              publishedAt: .published_at,
+              prerelease: .prerelease,
+              assets: ([.assets[] | {key: .name, value: .browser_download_url}] | from_entries)
+            }]' > releases.json
+          python3 - <<'PY'
+          import json, pathlib
+          data = json.loads(pathlib.Path("releases.json").read_text())
+          pathlib.Path("releases.json").write_text(json.dumps(data, indent=2) + "\n")
+          print(f"wrote {len(data)} releases")
+          PY
+
+      - name: Push releases.json to manifests branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$PWD/releases.json"
+          WORK=$(mktemp -d)
+          cd "$WORK"
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git"
+          if git ls-remote --exit-code --heads origin manifests >/dev/null 2>&1; then
+            git fetch origin manifests
+            git checkout -B manifests origin/manifests
+          else
+            git checkout --orphan manifests
+          fi
+          # Keep the branch as a single-file tree.
+          git rm -rf --ignore-unmatch . >/dev/null 2>&1 || true
+          cp "$SRC" ./releases.json
+          git add releases.json
+          if git diff --cached --quiet; then
+            echo "releases.json unchanged; skipping commit"
+            exit 0
+          fi
+          git commit -m "Update releases.json"
+          git push -u origin manifests

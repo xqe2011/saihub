@@ -32,6 +32,9 @@ static cJSON* Route_SystemInfoJson(void)
   cJSON_AddStringToObject(root, "digest", info.digest ? info.digest : "");
   cJSON_AddStringToObject(root, "version", info.version ? info.version : "");
   cJSON_AddStringToObject(root, "compiledDate", info.compiledDate);
+  cJSON_AddNumberToObject(root, "cpu_usage_percent", info.cpuUsageTenthsPercent / 10.0);
+  cJSON_AddNumberToObject(root, "free_heap_bytes", info.freeHeap);
+  cJSON_AddNumberToObject(root, "min_free_heap_since_boot_bytes", info.minFreeHeapSinceBoot);
   return root;
 }
 
@@ -52,6 +55,21 @@ static esp_err_t Route_SystemGetHandler(HttpServer_Context* ctx)
   HttpServer_LogCall(ctx);
   cJSON* root = Route_SystemInfoJson();
   if (!root) return HttpServer_SendError(ctx, 500, "internal");
+  return HttpServer_SendJson(ctx, 200, root);
+}
+
+static esp_err_t Route_SystemRebootHandler(HttpServer_Context* ctx)
+{
+  HttpServer_LogCall(ctx);
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return HttpServer_SendError(ctx, 500, "internal");
+  cJSON_AddBoolToObject(root, "started", true);
+  esp_err_t err = System_Reboot();
+  if (err != ESP_OK) {
+    cJSON_Delete(root);
+    return HttpServer_SendError(ctx, err == ESP_ERR_INVALID_STATE ? 503 : 500,
+                               err == ESP_ERR_INVALID_STATE ? "Firmware update in progress." : "Could not schedule reboot.");
+  }
   return HttpServer_SendJson(ctx, 200, root);
 }
 
@@ -108,6 +126,7 @@ static esp_err_t Route_SystemOtaUpgradeHandler(HttpServer_Context* ctx)
 
 static const HttpServer_Route uris[] = {
     {.uri = "/system", .method = HTTP_SERVER_GET, .handler = Route_SystemGetHandler},
+    {.uri = "/system/reboot", .method = HTTP_SERVER_POST, .handler = Route_SystemRebootHandler},
     {.uri = "/system/ota", .method = HTTP_SERVER_GET, .handler = Route_SystemOtaGetHandler},
     {.uri = "/system/ota/check", .method = HTTP_SERVER_POST, .handler = Route_SystemOtaCheckHandler},
     {.uri = "/system/ota/upgrade", .method = HTTP_SERVER_POST, .handler = Route_SystemOtaUpgradeHandler},

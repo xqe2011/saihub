@@ -730,6 +730,12 @@ body{
   text-align:right;
   word-break:break-word;
 }
+.about-unit{
+  font-size:.78rem;
+  font-weight:500;
+  color:var(--md-sys-color-on-surface-variant);
+  margin-left:.25rem;
+}
 .about-mono{
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-size:.82rem;
@@ -741,9 +747,25 @@ body{
 }
 .about-value a:hover{text-decoration:underline}
 .about-update{
-  font-weight:600;
+  font-size:.78rem;
+  font-weight:500;
   color:var(--md-sys-color-primary);
   margin-left:.35rem;
+}
+button.about-update{
+  background:none;
+  border:0;
+  padding:0;
+  cursor:pointer;
+  font:inherit;
+  font-size:.78rem;
+  font-weight:500;
+}
+button.about-update:hover{text-decoration:underline}
+button.about-update:disabled{
+  cursor:default;
+  text-decoration:none;
+  opacity:.7;
 }
 .resource-item{
   display:flex;
@@ -960,6 +982,19 @@ body{
         <span class="about-label" data-i18n="about.digest">Authentication Digest</span>
         <span class="about-value about-mono" id="about-digest">—</span>
       </div>
+      <div class="about-row">
+        <span class="about-label" data-i18n="about.cpu">CPU Usage</span>
+        <span class="about-value"><span id="about-cpu">—</span> <span class="about-unit">%</span></span>
+      </div>
+      <div class="about-row">
+        <span class="about-label" data-i18n="about.freeHeap">Free Heap</span>
+        <span class="about-value"><span id="about-free-heap">—</span> <span class="about-unit" data-i18n="about.bytes">bytes</span></span>
+      </div>
+      <div class="about-row">
+        <span class="about-label" data-i18n="about.minHeap">Minimum Free Heap Since Boot</span>
+        <span class="about-value"><span id="about-min-heap">—</span> <span class="about-unit" data-i18n="about.bytes">bytes</span></span>
+      </div>
+      <button type="button" class="btn btn-tonal" id="about-reboot" data-i18n="about.reboot">Reboot</button>
       <p class="hint" id="about-ota-hint" hidden></p>
       <button type="button" class="btn btn-filled" id="about-upgrade" hidden data-i18n="about.upgrade">Upgrade</button>
     </article>
@@ -1004,9 +1039,12 @@ const I18N={
     'cloud.grants':'Cloud grants',
     'cloud.empty':'No cloud grants. Pair an MCP client from the landing page, then hold BOOT for 3 seconds.',
     'cloud.unnamed':'Unnamed','cloud.created':'Created','cloud.revoke':'Revoke','cloud.revokeConfirm':'Revoke grant {secret}?',
-    'about.system':'System','about.version':'Version','about.compiled':'Compiled','about.digest':'Authentication Digest','about.upgrade':'Upgrade',
+    'about.system':'System','about.version':'Version','about.compiled':'Compiled','about.digest':'Authentication Digest',
+    'about.reboot':'Reboot','about.rebooting':'Rebooting…','about.rebootConfirm':'Are you sure you want to reboot the device?',
+    'about.check':'Check for updates','about.checking':'Checking…','about.upgrade':'Upgrade',
+    'about.cpu':'CPU Usage','about.freeHeap':'Free Heap','about.minHeap':'Minimum Free Heap Since Boot','about.bytes':'bytes',
     'about.openApiSpec':'OpenAPI 3.1 Specification','about.mcpEndpoint':'MCP Protocol Endpoint','about.github':'Source Repository',
-    'about.available':'{version} available','about.newer':'A newer firmware image is available.',
+    'about.available':'{version} available','about.newer':'A newer firmware image is available.','about.upToDate':'Firmware is up to date.',
     'about.progress':'Firmware update in progress…','about.progressPct':'Firmware update in progress… {pct}%',
     'about.failed':'Firmware update failed.','about.finished':'Update finished. The device may reboot shortly.',
     'about.starting':'Starting…','about.loadFail':'Could not load system info.','about.checkFail':'Could not check for updates.',
@@ -1055,9 +1093,12 @@ const I18N={
     'cloud.grants':'云授权',
     'cloud.empty':'暂无云授权。请先在落地页配对 MCP 客户端，然后按住 BOOT 三秒。',
     'cloud.unnamed':'未命名','cloud.created':'创建于','cloud.revoke':'撤销','cloud.revokeConfirm':'撤销授权 {secret}？',
-    'about.system':'系统信息','about.version':'版本','about.compiled':'编译时间','about.digest':'认证摘要','about.upgrade':'升级',
+    'about.system':'系统信息','about.version':'版本','about.compiled':'编译时间','about.digest':'认证摘要',
+    'about.reboot':'重启','about.rebooting':'重启中…','about.rebootConfirm':'确定要重启设备吗？',
+    'about.check':'检查更新','about.checking':'检查中…','about.upgrade':'升级',
+    'about.cpu':'CPU 使用率','about.freeHeap':'可用堆内存','about.minHeap':'启动以来最低可用堆内存','about.bytes':'字节',
     'about.openApiSpec':'OpenAPI 3.1 规范','about.mcpEndpoint':'MCP 协议端点','about.github':'开源仓库',
-    'about.available':'{version} 可用','about.newer':'有可用的新固件镜像。',
+    'about.available':'{version} 可用','about.newer':'有可用的新固件镜像。','about.upToDate':'固件已是最新。',
     'about.progress':'固件更新进行中…','about.progressPct':'固件更新进行中… {pct}%',
     'about.failed':'固件更新失败。','about.finished':'更新完成。设备可能即将重启。',
     'about.starting':'开始中…','about.loadFail':'无法加载系统信息。','about.checkFail':'无法检查更新。',
@@ -1141,6 +1182,8 @@ let buzzerPlaying=false;
 let aboutLoaded=false;
 let aboutPending=null;
 let aboutUpgrading=false;
+let aboutRebooting=false;
+let aboutChecking=false;
 let landingPageUrl='';
 let cloudConnected=null;
 let cloudReason='';
@@ -1522,64 +1565,91 @@ function updateLiveLevels(pins){
 }
 
 function renderAboutVersion(version,available){
+  document.getElementById('about-reboot').disabled=aboutUpgrading||aboutRebooting;
   const el=document.getElementById('about-version');
   if(!el) return;
   let html=escapeHtml(version||'—');
-  if(available) html+='<span class="about-update">'+escapeHtml(t('about.available',{version:available}))+'</span>';
+  if(aboutUpgrading){
+    /* no action while upgrading */
+  }else if(available){
+    html+='<span class="about-update">'+escapeHtml(t('about.available',{version:available}))+'</span>';
+  }else if(aboutChecking){
+    html+='<span class="about-update">'+escapeHtml(t('about.checking'))+'</span>';
+  }else{
+    html+='<button type="button" class="about-update" id="about-check">'+escapeHtml(t('about.check'))+'</button>';
+  }
   el.innerHTML=html;
+  const check=document.getElementById('about-check');
+  if(check) check.onclick=()=>checkAboutUpdate();
 }
 
-async function loadAbout(forceCheck){
-  const hint=document.getElementById('about-ota-hint');
-  const btn=document.getElementById('about-upgrade');
-  let currentVersion='';
+function applySystemInfo(info){
+  aboutCurrentVersion=info.version||'';
+  document.getElementById('about-cpu').textContent=info.cpu_usage_percent==null?'—':Number(info.cpu_usage_percent).toFixed(1);
+  document.getElementById('about-free-heap').textContent=info.free_heap_bytes==null?'—':Number(info.free_heap_bytes).toLocaleString('en-US');
+  document.getElementById('about-min-heap').textContent=info.min_free_heap_since_boot_bytes==null?'—':Number(info.min_free_heap_since_boot_bytes).toLocaleString('en-US');
+  document.getElementById('about-compiled').textContent=info.compiledDate||'—';
+  document.getElementById('about-digest').textContent=info.digest||'—';
+  renderAboutVersion(aboutCurrentVersion, aboutPending&&aboutPending.version);
+}
+
+async function loadAbout(){
   try{
-    const info=await api('GET','/system');
-    currentVersion=info.version||'';
-    aboutCurrentVersion=currentVersion;
-    document.getElementById('about-compiled').textContent=info.compiledDate||'—';
-    document.getElementById('about-digest').textContent=info.digest||'—';
-    renderAboutVersion(currentVersion, aboutPending&&aboutPending.version);
+    applySystemInfo(await api('GET','/system'));
     aboutLoaded=true;
   }catch(e){
     showError(e.message||t('about.loadFail'));
-    return;
   }
-  if(!forceCheck&&aboutPending) return;
+}
+
+async function checkAboutUpdate(){
+  const hint=document.getElementById('about-ota-hint');
+  const upgradeBtn=document.getElementById('about-upgrade');
+  if(aboutUpgrading||aboutChecking) return;
+  aboutChecking=true;
+  renderAboutVersion(aboutCurrentVersion, aboutPending&&aboutPending.version);
   try{
     const check=await api('POST','/system/ota/check');
     if(check.updateAvailable){
       aboutPending={url:check.url,sha256:check.sha256,version:check.version};
-      renderAboutVersion(check.currentVersion||currentVersion, check.version);
       hint.hidden=false;
       hint.textContent=check.changelog?String(check.changelog).slice(0,400):t('about.newer');
-      btn.hidden=false;
-      btn.disabled=!!aboutUpgrading;
-      btn.textContent=t('about.upgrade');
+      upgradeBtn.hidden=false;
+      upgradeBtn.disabled=false;
+      upgradeBtn.textContent=t('about.upgrade');
+      renderAboutVersion(check.currentVersion||aboutCurrentVersion, check.version);
     }else{
       aboutPending=null;
-      renderAboutVersion(check.currentVersion||currentVersion, null);
-      hint.hidden=true;
-      btn.hidden=true;
+      hint.hidden=false;
+      hint.textContent=t('about.upToDate');
+      upgradeBtn.hidden=true;
+      renderAboutVersion(check.currentVersion||aboutCurrentVersion, null);
     }
   }catch(e){
     if(e.status===503){
       aboutUpgrading=true;
       hint.hidden=false;
       hint.textContent=t('about.progress');
-      btn.hidden=true;
+      upgradeBtn.hidden=true;
+      renderAboutVersion(aboutCurrentVersion, null);
       return;
     }
-    /* Check failed (network, OOM, bad manifest): treat as no update available. */
     aboutPending=null;
-    renderAboutVersion(currentVersion, null);
-    hint.hidden=true;
-    btn.hidden=true;
+    upgradeBtn.hidden=true;
+    hint.hidden=false;
+    hint.textContent=e.message||t('about.checkFail');
+    renderAboutVersion(aboutCurrentVersion, null);
+  }finally{
+    aboutChecking=false;
+    if(!aboutUpgrading) renderAboutVersion(aboutCurrentVersion, aboutPending&&aboutPending.version);
   }
 }
 
-async function pollAboutOta(){
+async function pollAbout(){
   if(activeTab!=='about') return;
+  try{
+    applySystemInfo(await api('GET','/system'));
+  }catch(_){}
   try{
     const st=await api('GET','/system/ota');
     const hint=document.getElementById('about-ota-hint');
@@ -1591,15 +1661,18 @@ async function pollAboutOta(){
         ?t('about.progressPct',{pct:st.progressPercent})
         :t('about.progress');
       btn.hidden=true;
+      renderAboutVersion(aboutCurrentVersion, null);
     }else if(st.state==='failed'){
       aboutUpgrading=false;
       hint.hidden=false;
       hint.textContent=st.reason||t('about.failed');
       if(aboutPending){btn.hidden=false;btn.disabled=false;btn.textContent=t('about.upgrade');}
+      renderAboutVersion(aboutCurrentVersion, aboutPending&&aboutPending.version);
     }else if(aboutUpgrading){
       aboutUpgrading=false;
       hint.hidden=false;
       hint.textContent=t('about.finished');
+      renderAboutVersion(aboutCurrentVersion, aboutPending&&aboutPending.version);
     }
   }catch(_){}
 }
@@ -1609,8 +1682,8 @@ async function refresh(force){
   busy=true;
   try{
     if(activeTab==='about'){
-      if(force||!aboutLoaded) await loadAbout(true);
-      else await pollAboutOta();
+      if(force||!aboutLoaded) await loadAbout();
+      else await pollAbout();
       return;
     }
     const seenRev={'3v3':powerRev['3v3'],'5v':powerRev['5v']};
@@ -2291,7 +2364,15 @@ function bindDap(){
   };
 }
 
-function setTab(name){
+const TAB_NAMES=new Set(['power','pins','uart','dap','buzzer','cloud','about']);
+
+function tabFromHash(){
+  const name=(location.hash||'').replace(/^#/,'').toLowerCase();
+  return TAB_NAMES.has(name)?name:'pins';
+}
+
+function setTab(name, updateHash=true){
+  if(!TAB_NAMES.has(name)) name='pins';
   activeTab=name;
   document.querySelectorAll('.tab').forEach(btn=>{
     const on=btn.dataset.tab===name;
@@ -2301,12 +2382,42 @@ function setTab(name){
   document.querySelectorAll('.panel').forEach(panel=>{
     panel.classList.toggle('active',panel.id==='panel-'+name);
   });
-  if(name==='about') loadAbout(true);
+  if(name==='about') loadAbout();
+  if(updateHash){
+    const want='#'+name;
+    if(location.hash!==want) history.replaceState(null,'',want);
+  }
 }
 
 document.querySelectorAll('.tab').forEach(btn=>{
   btn.onclick=()=>setTab(btn.dataset.tab);
 });
+window.addEventListener('hashchange',()=>setTab(tabFromHash(), false));
+
+document.getElementById('about-reboot').onclick=async()=>{
+  if(aboutUpgrading||aboutRebooting) return;
+  const btn=document.getElementById('about-reboot');
+  if(!confirm(t('about.rebootConfirm'))) return;
+  aboutRebooting=true;
+  btn.disabled=true;
+  btn.dataset.i18n='about.rebooting';
+  btn.textContent=t('about.rebooting');
+  try{
+    await api('POST','/system/reboot');
+    setTimeout(()=>{
+      aboutRebooting=false;
+      btn.disabled=aboutUpgrading;
+      btn.dataset.i18n='about.reboot';
+      btn.textContent=t('about.reboot');
+    },3000);
+  }catch(e){
+    showError(e.message);
+    aboutRebooting=false;
+    btn.disabled=aboutUpgrading;
+    btn.dataset.i18n='about.reboot';
+    btn.textContent=t('about.reboot');
+  }
+};
 
 document.getElementById('about-upgrade').onclick=async()=>{
   if(!aboutPending||!aboutPending.url||!aboutPending.sha256) return;
@@ -2320,6 +2431,7 @@ document.getElementById('about-upgrade').onclick=async()=>{
     hint.hidden=false;
     hint.textContent=t('about.progress');
     btn.hidden=true;
+    renderAboutVersion(aboutCurrentVersion, null);
   }catch(e){
     showError(e.message);
     btn.disabled=false;
@@ -2410,7 +2522,7 @@ document.getElementById('lang').onchange=(e)=>setLang(e.target.value);
   applyDapForm({enable:false,pins:{swclk:0,swdio:1,nreset:null}});
   syncDapStatus(false, null);
   bindDap();
-  setTab('pins');
+  setTab(tabFromHash());
   await refresh(true);
   schedulePoll();
 })();

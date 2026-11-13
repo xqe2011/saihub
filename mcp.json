@@ -1810,9 +1810,24 @@
     },
     {
       "name": "get_system_info",
-      "description": "Return Authentication Digest, firmware version, and compiled date from the running image header.",
+      "description": "Return Authentication Digest, firmware version, compiled date, CPU usage percent, free heap, and minimum free heap since boot.",
       "annotations": {
         "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reboot_system",
+      "description": "Restart SAIHub System itself(the host of this MCP and REST API, NOT the board under test). SAIHub goes offline for a while; all sessions and runtime state are lost.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
         "openWorldHint": false
       },
       "inputSchema": {
