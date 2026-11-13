@@ -500,14 +500,27 @@ import { ESPLoader, Transport } from "https://cdn.jsdelivr.net/npm/esptool-js@0.
 
 const GH_REPO = "xqe2011/saihub";
 const GH_PROXY = "https://gh-proxy.com/";
+const RELEASE_JSON_URL = `https://raw.githubusercontent.com/${GH_REPO}/manifests/releases.json`;
 const BAUD = 115200;
 const MERGED_RE = /^saihub-(.+)-merged\.bin$/i;
 
-/** When UI language is Chinese, route GitHub URLs through gh-proxy.com. */
-function githubUrl(url){
-  if(lang !== "zh") return url;
-  if(url.startsWith(GH_PROXY)) return url;
-  return GH_PROXY + url;
+/** Chinese: gh-proxy then GitHub; otherwise GitHub then gh-proxy. Local/non-GitHub URLs fetch as-is. */
+async function fetchGithub(url, init){
+  const direct = url.startsWith(GH_PROXY) ? url.slice(GH_PROXY.length) : url;
+  let github = false;
+  try{
+    const host = new URL(direct).hostname;
+    github = host === "github.com" || host.endsWith(".githubusercontent.com");
+  }catch(_){ /* not a URL */ }
+  if(!github) return fetch(direct, init);
+  const proxied = GH_PROXY + direct;
+  const primary = lang === "zh" ? proxied : direct;
+  const fallback = lang === "zh" ? direct : proxied;
+  try{
+    const res = await fetch(primary, init);
+    if(res.ok) return res;
+  }catch(_){ /* fall through */ }
+  return fetch(fallback, init);
 }
 
 const I18N = {
@@ -782,6 +795,65 @@ function findMergedUrl(release, chipName){
   return null;
 }
 
+/** Watchdog (or classic) reset after flash, then reopen serial across USB re-enum. */
+async function resetAfterFlash(loader){
+  const id = chipTargetId(loader.chip && loader.chip.CHIP_NAME);
+  if(id === "esp32c5"){
+    // Same sequence as native esptool --after watchdog-reset (LP_WDT).
+    const WDT_WKEY = 0x50D83AA1;
+    const WDTCONFIG0 = 0x600B1C00;
+    const WDTCONFIG1 = 0x600B1C04;
+    const WDTWPROTECT = 0x600B1C18;
+    logEsp("I", "flash", "Watchdog reset…");
+    try{
+      await loader.writeReg(WDTWPROTECT, WDT_WKEY);
+      await loader.writeReg(WDTCONFIG1, 2000);
+      await loader.writeReg(WDTCONFIG0, (1 << 31) | (5 << 28) | (1 << 8) | 2);
+      await loader.writeReg(WDTWPROTECT, 0);
+    }catch(_){ /* link may drop when WDT fires */ }
+    await new Promise((r)=>setTimeout(r, 500));
+  }else{
+    await loader.after("custom_reset", false, "D0|R1|W100|D1|R0|W50|D0");
+  }
+
+  const oldPort = port;
+  const want = oldPort && typeof oldPort.getInfo === "function" ? oldPort.getInfo() : {};
+  try{ if(transport) await transport.disconnect(); }catch(_){ /* ignore */ }
+  transport = null;
+  try{ if(oldPort && (oldPort.readable || oldPort.writable)) await oldPort.close(); }catch(_){ /* ignore */ }
+
+  const attempts = 10;
+  for(let i = 0; i < attempts; i++){
+    await new Promise((r)=>setTimeout(r, i === 0 ? 30 : 100));
+    /** @type {SerialPort[]} */
+    let granted = [];
+    try{ granted = await navigator.serial.getPorts(); }catch(_){ /* mid re-enum */ }
+    const matching = granted.filter((p)=>{
+      if(want.usbVendorId == null || want.usbProductId == null) return true;
+      const info = p.getInfo();
+      return info.usbVendorId === want.usbVendorId && info.usbProductId === want.usbProductId;
+    });
+    const ordered = [
+      ...matching.filter((p)=>p !== oldPort && p.connected !== false),
+      ...matching.filter((p)=>p === oldPort && p.connected !== false),
+    ];
+    for(const candidate of ordered){
+      try{
+        transport = new Transport(candidate, true);
+        await transport.connect(BAUD);
+        port = candidate;
+        logEsp("I", "console", `Reconnected after reset (attempt ${i + 1}/${attempts})`);
+        return true;
+      }catch(_){
+        transport = null;
+      }
+    }
+    logEsp("W", "console", `Reconnect attempt ${i + 1}/${attempts} failed`);
+  }
+  port = null;
+  return false;
+}
+
 function formatBytes(n){
   if(n < 1024) return n + " B";
   if(n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
@@ -791,7 +863,7 @@ function formatBytes(n){
 async function downloadFirmware(url){
   const name = url.split("/").pop() || "firmware.bin";
   logEsp("I", "download", `Fetching ${name}`);
-  const res = await fetch(url);
+  const res = await fetchGithub(url);
   if(!res.ok) throw new Error("download " + res.status);
   const total = Number(res.headers.get("content-length") || 0);
   if(!res.body || !res.body.getReader){
@@ -864,25 +936,21 @@ async function ensurePort(){
 async function loadReleases(){
   setStatus("status.loading", "busy");
   try{
-    const apiUrl = githubUrl(`https://api.github.com/repos/${GH_REPO}/releases?per_page=50`);
-    const res = await fetch(apiUrl, {
-      headers: { Accept: "application/vnd.github+json" },
-    });
+    const res = await fetchGithub(RELEASE_JSON_URL, { cache: "no-cache" });
     if(!res.ok) throw new Error("releases " + res.status);
     const data = await res.json();
     releases = (Array.isArray(data) ? data : [])
-      .filter((r)=>!r.draft)
       .map((r)=>{
+        const tag = typeof r.tag === "string" ? r.tag : "";
         /** @type {Record<string,string>} */
         const assets = {};
-        for(const a of r.assets || []){
-          if(typeof a.name === "string" && typeof a.browser_download_url === "string"){
-            assets[a.name] = githubUrl(a.browser_download_url);
-          }
+        const raw = r.assets && typeof r.assets === "object" ? r.assets : {};
+        for(const [name, url] of Object.entries(raw)){
+          if(typeof name === "string" && typeof url === "string") assets[name] = url;
         }
-        return { tag: r.tag_name, assets };
+        return { tag, assets };
       })
-      .filter((r)=>Object.keys(r.assets).some((n)=>MERGED_RE.test(n)));
+      .filter((r)=>r.tag && Object.keys(r.assets).some((n)=>MERGED_RE.test(n)));
 
     el.version.innerHTML = "";
     if(!releases.length){
@@ -1000,22 +1068,26 @@ async function flashFirmware(){
         }
       },
     });
-    await loader.after("hard_reset");
+    const reconnected = await resetAfterFlash(loader);
     setProgress(100);
     setStatus("status.done", "ok");
     logEsp("I", "flash", "Flash complete");
 
-    // Drop loader session, then open a plain serial console on the same port.
-    try{ await transport.disconnect(); }catch(_){ /* ignore */ }
-    transport = new Transport(port, true);
-    await transport.connect(BAUD);
-    consoleClosed = false;
-    el.termBtn.hidden = true;
-    el.flashBtn.hidden = true;
-    el.stopBtn.hidden = false;
-    setStatus("status.terminal", "ok");
-    logEsp("I", "console", "Serial terminal started");
-    startConsoleReading();
+    if(reconnected){
+      consoleClosed = false;
+      el.termBtn.hidden = true;
+      el.flashBtn.hidden = true;
+      el.stopBtn.hidden = false;
+      setStatus("status.terminal", "ok");
+      logEsp("I", "console", "Serial terminal started");
+      startConsoleReading();
+    }else{
+      el.termBtn.hidden = false;
+      el.flashBtn.hidden = false;
+      el.stopBtn.hidden = true;
+      setStatus("status.done", "ok");
+      logEsp("W", "console", "Port closed after reset; use Start terminal to reconnect");
+    }
   }catch(err){
     console.error(err);
     const name = err && err.name;
