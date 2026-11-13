@@ -1,11 +1,5 @@
 [
   {
-    "assets": {},
-    "prerelease": false,
-    "publishedAt": "2026-11-13T11:17:56Z",
-    "tag": "0.3.0"
-  },
-  {
     "assets": {
       "SHA256SUMS": "https://github.com/xqe2011/saihub/releases/download/0.2.1/SHA256SUMS",
       "manifest.json": "https://github.com/xqe2011/saihub/releases/download/0.2.1/manifest.json",
