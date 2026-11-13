@@ -2,8 +2,6 @@ name: Update release manifest
 
 on:
   workflow_dispatch:
-  repo_dispatch:
-    types: [update-release-manifest]
 
 permissions:
   contents: write
@@ -23,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Near 100 newest releases (skip drafts); assets keyed by name → browser_download_url.
+          # Up to 100 newest releases (skip drafts); assets keyed by name → browser_download_url.
           gh api "repos/${GH_REPO}/releases?per_page=100" \
             --jq '[.[] | select(.draft == false) | {
               tag: .tag_name,
