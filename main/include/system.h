@@ -42,6 +42,9 @@ void System_GetInfo(System_Info* out);
 /** True while a firmware upgrade task is running. */
 bool System_OtaIsUpgrading(void);
 
+/** Schedule a reboot; reject during an upgrade. */
+esp_err_t System_Reboot(void);
+
 /** Live OTA status only (no last-check cache). */
 void System_OtaGetStatus(System_OtaStatus* out);
 

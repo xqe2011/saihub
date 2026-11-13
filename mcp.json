@@ -1822,6 +1822,21 @@
       }
     },
     {
+      "name": "reboot_system",
+      "description": "Restart SAIHub System itself(the host of this MCP and REST API, NOT the board under test). SAIHub goes offline for a while; all sessions and runtime state are lost.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "check_system_ota",
       "description": "Check the published update manifest for a newer firmware image for this device. Side-effect-free; does not store the result. When an update is available, returns version, changelog, url, and sha256 for upgrade_system_ota.",
       "annotations": {

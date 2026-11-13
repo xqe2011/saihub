@@ -124,6 +124,50 @@
         }
       }
     },
+    "/system/reboot": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Restart SAIHub",
+        "operationId": "reboot_system",
+        "description": "Restart SAIHub System itself(the host of this MCP and REST API, NOT the board under test). SAIHub goes offline for a while; all sessions and runtime state are lost.",
+        "responses": {
+          "200": {
+            "description": "Reboot scheduled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "started"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "started": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Firmware update in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not schedule reboot"
+          }
+        }
+      }
+    },
     "/system/ota": {
       "get": {
         "tags": [

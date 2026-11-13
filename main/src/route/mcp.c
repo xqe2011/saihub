@@ -280,7 +280,7 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
       "play_buzzer plays a Morse-style sequence of . and - and blocks until it finishes (one at a time). "
       "create_lock resources use type pin with pins, type power with rails, type uart with ids, type spi with ids, or "
       "type i2c with ids. "
-      "System tools: get_system_info, check_system_ota, get_system_ota, upgrade_system_ota (url+sha256 required). "
+      "System tools: get_system_info, reboot_system, check_system_ota, get_system_ota, upgrade_system_ota (url+sha256 required). "
       "While a firmware update runs, non-system tools return 503. "
       "For multi-step on-device work, use run_script with a Lua script that calls the same tools.");
   return result;

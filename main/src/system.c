@@ -31,6 +31,7 @@ static atomic_uint cpuUsageTenthsPercent;
 static portMUX_TYPE otaMux = portMUX_INITIALIZER_UNLOCKED;
 static System_OtaState otaState = SYSTEM_OTA_IDLE;
 static int otaProgress = -1;
+static bool rebootPending;
 static char otaFailReason[192];
 
 typedef struct {
@@ -80,6 +81,36 @@ void System_GetInfo(System_Info* out)
   out->digest = Cloud_GetPublicKeyDigest();
   out->version = desc->version;
   snprintf(out->compiledDate, sizeof(out->compiledDate), "%s %s", desc->date, desc->time);
+}
+
+static void System_RebootTask(void* arg)
+{
+  (void)arg;
+  /* Allow local and relayed API responses to leave before restarting. */
+  vTaskDelay(pdMS_TO_TICKS(1000));
+  esp_restart();
+}
+
+esp_err_t System_Reboot(void)
+{
+  portENTER_CRITICAL(&otaMux);
+  if (otaState == SYSTEM_OTA_UPGRADING) {
+    portEXIT_CRITICAL(&otaMux);
+    return ESP_ERR_INVALID_STATE;
+  }
+  if (rebootPending) {
+    portEXIT_CRITICAL(&otaMux);
+    return ESP_OK;
+  }
+  rebootPending = true;
+  portEXIT_CRITICAL(&otaMux);
+  if (xTaskCreate(System_RebootTask, "system_reboot", 2048, NULL, 5, NULL) != pdPASS) {
+    portENTER_CRITICAL(&otaMux);
+    rebootPending = false;
+    portEXIT_CRITICAL(&otaMux);
+    return ESP_ERR_NO_MEM;
+  }
+  return ESP_OK;
 }
 
 bool System_OtaIsUpgrading(void)
@@ -457,7 +488,18 @@ esp_err_t System_OtaUpgrade(const char* url, const char* sha256, char* reason, s
   memcpy(job->url, url, n + 1);
   memcpy(job->expectSha, expect, 32);
 
-  System_OtaSetState(SYSTEM_OTA_UPGRADING, 0, NULL);
+  portENTER_CRITICAL(&otaMux);
+  if (rebootPending || otaState == SYSTEM_OTA_UPGRADING) {
+    portEXIT_CRITICAL(&otaMux);
+    free(job->url);
+    free(job);
+    snprintf(reason, reasonLen, "Firmware update or reboot in progress.");
+    return ESP_ERR_INVALID_STATE;
+  }
+  otaState = SYSTEM_OTA_UPGRADING;
+  otaProgress = 0;
+  otaFailReason[0] = '\0';
+  portEXIT_CRITICAL(&otaMux);
   if (xTaskCreate(System_OtaTask, "system_ota", 12288, job, 5, NULL) != pdPASS) {
     System_OtaSetState(SYSTEM_OTA_IDLE, -1, NULL);
     free(job->url);

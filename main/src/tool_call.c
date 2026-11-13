@@ -1778,6 +1778,8 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
     TOOL_CALL_LOG("%s get_cloud_status()", via);
   } else if (strcmp(name, "get_system_info") == 0) {
     TOOL_CALL_LOG("%s get_system_info()", via);
+  } else if (strcmp(name, "reboot_system") == 0) {
+    TOOL_CALL_LOG("%s reboot_system()", via);
   } else if (strcmp(name, "check_system_ota") == 0) {
     TOOL_CALL_LOG("%s check_system_ota()", via);
   } else if (strcmp(name, "get_system_ota") == 0) {
@@ -1791,7 +1793,7 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
 
 static bool ToolCall_IsSystemTool(const char* name)
 {
-  return name && (strcmp(name, "get_system_info") == 0 || strcmp(name, "check_system_ota") == 0 ||
+  return name && (strcmp(name, "reboot_system") == 0 || strcmp(name, "get_system_info") == 0 || strcmp(name, "check_system_ota") == 0 ||
                   strcmp(name, "get_system_ota") == 0 || strcmp(name, "upgrade_system_ota") == 0);
 }
 
@@ -1899,6 +1901,20 @@ static ToolCall_Result ToolCall_GetSystemInfo(void)
   cJSON_AddNumberToObject(root, "cpu_usage_percent", info.cpuUsageTenthsPercent / 10.0);
   cJSON_AddNumberToObject(root, "free_heap_bytes", info.freeHeap);
   cJSON_AddNumberToObject(root, "min_free_heap_since_boot_bytes", info.minFreeHeapSinceBoot);
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_RebootSystem(void)
+{
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return ToolCall_Fail(500, "internal");
+  cJSON_AddBoolToObject(root, "started", true);
+  esp_err_t err = System_Reboot();
+  if (err != ESP_OK) {
+    cJSON_Delete(root);
+    return ToolCall_Fail(err == ESP_ERR_INVALID_STATE ? 503 : 500,
+                         err == ESP_ERR_INVALID_STATE ? "Firmware update in progress." : "Could not schedule reboot.");
+  }
   return ToolCall_Ok(root);
 }
 
@@ -2032,6 +2048,8 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
     r = ToolCall_GetCloudStatus();
   else if (strcmp(name, "get_system_info") == 0)
     r = ToolCall_GetSystemInfo();
+  else if (strcmp(name, "reboot_system") == 0)
+    r = ToolCall_RebootSystem();
   else if (strcmp(name, "check_system_ota") == 0)
     r = ToolCall_CheckSystemOta();
   else if (strcmp(name, "get_system_ota") == 0)

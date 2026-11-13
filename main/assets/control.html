@@ -994,6 +994,7 @@ button.about-update:disabled{
         <span class="about-label" data-i18n="about.minHeap">Minimum Free Heap Since Boot</span>
         <span class="about-value"><span id="about-min-heap">—</span> <span class="about-unit" data-i18n="about.bytes">bytes</span></span>
       </div>
+      <button type="button" class="btn btn-tonal" id="about-reboot" data-i18n="about.reboot">Reboot</button>
       <p class="hint" id="about-ota-hint" hidden></p>
       <button type="button" class="btn btn-filled" id="about-upgrade" hidden data-i18n="about.upgrade">Upgrade</button>
     </article>
@@ -1039,6 +1040,7 @@ const I18N={
     'cloud.empty':'No cloud grants. Pair an MCP client from the landing page, then hold BOOT for 3 seconds.',
     'cloud.unnamed':'Unnamed','cloud.created':'Created','cloud.revoke':'Revoke','cloud.revokeConfirm':'Revoke grant {secret}?',
     'about.system':'System','about.version':'Version','about.compiled':'Compiled','about.digest':'Authentication Digest',
+    'about.reboot':'Reboot','about.rebooting':'Rebooting…','about.rebootConfirm':'Are you sure you want to reboot the device?',
     'about.check':'Check for updates','about.checking':'Checking…','about.upgrade':'Upgrade',
     'about.cpu':'CPU Usage','about.freeHeap':'Free Heap','about.minHeap':'Minimum Free Heap Since Boot','about.bytes':'bytes',
     'about.openApiSpec':'OpenAPI 3.1 Specification','about.mcpEndpoint':'MCP Protocol Endpoint','about.github':'Source Repository',
@@ -1092,6 +1094,7 @@ const I18N={
     'cloud.empty':'暂无云授权。请先在落地页配对 MCP 客户端，然后按住 BOOT 三秒。',
     'cloud.unnamed':'未命名','cloud.created':'创建于','cloud.revoke':'撤销','cloud.revokeConfirm':'撤销授权 {secret}？',
     'about.system':'系统信息','about.version':'版本','about.compiled':'编译时间','about.digest':'认证摘要',
+    'about.reboot':'重启','about.rebooting':'重启中…','about.rebootConfirm':'确定要重启设备吗？',
     'about.check':'检查更新','about.checking':'检查中…','about.upgrade':'升级',
     'about.cpu':'CPU 使用率','about.freeHeap':'可用堆内存','about.minHeap':'启动以来最低可用堆内存','about.bytes':'字节',
     'about.openApiSpec':'OpenAPI 3.1 规范','about.mcpEndpoint':'MCP 协议端点','about.github':'开源仓库',
@@ -1179,6 +1182,7 @@ let buzzerPlaying=false;
 let aboutLoaded=false;
 let aboutPending=null;
 let aboutUpgrading=false;
+let aboutRebooting=false;
 let aboutChecking=false;
 let landingPageUrl='';
 let cloudConnected=null;
@@ -1561,6 +1565,7 @@ function updateLiveLevels(pins){
 }
 
 function renderAboutVersion(version,available){
+  document.getElementById('about-reboot').disabled=aboutUpgrading||aboutRebooting;
   const el=document.getElementById('about-version');
   if(!el) return;
   let html=escapeHtml(version||'—');
@@ -2388,6 +2393,31 @@ document.querySelectorAll('.tab').forEach(btn=>{
   btn.onclick=()=>setTab(btn.dataset.tab);
 });
 window.addEventListener('hashchange',()=>setTab(tabFromHash(), false));
+
+document.getElementById('about-reboot').onclick=async()=>{
+  if(aboutUpgrading||aboutRebooting) return;
+  const btn=document.getElementById('about-reboot');
+  if(!confirm(t('about.rebootConfirm'))) return;
+  aboutRebooting=true;
+  btn.disabled=true;
+  btn.dataset.i18n='about.rebooting';
+  btn.textContent=t('about.rebooting');
+  try{
+    await api('POST','/system/reboot');
+    setTimeout(()=>{
+      aboutRebooting=false;
+      btn.disabled=aboutUpgrading;
+      btn.dataset.i18n='about.reboot';
+      btn.textContent=t('about.reboot');
+    },3000);
+  }catch(e){
+    showError(e.message);
+    aboutRebooting=false;
+    btn.disabled=aboutUpgrading;
+    btn.dataset.i18n='about.reboot';
+    btn.textContent=t('about.reboot');
+  }
+};
 
 document.getElementById('about-upgrade').onclick=async()=>{
   if(!aboutPending||!aboutPending.url||!aboutPending.sha256) return;
