@@ -1,0 +1,17 @@
+---
+description: Place every PCB component on the front surface
+globs: hardware/**
+alwaysApply: false
+---
+
+# Single-surface assembly
+
+All components, including resistors and test pads, must be placed on the same surface: the front (top, F.Cu).
+Do not place any footprint on the back. Back-layer routing and through-hole pads are allowed.
+Keep placement generation, board files, design metadata, and assembly documentation consistent.
+
+## Preserve shell interfaces
+
+Keep the header J2, USB-C connector J1, button SW1, main module U3, and LEDs D4-D7 at their approved positions and orientations. Keep these footprints locked in the board file. Do not move them to solve routing congestion; their locations match the enclosure.
+
+Other components may be relocated or rotated to improve two-layer routing, provided electrical placement requirements and assembly clearances still pass. Prefer regrouping movable parts and rebuilding congested paths over repeatedly routing around a fixed placement. Preserve the board outline and thickness.

@@ -1,14 +1,14 @@
 {
   "base": {
-    "volume_mm3": 2369.435,
+    "volume_mm3": 2373.023,
     "solid_count": 1,
-    "stl_triangles": 856,
+    "stl_triangles": 912,
     "stl_closed": true
   },
   "cover": {
-    "volume_mm3": 1789.703,
+    "volume_mm3": 2030.693,
     "solid_count": 1,
-    "stl_triangles": 38092,
+    "stl_triangles": 37002,
     "stl_closed": true
   },
   "base_cover_interference_mm3": 0.0,
@@ -17,7 +17,17 @@
   "assembled_size_mm": [
     50.4,
     30.4,
-    9.0
+    9.5
+  ],
+  "pcb_top_to_roof_mm": 4.1,
+  "usb_opening_mm": [
+    10.4,
+    3.7
+  ],
+  "usb_top_strip_mm": 1.0,
+  "button_opening_mm": [
+    3.0,
+    1.8
   ],
   "wall_mm": 1.0,
   "each_mating_rim_mm": 1.0,
@@ -39,11 +49,26 @@
   "outer_corner_radius_mm": 1.5,
   "text_engraving_depth_mm": 0.3,
   "snap_count": 2,
-  "snap_engagement_mm": 0.25,
-  "snap_beam_mm": [
-    7.5,
-    0.6,
-    1.2
+  "pcb_support_count": 6,
+  "rear_support_centres_mm": [
+    [
+      0.8,
+      28.4
+    ],
+    [
+      24.5,
+      28.4
+    ]
+  ],
+  "snap_type": "Solid ramp detents; outward-flexing base walls",
+  "snap_engagement_mm": 0.6,
+  "snap_projection_mm": 0.8,
+  "snap_window_top_strip_mm": 1.0,
+  "snap_vertical_drop_mm": 0.4,
+  "snap_width_mm": 4.0,
+  "snap_window_mm": [
+    4.6,
+    1.8
   ],
   "component_fit": "Prototype verification required",
   "indicator_bank": {
@@ -54,8 +79,10 @@
       "STATUS"
     ],
     "opening_diameter_mm": 1.5,
-    "well_outer_diameter_mm": 2.2,
-    "led_top_clearance_mm": 0.4,
+    "well_outer_diameter_mm": 3.5,
+    "sleeve_wall_mm": 1.0,
+    "led_top_clearance_mm": 1.2,
+    "well_bottom_z_mm": 6.2,
     "pitch_mm": 3.2
   }
 }

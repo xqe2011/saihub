@@ -26,7 +26,7 @@ coordinates. Generate with `--output PATH` to select another export directory.
 
 ## Geometry
 
-- Overall assembled envelope: **50.4 × 30.4 × 9 mm**.
+- Overall assembled envelope: **50.4 × 30.4 × 9.5 mm**.
 - Ordinary side walls, floor, and cover face: **1 mm**.
 - Exterior plan corners: **1.5 mm radius**, with matching nested profiles and a
   **0.3 mm** softened top perimeter. Wall dimensions describe straight sections;
@@ -35,21 +35,30 @@ coordinates. Generate with `--output PATH` to select another export directory.
   wall**, with **0.2 mm** sliding clearance per side. It starts at **z = 6.5 mm**,
   above the board, with local edge-component clearance checked, instead of
   adding width beside the board.
-- Lip overlap: **1 mm**; cover seats at **z = 7.5 mm**. Two opposed side snaps
-  provide vertical retention with **0.25 mm** engagement and **0.2 mm** vertical
-  play. Each free arm is **7.5 × 0.6 × 1.2 mm** with a ramped hook and **0.4 mm**
-  clearance above it. Press the hooks through both side windows to release.
-  Snap force, fatigue and print tolerances require prototype testing.
+- Lip overlap: **1 mm**; cover seats at **z = 7.5 mm**. Two broad, solid
+  ramp detents replace the thin spring arms. Each catch is **4 mm wide**, projects
+  **0.8 mm** from the lip and engages the base wall by **0.6 mm** after the
+  **0.2 mm** mating gap. The matching side windows are **4.6 × 1.8 mm**,
+  centred at y = 14 mm and spanning z = 4.7–6.5 mm, leaving a **1 mm** strip below the base top edge.
+  Both catches and windows are lowered by 0.4 mm; catch supports extend up to the lip.
+  Entry and release ramps let the base side walls flex outward: press the cover
+  down to close; lift each side gently in turn to open. No small release arms.
+  Catch tips remain **0.4 mm** inside the exterior wall plane. Solid extensions
+  join the catches directly to the cover lip; no thin cantilevers or arm slots.
+  Snap force, fatigue and print tolerances require prototype testing in the
+  intended plastic; geometry checks do not predict flexibility or retention force.
 - Board side clearance: **0.2 mm**. The board rests **1.8 mm** above the floor for
-  solder tails. Four short edge ledges support it, surrounding walls locate it,
-  and ceiling fingers limit lift to **0.3 mm**. The board notch has no support below it.
+  solder tails. Six short edge ledges support it, surrounding walls locate it,
+  and ceiling fingers limit lift to **0.3 mm**. The two added rear ledges are **2 × 1.6 mm**, centred at model
+  **(0.8, 28.4)** and **(24.5, 28.4)**, with tops at **z = 2.8 mm**.
+  Both stay on the solid-board side of x = 26.15 mm; the antenna notch has no support below it.
 - The footprint follows `48 + 2 × (1 + 0.2)` by `28 + 2 × (1 + 0.2)`.
   The smaller **1.5 mm** outer corner radius preserves clearance around the square
   board corners. The face layout is inset to suit the smaller shell.
-- Component space above the PCB: **3.6 mm** to the continuous roof, apart from
+- Component space above the PCB: **4.1 mm** to the continuous roof, apart from
   the nesting lip and edge fingers. The available USB model is taller than the
-  stated 2.54 mm component height; its top has **0.295 mm** roof clearance.
-  Body height is **9 mm**; the QR outline is recessed **0.3 mm**. The top is closed except for the four indicator openings,
+  stated 2.54 mm component height; its top has **0.795 mm** roof clearance.
+  Body height is **9.5 mm**; the QR outline is recessed **0.3 mm**. The top is closed except for the four indicator openings,
   with **1 mm** nominal roof thickness and **0.7 mm** below recessed lettering.
 - Bottom allowance is based on the available connector model: its tails extend
   about **1.405 mm** below the board, leaving approximately **0.395 mm** to the
@@ -67,13 +76,22 @@ Dimensions and connector locations come from `../saihub.kicad_pcb` and
 so that USB is on the left: board `(x, y)` becomes model `(48 - x, y)`.
 The front connector edge is model `y = 0`; the base bottom is `z = 0`.
 USB and button side-opening centres are **6.4 mm** and **14.7 mm** from the
-left exterior edge. Their openings are **10.4 × 4.2 mm** and **5 × 3 mm**
-respectively, with internal relief for the connector bodies. Neither opening
+left exterior edge. Their openings are **10.4 × 3.7 mm** and **3 × 1.8 mm**
+respectively. The USB-C and header opening tops both align at **z = 7.5 mm**.
+A **1 mm** high strip closes the area above USB-C, with the full front wall
+and nesting lip retained above z = 7.5 mm; no extra 0.4 mm internal height relief.
+The user verified spare clearance above the physical USB-C connector. The supplied
+USB reference model reaches z = 7.705 mm, so its local **0.205 mm** overlap with
+the new strip is reported explicitly as a model discrepancy in
+`output/component-clearance.json`; all other component overlaps still fail validation.
+The button opening spans z = 4.4–6.2 mm; its **5 × 2.2 mm** internal body
+relief starts at y = 0.2 mm, behind the exterior face. The roof is raised
+**0.5 mm**; PCB seating height and seating seam are unchanged. Neither opening
 pierces the roof. The 12-contact header side opening is **31.5 × 3.9 mm**,
 extending to the seam so no fragile strip remains above it on the base.
 The pin labels remain recessed into the continuous roof above it.
 The labels follow actual connector positions. Reading left to right in the cover
-face view: **8, 7, 6, 5, 4, 3, 2, 1, GND, 5V, GND, 3.3V**. Channels **1–8**
+face view: **7, 6, 5, 4, 3, 2, 1, 0, GND, 5V, GND, 3.3V**. Channels **0–7**
 correspond to the board's **IO0–IO7**; they are channel labels, not physical pin
 numbers. Power and ground use the same 90° rotation as the numeric labels.
 
@@ -140,7 +158,7 @@ After reconciling those inputs, from this directory run:
 ```
 
 This exports a fresh board reference, regenerates the enclosure exports/preview,
-checks board/component and snap insertion geometry, regenerates all drawing views,
+checks board/component geometry, regenerates all drawing views,
 and recomputes the mass in `../docs/shell.pdf`. A failure stops the refresh instead
 of publishing a new PDF. `--pdf-python /path/to/python` may select a separate
 Python environment with ReportLab. `KICAD_CLI` selects the board export executable.
@@ -157,9 +175,10 @@ metadata just to refresh these documents.
 
 The four top-side LEDs remain together at board x=30.3 mm, y=5.2/8.4/11.6/14.8 mm.
 The shell takes these positions directly from `agent/design.json`. Each has a
-1.5 mm circular viewing opening and a separate 2.2 mm outside-diameter light well,
-with 0.4 mm clearance above the nominal 0.55 mm LED body. Recessed labels read
+1.5 mm circular viewing opening and a 3.5 mm outside-diameter light well with a **1 mm wall**.
+Adjacent well exteriors merge at the 3.2 mm pitch. Their bottoms sit at z = 6.2 mm,
+clearing nearby component models by 0.255 mm and the nominal 0.6 mm LED bodies by 1.2 mm. Recessed labels read
 `3V3 OUT`, `5V OUT`, `5V IN`, and `STATUS`; the first two are green, then red and blue.
-The QR sticker area remains blank. The eight bottom resistors fit inside the
-existing solder-tail allowance. Verify visibility, light bleed and resistor/solder
-clearance on a physical prototype.
+The QR sticker area remains blank. All resistors and test pads are on the front, with the other components. The
+bottom allowance is for connector tails and solder. Verify visibility, light
+bleed and component/solder clearance on a physical prototype.

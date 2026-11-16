@@ -116,8 +116,8 @@ def main():
     c.line(414, 150, 414, 500)
     overall = data["assembled_size_mm"]
     text(c, 44, 110, f"{overall[0]:g} x {overall[1]:g} x {overall[2]:g} mm overall", 15, True)
-    text(c, 44, 89, "9.0 mm body; QR outline and lettering recessed 0.3 mm", 9)
-    text(c, 44, 70, "Four labelled top indicators; USB and button access through the side.", 9, color=MUTED)
+    text(c, 44, 89, f"{overall[2]:g} mm body; QR outline and lettering recessed 0.3 mm", 9)
+    text(c, 44, 70, "GPIO labels 0-7; four top indicators; USB and button side access.", 9, color=MUTED)
     lines(c, 432, 112, [
         "Board: 48.0 x 28.0 x 1.6 mm, shown in assembly orientation.",
         "Vertical separation is for illustration; XY alignment is retained.",
@@ -140,7 +140,7 @@ def main():
     dim_v(c, top_y, top_y + d, x, 43, "30.4")
     dim_h(c, 540, 540 + d, front_y, 77, "30.4")
     dim_v(c, front_y, front_y + h, x + w, 512, f"{overall[2]:g} overall")
-    dim_v(c, front_y, front_y + 9 * s, 540 + d, 815, "9.0 body")
+    dim_v(c, front_y, front_y + h, 540 + d, 815, f"{overall[2]:g} body")
     # QR clear opening is dimensioned inside the otherwise blank sticker bed.
     qr_inner = data["qr_clear_area_mm"][0]
     qr_x = x + (data["qr_center_mm"][0] - qr_inner / 2 + 1.2) * s
@@ -149,7 +149,7 @@ def main():
     dim_v(c, qr_y, qr_y + qr_inner * s, qr_x + qr_inner * s, qr_x + (qr_inner + 1) * s + 11,
           f"{qr_inner:.1f} clear")
     # Port widths correspond to openings, not the connector bodies.
-    for lo, hi, label in ((0, 10.4, "10.4"), (11, 16, "5.0"), (16.48, 47.98, "31.5")):
+    for lo, hi, label in ((0, 10.4, "10.4"), (12, 15, "3.0"), (16.48, 47.98, "31.5")):
         dim_h(c, x + (lo + 1.2) * s, x + (hi + 1.2) * s, front_y + 3.8 * s, 77, label)
     text(c, 550, 490, "DETAIL DIMENSIONS", 10, True)
     lines(c, 550, 468, [
@@ -160,13 +160,13 @@ def main():
         "Nominal wall / floor / roof: 1.0",
         "Outer corner radius: R1.5",
         "Top edge round: R0.3",
-        "Nesting overlap: 1.0",
-        "Nesting clearance: 0.2 per side",
-        "PCB clearance: 0.2 per side",
-        "2 side snaps; 0.25 engagement",
+        "Nesting overlap: 1.0; USB top strip: 1.0",
+        "Nesting clearance: 0.2 per side; 6 PCB ledges",
+        "PCB clearance: 0.2 per side; roof: 4.1",
+        "2 solid ramp catches; 0.6 engagement",
         "4 indicator holes: diameter 1.5; pitch 3.2",
     ], 9, 17)
-    lines(c, 550, 245, ["Side opening heights:", "USB 4.2  /  button 3.0  /  header 3.9"], 9, 15)
+    lines(c, 550, 245, ["Side opening heights:", "USB 3.7  /  button 1.8  /  header 3.9"], 9, 15)
     text(c, 65, 51, "Dimensions govern. Views show external geometry; internal edges are omitted.", 8, color=MUTED)
     c.showPage()
 
@@ -205,11 +205,11 @@ def main():
     text(c, 444, 219, "FIT CHECKS", 10, True)
     lines(c, 444, 199, [
         "Valid connected solids; closed STL meshes.",
-        "No overlaps with the board or available component references.",
-        "Some component models are missing or illustrative.",
+        "No PCB overlap; USB model is taller than tested hardware.",
+        "USB model: 0.205 mm local overlap; physical fit user-verified.",
         "Prototype-test side snaps, solder tails and repeated lid removal.",
-        "Release: press both side windows, then lift the cover.",
-        "Snap arms: 7.5 x 0.6 x 1.2 mm; vertical play: 0.2 mm.",
+        "Release: gently lift each side in turn; walls flex outward.",
+        "Catches: 4.0 wide; 0.8 projection; windows: 4.6 x 1.8.",
     ], 9, 16)
     text(c, 44, 103, "Density source: PolyLite ABS Technical Data Sheet, V5.5, 1.04 g/cm3 at 23 C.", 9)
     text(c, 44, 85, "Open manufacturer data sheet", 9, color=ACCENT)
