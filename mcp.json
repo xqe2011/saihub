@@ -1450,7 +1450,7 @@
     },
     {
       "name": "create_lock",
-      "description": "Create a lock. Each resource is type pin with pins, type power with rails, type uart with ids, type spi with ids, or type i2c with ids.",
+      "description": "Create a soft multi-agent exclusion lock so concurrent agents do not race on the same resources. expiresAt only auto-frees abandoned locks inside the lock manager; other APIs do not key behavior off that timestamp beyond whether the resource is currently held. Each resource is type pin with pins, type power with rails, type uart with ids, type spi with ids, or type i2c with ids.",
       "annotations": {
         "readOnlyHint": false,
         "idempotentHint": false,

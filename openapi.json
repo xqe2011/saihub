@@ -2599,6 +2599,7 @@
           "lock"
         ],
         "summary": "Create a lock",
+        "description": "Soft multi-agent exclusion so concurrent agents do not race on the same resources. expiresAt only auto-frees abandoned locks inside the lock manager; other APIs do not key behavior off that timestamp beyond whether the resource is currently held.",
         "requestBody": {
           "required": true,
           "content": {
