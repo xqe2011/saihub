@@ -72,6 +72,8 @@
   "RFC2217 serial-over-TCP is running. Connect a compatible client using the ip and port from this status."
 #define CONFIG_RFC2217_CLOUD_STATUS_PROMPT \
   "RFC2217 serial-over-TCP is running. Run this Node.js bridge (npm i ws), then point an RFC2217 client at 127.0.0.1:4442. Replace status.url with the url from this status.\n" \
+  "The WebSocket url is long-lived: reuse it until expiredAt instead of requesting a new status on every TCP connect.\n" \
+  "When flashing with esptool over this bridge, raise serial/sync timeouts — cloud RTT is much higher than a local USB adapter. Example ESPTOOL_CFGFILE values: sync_timeout=3, mem_end_rom_timeout=3, timeout=10, connect_attempts=2.\n" \
   "import { createServer } from 'node:net';\n" \
   "import WebSocket from 'ws';\n" \
   "createServer((tcp) => {\n" \
@@ -120,7 +122,7 @@
 #define CONFIG_OTA_IMAGE_TARGET "esp32c5"
 #define CONFIG_OTA_HTTP_METADATA_TIMEOUT_MS 5000
 #define CONFIG_OTA_HTTP_IMAGE_TIMEOUT_MS 60000
-#define CONFIG_OTA_MANIFEST_MAX_BYTES (8 * 1024)
+#define CONFIG_OTA_MANIFEST_MAX_BYTES (16 * 1024)
 #define CONFIG_OTA_URL_MAX_BYTES 512
 
 /* CMSIS-DAP over TCP. Logical pins follow CONFIG_GPIO_LOGICAL_TO_HW. nRESET -1 leaves reset unwired. */
@@ -147,5 +149,16 @@
   "  ws.on('message', (data, isBinary) => { if (isBinary) tcp.write(data); });\n" \
   "}).listen(4441, '127.0.0.1');\n"
 
+#define CONFIG_MCP_INSTRUCTIONS \
+  "SAIHub is an agentic hardware debugger. It can drive and sense GPIO (logical pins 0-7: levels, pulses, PWM, " \
+  "traces), control 3v3/5v power rails, talk UART/SPI/I2C, act as a CMSIS-DAP debug probe, lock contested " \
+  "resources, run multi-step Lua scripts on-device, play a Morse-style buzzer, and manage its own system/OTA. " \
+  "Before debugging or otherwise touching a real board, ask the user to wire SAIHub pins to the target. If you do " \
+  "not know what the target looks like (connectors, pinout, voltage, protocol), ask the user for that information " \
+  "first. " \
+  "Conventions: times are microseconds; use optional lockId for contested resources; pin tools are plural and " \
+  "always take pins even for one pin (pins:[1]); discover UART/SPI/I2C ids via list_uarts / list_spis / list_i2cs. " \
+  "While a firmware update runs, non-system tools return 503. For multi-step on-device work, use run_script with a " \
+  "Lua script that calls the same tools."
 
 #endif

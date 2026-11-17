@@ -124,6 +124,40 @@
         }
       }
     },
+    "/system/time": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "System time",
+        "description": "Return the device wall clock as unix seconds with millisecond fraction immediately. The clock is NTP-synced; compare with the client clock to estimate round-trip latency.",
+        "responses": {
+          "200": {
+            "description": "Device wall clock",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "unixSeconds"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "unixSeconds": {
+                      "type": "number",
+                      "description": "Unix epoch seconds from the device wall clock, with millisecond fraction (e.g. 1763376000.123)"
+                    }
+                  }
+                },
+                "example": {
+                  "unixSeconds": 1763376000.123
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/system/reboot": {
       "post": {
         "tags": [
@@ -2565,6 +2599,7 @@
           "lock"
         ],
         "summary": "Create a lock",
+        "description": "Soft multi-agent exclusion so concurrent agents do not race on the same resources. expiresAt only auto-frees abandoned locks inside the lock manager; other APIs do not key behavior off that timestamp beyond whether the resource is currently held.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3387,15 +3422,19 @@
       },
       "DapStatusCloud": {
         "type": "object",
-        "required": ["prompt", "url"],
+        "required": ["prompt", "url", "expiredAt"],
         "additionalProperties": false,
         "properties": {
           "prompt": {"type": "string"},
-          "url": {"type": "string", "description": "WebSocket URL for the TCP byte stream."}
+          "url": {"type": "string", "description": "WebSocket URL for the TCP byte stream."},
+          "expiredAt": {
+            "type": "number",
+            "description": "Unix epoch seconds when the WebSocket token stops being accepted. Reuse url until then."
+          }
         }
       },
       "DapStatus": {
-        "description": "Local responses include prompt, port, and ip. Cloud responses include prompt and url.",
+        "description": "Local responses include prompt, port, and ip. Cloud responses include prompt, url, and expiredAt.",
         "oneOf": [
           {"$ref": "#/components/schemas/DapStatusLocal"},
           {"$ref": "#/components/schemas/DapStatusCloud"}
@@ -3567,15 +3606,19 @@
       },
       "Rfc2217StatusCloud": {
         "type": "object",
-        "required": ["prompt", "url"],
+        "required": ["prompt", "url", "expiredAt"],
         "additionalProperties": false,
         "properties": {
           "prompt": {"type": "string"},
-          "url": {"type": "string", "description": "WebSocket URL for the TCP byte stream."}
+          "url": {"type": "string", "description": "WebSocket URL for the TCP byte stream."},
+          "expiredAt": {
+            "type": "number",
+            "description": "Unix epoch seconds when the WebSocket token stops being accepted. Reuse url until then."
+          }
         }
       },
       "Rfc2217Status": {
-        "description": "Local responses include prompt, port, and ip. Cloud responses include prompt and url.",
+        "description": "Local responses include prompt, port, and ip. Cloud responses include prompt, url, and expiredAt.",
         "oneOf": [
           {"$ref": "#/components/schemas/Rfc2217StatusLocal"},
           {"$ref": "#/components/schemas/Rfc2217StatusCloud"}

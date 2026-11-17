@@ -44,6 +44,14 @@ typedef enum {
   RESPONSE_IDLE, RESPONSE_STREAMING, RESPONSE_DONE, RESPONSE_FAILED, RESPONSE_DETACHED,
 } HttpServer_ResponseState;
 
+typedef struct {
+  const char* websocketPath;
+  const char* jsonPathes[4];
+  size_t jsonPathCount;
+  const char* expiredAtJsonPathes[4];
+  size_t expiredAtJsonPathCount;
+} HttpServer_CloudExtra;
+
 struct HttpServer_Context {
   httpd_req_t* req;
   const char* from;
@@ -54,9 +62,7 @@ struct HttpServer_Context {
   HttpServer_CloudWrite cloudWrite;
   void* cloudUser;
   bool cloudBodySent;
-  const char* cloudWebsocketPath;
-  const char* cloudJsonPathes[4];
-  size_t cloudJsonPathCount;
+  HttpServer_CloudExtra cloudExtra;
 };
 
 static HttpServer_Method HttpServer_FromEspMethod(httpd_method_t method)
@@ -96,13 +102,19 @@ HttpServer_Method HttpServer_GetMethod(const HttpServer_Context* ctx) {
 }
 const char* HttpServer_GetFrom(const HttpServer_Context* ctx) { return ctx->from; }
 
-void HttpServer_SetCloudAddWebsocketToken(HttpServer_Context* ctx, const char* websocketPath, const char* jsonPath)
+void HttpServer_SetCloudAddWebsocketToken(HttpServer_Context* ctx, const char* websocketPath, const char* jsonPath,
+                                          const char* expiredAtJsonPath)
 {
   if (!ctx || !ctx->cloudWrite || !websocketPath || !jsonPath) return;
   if (ctx->responseState != RESPONSE_IDLE) return;
-  ctx->cloudWebsocketPath = websocketPath;
-  if (ctx->cloudJsonPathCount < sizeof ctx->cloudJsonPathes / sizeof ctx->cloudJsonPathes[0]) {
-    ctx->cloudJsonPathes[ctx->cloudJsonPathCount++] = jsonPath;
+  HttpServer_CloudExtra* extra = &ctx->cloudExtra;
+  extra->websocketPath = websocketPath;
+  if (extra->jsonPathCount < sizeof extra->jsonPathes / sizeof extra->jsonPathes[0]) {
+    extra->jsonPathes[extra->jsonPathCount++] = jsonPath;
+  }
+  if (expiredAtJsonPath && expiredAtJsonPath[0] &&
+      extra->expiredAtJsonPathCount < sizeof extra->expiredAtJsonPathes / sizeof extra->expiredAtJsonPathes[0]) {
+    extra->expiredAtJsonPathes[extra->expiredAtJsonPathCount++] = expiredAtJsonPath;
   }
 }
 
@@ -227,7 +239,8 @@ static esp_err_t HttpServer_PrepareResponse(HttpServer_Context* ctx, int code, c
       if (!p->value || strcasecmp(p->name, "content-type") == 0) { cJSON_Delete(envelope); return ESP_ERR_INVALID_ARG; }
       cJSON_AddStringToObject(h, p->name, p->value);
     }
-    if (ctx->cloudWebsocketPath && ctx->cloudJsonPathCount > 0) {
+    const HttpServer_CloudExtra* extra = &ctx->cloudExtra;
+    if (extra->websocketPath && extra->jsonPathCount > 0) {
       cJSON* cloud = cJSON_CreateObject();
       cJSON* add = cJSON_CreateObject();
       cJSON* paths = cJSON_CreateArray();
@@ -238,11 +251,24 @@ static esp_err_t HttpServer_PrepareResponse(HttpServer_Context* ctx, int code, c
         cJSON_Delete(envelope);
         return ESP_ERR_NO_MEM;
       }
-      for (size_t i = 0; i < ctx->cloudJsonPathCount; i++) {
-        cJSON_AddItemToArray(paths, cJSON_CreateString(ctx->cloudJsonPathes[i]));
+      for (size_t i = 0; i < extra->jsonPathCount; i++) {
+        cJSON_AddItemToArray(paths, cJSON_CreateString(extra->jsonPathes[i]));
       }
       cJSON_AddItemToObject(add, "jsonPathes", paths);
-      cJSON_AddStringToObject(add, "websocketPath", ctx->cloudWebsocketPath);
+      cJSON_AddStringToObject(add, "websocketPath", extra->websocketPath);
+      if (extra->expiredAtJsonPathCount > 0) {
+        cJSON* expiredPaths = cJSON_CreateArray();
+        if (!expiredPaths) {
+          cJSON_Delete(cloud);
+          cJSON_Delete(add);
+          cJSON_Delete(envelope);
+          return ESP_ERR_NO_MEM;
+        }
+        for (size_t i = 0; i < extra->expiredAtJsonPathCount; i++) {
+          cJSON_AddItemToArray(expiredPaths, cJSON_CreateString(extra->expiredAtJsonPathes[i]));
+        }
+        cJSON_AddItemToObject(add, "expiredAtJsonPathes", expiredPaths);
+      }
       cJSON_AddItemToObject(cloud, "addWebsocketToken", add);
       cJSON_AddItemToObject(envelope, "cloud", cloud);
     }

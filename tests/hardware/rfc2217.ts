@@ -1,12 +1,13 @@
 /**
  * Flash the checked-in UART echo fixture over RFC 2217, then verify reset and binary echo.
  * Requires Python with esptool and PySerial. The test overwrites the target's application.
- * SaiHub wiring: RX pin 2, TX pin 3, reset/EN pin 4 (RTS), BOOT/GPIO28 pin 5 (DTR), 5V and common ground.
+ * SaiHub wiring: RX pin 0, TX pin 1, reset/EN pin 2 (RTS), BOOT/GPIO28 pin 3 (DTR), 5V and common ground.
  */
 import { parseArgs } from "node:util";
 import { cloudStreamUrl, hardwareTarget, startCloudTcpProxy, type CloudTcpProxy, type StreamStatus } from "../library/cloud-stream.ts";
 
 const fixture = Bun.fileURLToPath(new URL("../fixtures/rfc2217/firmware.hex", import.meta.url));
+const cloudFlashConfig = Bun.fileURLToPath(new URL("../fixtures/rfc2217/esptool.cfg", import.meta.url));
 const routingToken = process.env.SAIHUB_ROUTING_TOKEN?.trim();
 
 function log(message: string): void {
@@ -40,8 +41,8 @@ with port:
     print(f"[hardware-rfc2217] verified {len(echoed)} echoed bytes, including adjacent 0xff bytes", flush=True)
 `;
 
-async function run(command: string[]): Promise<void> {
-  const child = Bun.spawn(command, { stdout: "inherit", stderr: "inherit" });
+async function run(command: string[], env: Record<string, string> = {}): Promise<void> {
+  const child = Bun.spawn(command, { env: { ...process.env, ...env }, stdout: "inherit", stderr: "inherit" });
   const code = await child.exited;
   if (code !== 0) throw new Error(`${command[0]} exited with status ${code}`);
 }
@@ -89,7 +90,7 @@ async function main(): Promise<void> {
       await request(base, powerPath, { enable: true });
       await Bun.sleep(1000);
     }
-    await request(base, configPath, { enable: true, mode: "rfc2217", pins: { rx: 2, tx: 3, rts: 4, dtr: 5 } });
+    await request(base, configPath, { enable: true, mode: "rfc2217", pins: { rx: 0, tx: 1, rts: 2, dtr: 3 } });
     let proxy: CloudTcpProxy | undefined;
     try {
       const statusPath = `/uart/${id}/rfc2217`;
@@ -106,10 +107,11 @@ async function main(): Promise<void> {
       if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
         throw new Error(`Invalid RFC 2217 port: ${port}`);
       }
-      const url = `rfc2217://${proxy?.host ?? base.hostname}:${port}`;
+      const url = `rfc2217://${proxy?.host ?? base.hostname}:${port}?timeout=15`;
       log(`automatic download, flash and verification via ${url}`);
       await run(["python3", "-m", "esptool", "--chip", "esp32c5", "--port", url, "--baud", "460800",
-        "--before", "default-reset", "--after", "hard-reset", "write-flash", "0x0", fixture]);
+        "--before", "default-reset", "--after", "hard-reset", "write-flash", "0x0", fixture],
+        proxy ? { ESPTOOL_CFGFILE: cloudFlashConfig } : {});
       log("RTS reset and binary echo");
       await run(["python3", "-c", verifyEcho, url]);
     } finally {

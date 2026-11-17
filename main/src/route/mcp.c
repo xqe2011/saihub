@@ -270,19 +270,7 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
   cJSON_AddStringToObject(info, "name", "saihub");
   cJSON_AddStringToObject(info, "version", esp_app_get_description()->version);
   cJSON_AddItemToObject(result, "serverInfo", info);
-  cJSON_AddStringToObject(
-      result, "instructions",
-      "SAIHub: logical pins 0-7, UART ids from list_uarts, SPI ids from list_spis, I2C ids from list_i2cs, times in "
-      "microseconds, optional lockId for contested resources. Use plural pin tools (configure_pins, get_pin_levels, …) "
-      "and always pass pins even for one pin (pins:[1]). Power tools use rail=3v3|5v. UART tools use configure_uart, "
-      "uart_transmit, uart_receive, uart_flush. SPI tools use configure_spi, spi_master_transceive, spi_slave_receive, "
-      "spi_slave_transmit. I2C tools use configure_i2c, i2c_master_transceive, i2c_slave_receive, i2c_slave_transmit. "
-      "play_buzzer plays a Morse-style sequence of . and - and blocks until it finishes (one at a time). "
-      "create_lock resources use type pin with pins, type power with rails, type uart with ids, type spi with ids, or "
-      "type i2c with ids. "
-      "System tools: get_system_info, reboot_system, check_system_ota, get_system_ota, upgrade_system_ota (url+sha256 required). "
-      "While a firmware update runs, non-system tools return 503. "
-      "For multi-step on-device work, use run_script with a Lua script that calls the same tools.");
+  cJSON_AddStringToObject(result, "instructions", CONFIG_MCP_INSTRUCTIONS);
   return result;
 }
 
@@ -307,9 +295,12 @@ static cJSON* Route_McpHandleToolsCall(HttpServer_Context* ctx, cJSON* params)
   snprintf(from, sizeof(from), "mcp/%s", HttpServer_GetFrom(ctx));
   ToolCall_Result tr = ToolCall_Invoke(from, name, args);
   if (tr.ok && strcmp(HttpServer_GetFrom(ctx), "cloud") == 0) {
-    if (strcmp(name, "get_dap_status") == 0) HttpServer_SetCloudAddWebsocketToken(ctx, "/tcp-stream/dap", "/result/content/0/text");
-    else if (strcmp(name, "get_uart_rfc2217_status") == 0) {
-      HttpServer_SetCloudAddWebsocketToken(ctx, "/tcp-stream/rfc2217", "/result/content/0/text");
+    if (strcmp(name, "get_dap_status") == 0) {
+      HttpServer_SetCloudAddWebsocketToken(ctx, "/tcp-stream/dap", "/result/content/0/text",
+                                          "/result/content/0/text");
+    } else if (strcmp(name, "get_uart_rfc2217_status") == 0) {
+      HttpServer_SetCloudAddWebsocketToken(ctx, "/tcp-stream/rfc2217", "/result/content/0/text",
+                                          "/result/content/0/text");
     }
   }
   cJSON* out = !tr.ok ? Route_McpToolResultErr(tr.reason) : Route_McpToolResultOk(tr.payload);

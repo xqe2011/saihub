@@ -74,12 +74,15 @@ export type PairingSessionTokenResponseMessage =
   | { type: "pairingSessionTokenResponse"; success: false; reason: string };
 
 export const WEBSOCKET_TOKEN_PLACEHOLDER = "$WEBSOCKET_TOKEN$";
+/** Device status bodies use this sentinel; the relay replaces it with the sealed token expireAt. */
+export const WEBSOCKET_EXPIRED_AT_PLACEHOLDER = 0;
 export const TCP_STREAM_DAP_PATH = "/tcp-stream/dap";
 export const TCP_STREAM_RFC2217_PATH = "/tcp-stream/rfc2217";
 
 export type AddWebsocketToken = {
   jsonPathes: string[];
   websocketPath: string;
+  expiredAtJsonPathes?: string[];
 };
 
 export type ResponseMessage = {
@@ -292,7 +295,15 @@ function parseAddWebsocketToken(value: unknown): { addWebsocketToken: AddWebsock
     if (jsonPathes.length >= 8) break;
   }
   if (jsonPathes.length === 0) return undefined;
-  return { addWebsocketToken: { jsonPathes, websocketPath } };
+  if (!Array.isArray(spec.expiredAtJsonPathes)) return { addWebsocketToken: { jsonPathes, websocketPath } };
+  const expiredAtJsonPathes: string[] = [];
+  for (const item of spec.expiredAtJsonPathes) {
+    if (typeof item !== "string" || !item.startsWith("/") || item.length > MAX_PATH_LEN) return undefined;
+    expiredAtJsonPathes.push(item);
+    if (expiredAtJsonPathes.length >= 8) break;
+  }
+  if (expiredAtJsonPathes.length === 0) return { addWebsocketToken: { jsonPathes, websocketPath } };
+  return { addWebsocketToken: { jsonPathes, websocketPath, expiredAtJsonPathes } };
 }
 
 function parseChannelId(value: unknown): number | null {
@@ -337,24 +348,27 @@ function unescapeJsonPointer(token: string): string {
   return token.replaceAll("~1", "/").replaceAll("~0", "~");
 }
 
+function resolveJsonPointerParent(body: JsonBody, pointer: string): { parent: unknown; last: string } | null {
+  if (!pointer.startsWith("/")) return null;
+  const parts = pointer.split("/").slice(1).map(unescapeJsonPointer);
+  if (parts.length === 0) return null;
+  let parent: unknown = body;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    parent = childAt(parent, parts[i]!);
+    if (parent === null || typeof parent !== "object") return null;
+  }
+  const last = parts[parts.length - 1];
+  if (last === undefined || parent === null || typeof parent !== "object") return null;
+  return { parent, last };
+}
+
 /** Replace the first `$WEBSOCKET_TOKEN$` in each listed JSON pointer. One replacement per string. */
 export function injectWebsocketToken(body: JsonBody, pointers: readonly string[], token: string): void {
   if (body === null || typeof body !== "object") return;
   for (const pointer of pointers) {
-    if (!pointer.startsWith("/")) continue;
-    const parts = pointer.split("/").slice(1).map(unescapeJsonPointer);
-    let parent: unknown = body;
-    let ok = true;
-    for (let i = 0; i < parts.length - 1; i += 1) {
-      parent = childAt(parent, parts[i]!);
-      if (parent === null || typeof parent !== "object") {
-        ok = false;
-        break;
-      }
-    }
-    if (!ok) continue;
-    const last = parts[parts.length - 1];
-    if (last === undefined || parent === null || typeof parent !== "object") continue;
+    const resolved = resolveJsonPointerParent(body, pointer);
+    if (!resolved) continue;
+    const { parent, last } = resolved;
     if (Array.isArray(parent)) {
       const index = Number(last);
       if (!Number.isInteger(index) || index < 0 || index >= parent.length) continue;
@@ -364,6 +378,33 @@ export function injectWebsocketToken(body: JsonBody, pointers: readonly string[]
       const record = parent;
       const value = record[last];
       if (typeof value === "string") record[last] = value.replace(WEBSOCKET_TOKEN_PLACEHOLDER, token);
+    }
+  }
+}
+
+/**
+ * Write unix-seconds expireAt at each JSON pointer.
+ * Number fields are overwritten. String fields (e.g. MCP tool text) replace the first
+ * `"expiredAt":0` placeholder, same idea as `$WEBSOCKET_TOKEN$`.
+ */
+export function injectExpiredAt(body: JsonBody, pointers: readonly string[], expiredAt: number): void {
+  if (body === null || typeof body !== "object" || !Number.isFinite(expiredAt)) return;
+  const needle = `"expiredAt":${WEBSOCKET_EXPIRED_AT_PLACEHOLDER}`;
+  const replacement = `"expiredAt":${expiredAt}`;
+  for (const pointer of pointers) {
+    const resolved = resolveJsonPointerParent(body, pointer);
+    if (!resolved) continue;
+    const { parent, last } = resolved;
+    if (Array.isArray(parent)) {
+      const index = Number(last);
+      if (!Number.isInteger(index) || index < 0 || index >= parent.length) continue;
+      const value = parent[index];
+      if (typeof value === "number") parent[index] = expiredAt;
+      else if (typeof value === "string") parent[index] = value.replace(needle, replacement);
+    } else if (isRecord(parent) && Object.prototype.hasOwnProperty.call(parent, last)) {
+      const value = parent[last];
+      if (typeof value === "number") parent[last] = expiredAt;
+      else if (typeof value === "string") parent[last] = value.replace(needle, replacement);
     }
   }
 }

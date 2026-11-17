@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { createServer, type Socket } from "node:net";
 
 type Service = "dap" | "rfc2217";
-export type StreamStatus = { url?: string; prompt?: string; ip?: string; port?: number };
+export type StreamStatus = { url?: string; prompt?: string; ip?: string; port?: number; expiredAt?: number };
 export type CloudTcpProxy = { host: string; port: number; close(): Promise<void> };
 
 const LOOPBACK = "127.0.0.1";

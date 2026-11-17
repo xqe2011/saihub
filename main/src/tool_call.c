@@ -22,6 +22,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
+#include <time.h>
 
 #define TRACE_DEFAULT_DURATION_US 1000000ULL
 
@@ -894,8 +896,10 @@ static ToolCall_Result ToolCall_GetUartRfc2217Status(cJSON* args, const char* vi
   cJSON* root = cJSON_CreateObject();
   if (root == NULL) return ToolCall_Fail(500, "internal");
   cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
-  if (status.cloud) cJSON_AddStringToObject(root, "url", status.url);
-  else {
+  if (status.cloud) {
+    cJSON_AddStringToObject(root, "url", status.url);
+    cJSON_AddNumberToObject(root, "expiredAt", 0);
+  } else {
     cJSON_AddNumberToObject(root, "port", status.port);
     cJSON_AddStringToObject(root, "ip", status.ip);
   }
@@ -1778,6 +1782,8 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
     TOOL_CALL_LOG("%s get_cloud_status()", via);
   } else if (strcmp(name, "get_system_info") == 0) {
     TOOL_CALL_LOG("%s get_system_info()", via);
+  } else if (strcmp(name, "get_system_time") == 0) {
+    TOOL_CALL_LOG("%s get_system_time()", via);
   } else if (strcmp(name, "reboot_system") == 0) {
     TOOL_CALL_LOG("%s reboot_system()", via);
   } else if (strcmp(name, "check_system_ota") == 0) {
@@ -1793,7 +1799,8 @@ static void ToolCall_LogInvoke(const char* via, const char* name, const cJSON* a
 
 static bool ToolCall_IsSystemTool(const char* name)
 {
-  return name && (strcmp(name, "reboot_system") == 0 || strcmp(name, "get_system_info") == 0 || strcmp(name, "check_system_ota") == 0 ||
+  return name && (strcmp(name, "reboot_system") == 0 || strcmp(name, "get_system_info") == 0 ||
+                  strcmp(name, "get_system_time") == 0 || strcmp(name, "check_system_ota") == 0 ||
                   strcmp(name, "get_system_ota") == 0 || strcmp(name, "upgrade_system_ota") == 0);
 }
 
@@ -1828,8 +1835,10 @@ static ToolCall_Result ToolCall_GetDapStatus(const char* via)
   cJSON* root = cJSON_CreateObject();
   if (!root) return ToolCall_Fail(500, "internal");
   cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
-  if (status.cloud) cJSON_AddStringToObject(root, "url", status.url);
-  else {
+  if (status.cloud) {
+    cJSON_AddStringToObject(root, "url", status.url);
+    cJSON_AddNumberToObject(root, "expiredAt", 0);
+  } else {
     cJSON_AddNumberToObject(root, "port", status.port);
     cJSON_AddStringToObject(root, "ip", status.ip);
   }
@@ -1901,6 +1910,16 @@ static ToolCall_Result ToolCall_GetSystemInfo(void)
   cJSON_AddNumberToObject(root, "cpu_usage_percent", info.cpuUsageTenthsPercent / 10.0);
   cJSON_AddNumberToObject(root, "free_heap_bytes", info.freeHeap);
   cJSON_AddNumberToObject(root, "min_free_heap_since_boot_bytes", info.minFreeHeapSinceBoot);
+  return ToolCall_Ok(root);
+}
+
+static ToolCall_Result ToolCall_GetSystemTime(void)
+{
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return ToolCall_Fail(500, "internal");
+  cJSON_AddNumberToObject(root, "unixSeconds", (double)tv.tv_sec + (double)tv.tv_usec / 1e6);
   return ToolCall_Ok(root);
 }
 
@@ -2048,6 +2067,8 @@ ToolCall_Result ToolCall_Invoke(const char* via, const char* name, cJSON* args)
     r = ToolCall_GetCloudStatus();
   else if (strcmp(name, "get_system_info") == 0)
     r = ToolCall_GetSystemInfo();
+  else if (strcmp(name, "get_system_time") == 0)
+    r = ToolCall_GetSystemTime();
   else if (strcmp(name, "reboot_system") == 0)
     r = ToolCall_RebootSystem();
   else if (strcmp(name, "check_system_ota") == 0)

@@ -120,7 +120,8 @@ static esp_err_t Route_DapStatusHandler(HttpServer_Context* ctx)
   cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
   if (status.cloud) {
     cJSON_AddStringToObject(root, "url", status.url);
-    HttpServer_SetCloudAddWebsocketToken(ctx, "/tcp-stream/dap", "/url");
+    cJSON_AddNumberToObject(root, "expiredAt", 0);
+    HttpServer_SetCloudAddWebsocketToken(ctx, "/tcp-stream/dap", "/url", "/expiredAt");
   } else {
     cJSON_AddNumberToObject(root, "port", status.port);
     cJSON_AddStringToObject(root, "ip", status.ip);
