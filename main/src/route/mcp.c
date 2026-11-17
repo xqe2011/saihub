@@ -270,19 +270,7 @@ static cJSON* Route_McpHandleInitialize(cJSON* params)
   cJSON_AddStringToObject(info, "name", "saihub");
   cJSON_AddStringToObject(info, "version", esp_app_get_description()->version);
   cJSON_AddItemToObject(result, "serverInfo", info);
-  cJSON_AddStringToObject(
-      result, "instructions",
-      "SAIHub: logical pins 0-7, UART ids from list_uarts, SPI ids from list_spis, I2C ids from list_i2cs, times in "
-      "microseconds, optional lockId for contested resources. Use plural pin tools (configure_pins, get_pin_levels, …) "
-      "and always pass pins even for one pin (pins:[1]). Power tools use rail=3v3|5v. UART tools use configure_uart, "
-      "uart_transmit, uart_receive, uart_flush. SPI tools use configure_spi, spi_master_transceive, spi_slave_receive, "
-      "spi_slave_transmit. I2C tools use configure_i2c, i2c_master_transceive, i2c_slave_receive, i2c_slave_transmit. "
-      "play_buzzer plays a Morse-style sequence of . and - and blocks until it finishes (one at a time). "
-      "create_lock resources use type pin with pins, type power with rails, type uart with ids, type spi with ids, or "
-      "type i2c with ids. "
-      "System tools: get_system_info, get_system_time, reboot_system, check_system_ota, get_system_ota, upgrade_system_ota. "
-      "While a firmware update runs, non-system tools return 503. "
-      "For multi-step on-device work, use run_script with a Lua script that calls the same tools.");
+  cJSON_AddStringToObject(result, "instructions", CONFIG_MCP_INSTRUCTIONS);
   return result;
 }
 

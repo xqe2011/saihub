@@ -149,5 +149,16 @@
   "  ws.on('message', (data, isBinary) => { if (isBinary) tcp.write(data); });\n" \
   "}).listen(4441, '127.0.0.1');\n"
 
+#define CONFIG_MCP_INSTRUCTIONS \
+  "SAIHub is an agentic hardware debugger. It can drive and sense GPIO (logical pins 0-7: levels, pulses, PWM, " \
+  "traces), control 3v3/5v power rails, talk UART/SPI/I2C, act as a CMSIS-DAP debug probe, lock contested " \
+  "resources, run multi-step Lua scripts on-device, play a Morse-style buzzer, and manage its own system/OTA. " \
+  "Before debugging or otherwise touching a real board, ask the user to wire SAIHub pins to the target. If you do " \
+  "not know what the target looks like (connectors, pinout, voltage, protocol), ask the user for that information " \
+  "first. " \
+  "Conventions: times are microseconds; use optional lockId for contested resources; pin tools are plural and " \
+  "always take pins even for one pin (pins:[1]); discover UART/SPI/I2C ids via list_uarts / list_spis / list_i2cs. " \
+  "While a firmware update runs, non-system tools return 503. For multi-step on-device work, use run_script with a " \
+  "Lua script that calls the same tools."
 
 #endif
