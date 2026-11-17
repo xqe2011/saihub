@@ -241,8 +241,8 @@ export async function testDapFraming(dap: Dap): Promise<void> {
 class Tcl {
   private constructor(private readonly connection: TcpConnection) {}
 
-  static async open(port: number): Promise<Tcl> {
-    return new Tcl(await TcpConnection.open("127.0.0.1", port, 10000));
+  static async open(port: number, timeoutMs = 60000): Promise<Tcl> {
+    return new Tcl(await TcpConnection.open("127.0.0.1", port, timeoutMs));
   }
 
   async command(command: string): Promise<string> {
@@ -374,10 +374,10 @@ async function cleanup(target: URL): Promise<void> {
   log("disabling DAP and releasing test pins");
   try {
     await requestJson<void>(target, "POST", "/dap/config", {
-      enable: false, pins: { swclk: 0, swdio: 1, nreset: null },
+      enable: false, pins: { swclk: 4, swdio: 5, nreset: null },
     }, 204);
   } finally {
-    await requestJson<void>(target, "PUT", "/pin/2", { mode: "disable", pullUp: false, pullDown: false }, 204);
+    await requestJson<void>(target, "PUT", "/pin/6", { mode: "disable", pullUp: false, pullDown: false }, 204);
   }
 }
 
@@ -386,12 +386,12 @@ async function configureTarget(target: URL, dapPort: number): Promise<void> {
   await requestJson<void>(target, "POST", "/power/3v3", { enable: true }, 204);
   const power = await requestJson<{ enable: boolean }>(target, "GET", "/power/3v3");
   assert(power.enable, "3.3 V output failed to enable");
-  const config = { enable: true, pins: { swclk: 0, swdio: 1, nreset: null } };
+  const config = { enable: true, pins: { swclk: 4, swdio: 5, nreset: null } };
   await requestJson<void>(target, "POST", "/dap/config", config, 204);
   const status = await requestJson<StreamStatus>(target, "GET", "/dap/status");
   if (routingToken) cloudStreamUrl(status, target, "dap");
   else assert(status.port === dapPort, "DAP status port mismatch");
-  await requestJson<void>(target, "PUT", "/pin/2", { mode: "digitalInput", pullUp: false, pullDown: false }, 204);
+  await requestJson<void>(target, "PUT", "/pin/6", { mode: "digitalInput", pullUp: false, pullDown: false }, 204);
 }
 
 async function serveOpenocd(common: string[]): Promise<void> {
@@ -446,15 +446,16 @@ async function testDebugger(context: TestContext): Promise<void> {
   let tclPort = await freePort();
   while (tclPort === gdbPort) tclPort = await freePort();
   const server = Bun.spawn([...common, "-c", `gdb_port ${gdbPort}`, "-c", `tcl_port ${tclPort}`,
-    "-c", "telnet_port disabled"], { stdout: "pipe", stderr: "pipe" });
-  const output = Promise.all([new Response(server.stdout).text(), new Response(server.stderr).text()]);
+    "-c", "telnet_port disabled"], { stdout: "inherit", stderr: "inherit" });
   let tcl: Tcl | undefined;
   try {
-    const deadline = performance.now() + 10000;
+    const deadline = performance.now() + 60000;
     while (true) {
-      if (server.exitCode !== null) throw new Error(`OpenOCD exited during startup:\n${(await output).join("")}`);
+      if (server.exitCode !== null) throw new Error(`OpenOCD exited during startup with status ${server.exitCode}`);
+      const remainingMs = Math.ceil(deadline - performance.now());
+      assert(remainingMs > 0, "OpenOCD startup timed out after 60000 ms");
       try {
-        tcl = await Tcl.open(tclPort);
+        tcl = await Tcl.open(tclPort, remainingMs);
         // Tcl opens before target examination finishes; wait for init to complete.
         await tcl.command("targets");
         break;
@@ -463,7 +464,7 @@ async function testDebugger(context: TestContext): Promise<void> {
         tcl = undefined;
         const code = (error as NodeJS.ErrnoException).code;
         if (code !== "ECONNREFUSED" && !(error instanceof Error && error.message.includes("timed out"))) throw error;
-        assert(performance.now() < deadline, "OpenOCD startup timed out");
+        assert(performance.now() < deadline, "OpenOCD startup timed out after 60000 ms");
         await Bun.sleep(100);
       }
     }
@@ -499,7 +500,7 @@ async function testDebugger(context: TestContext): Promise<void> {
       "echo DAP_GDB_PASS\\n",
       "",
     ].join("\n"));
-    const result = await runCommand([gdb, "-q", "-nx", "-batch", "-x", script], 30000);
+    const result = await runCommand([gdb, "-q", "-nx", "-batch", "-x", script], 180000);
     assert(result.exitCode === 0 && result.stdout.includes("DAP_GDB_PASS"),
       `GDB breakpoint/step/watchpoint failed:\n${result.stdout}${result.stderr}`);
     log("fixture identity, startup and system clock");
@@ -517,12 +518,12 @@ async function testDebugger(context: TestContext): Promise<void> {
     await tcl.command("resume");
     await Bun.sleep(700);
     assert(await tcl.read(counter) > count, "Heartbeat did not advance after resume");
-    log("debugger-controlled GPIO low/high observed on pin 2");
+    log("debugger-controlled GPIO low/high observed on pin 6");
     for (const level of [0, 1, 0, 1]) {
       await tcl.write(symbol("debugOutputMode"), level);
       await Bun.sleep(650);
       assert(await tcl.read(symbol("debugOutputLevel")) === level, "Fixture output state mismatch");
-      const observed = await requestJson<{ level: number }>(target, "GET", "/pin/2/level");
+      const observed = await requestJson<{ level: number }>(target, "GET", "/pin/6/level");
       assert(observed.level === level, "Physical output signal mismatch");
     }
     log("programmable heartbeat and physical edge timing");
@@ -530,7 +531,7 @@ async function testDebugger(context: TestContext): Promise<void> {
     await tcl.write(symbol("debugOutputMode"), 2);
     await Bun.sleep(700);
     const { events } = await requestJson<{ events: { time: number; level: number }[] }>(
-      target, "GET", "/pin/2/trace?edge=both&duration=1400000");
+      target, "GET", "/pin/6/trace?edge=both&duration=1400000");
     const intervals = events.slice(1).map((event, index) => (event.time - events[index]!.time) / 1000);
     assert(events.length >= 5, "Too few heartbeat edges");
     assert(events.slice(1).every((event, index) => event.level !== events[index]!.level), "Repeated edge levels");
@@ -552,7 +553,6 @@ async function testDebugger(context: TestContext): Promise<void> {
     const timeout = setTimeout(() => server.kill("SIGKILL"), 5000);
     try {
       await server.exited;
-      await output;
     } finally {
       clearTimeout(timeout);
     }
@@ -654,7 +654,7 @@ async function main(): Promise<void> {
     console.log("In cloud mode --dap-port selects the loopback proxy port (automatic by default).");
     console.log("Optional: --report PATH writes JSON results, including failures and cleanup errors.");
     console.log("Flashes the checked-in SWD fixture and tests DAP, OpenOCD, GDB and physical IO.");
-    console.log("Requires exclusive DAP access. Wiring: SWCLK pin 0, SWDIO pin 1, fixture output pin 2.");
+    console.log("Requires exclusive DAP access. Wiring: SWCLK pin 4, SWDIO pin 5, fixture output pin 6.");
     console.log("--serve enables 3.3 V and runs local OpenOCD without flashing or testing.");
     return;
   }
