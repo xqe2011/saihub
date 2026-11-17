@@ -3422,15 +3422,19 @@
       },
       "DapStatusCloud": {
         "type": "object",
-        "required": ["prompt", "url"],
+        "required": ["prompt", "url", "expiredAt"],
         "additionalProperties": false,
         "properties": {
           "prompt": {"type": "string"},
-          "url": {"type": "string", "description": "WebSocket URL for the TCP byte stream."}
+          "url": {"type": "string", "description": "WebSocket URL for the TCP byte stream."},
+          "expiredAt": {
+            "type": "number",
+            "description": "Unix epoch seconds when the WebSocket token stops being accepted. Reuse url until then."
+          }
         }
       },
       "DapStatus": {
-        "description": "Local responses include prompt, port, and ip. Cloud responses include prompt and url.",
+        "description": "Local responses include prompt, port, and ip. Cloud responses include prompt, url, and expiredAt.",
         "oneOf": [
           {"$ref": "#/components/schemas/DapStatusLocal"},
           {"$ref": "#/components/schemas/DapStatusCloud"}
@@ -3602,15 +3606,19 @@
       },
       "Rfc2217StatusCloud": {
         "type": "object",
-        "required": ["prompt", "url"],
+        "required": ["prompt", "url", "expiredAt"],
         "additionalProperties": false,
         "properties": {
           "prompt": {"type": "string"},
-          "url": {"type": "string", "description": "WebSocket URL for the TCP byte stream."}
+          "url": {"type": "string", "description": "WebSocket URL for the TCP byte stream."},
+          "expiredAt": {
+            "type": "number",
+            "description": "Unix epoch seconds when the WebSocket token stops being accepted. Reuse url until then."
+          }
         }
       },
       "Rfc2217Status": {
-        "description": "Local responses include prompt, port, and ip. Cloud responses include prompt and url.",
+        "description": "Local responses include prompt, port, and ip. Cloud responses include prompt, url, and expiredAt.",
         "oneOf": [
           {"$ref": "#/components/schemas/Rfc2217StatusLocal"},
           {"$ref": "#/components/schemas/Rfc2217StatusCloud"}

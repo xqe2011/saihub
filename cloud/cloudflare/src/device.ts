@@ -1,7 +1,7 @@
 import { tryServeCached } from "./cache.ts";
 import { DEFAULT_AUTH_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS, parseTimeoutMs, type Env } from "./env.ts";
 import { base64UrlToBytes, bytesToBase64Url, randomChallenge, sealWebsocketToken, verifyDeviceAuth } from "./crypto.ts";
-import { injectWebsocketToken, isJsonContentType, isTcpStreamPath, jsonError, MAX_BODY_BYTES, MAX_PATH_LEN, parseDeviceMessage, pairingErrorStatus, selectForwardHeaders, TCP_STREAM_CLIENT_BUFFER_MAX, unsupportedContentType, type AuthRequestMessage, type AuthResultMessage, type JsonBody, type PairingSessionRequestMessage, type PairingSessionResponseMessage, type PairingSessionTokenResponseMessage, type RequestMessage, type TcpStreamAckMessage, type TcpStreamCloseRequestMessage, type TcpStreamOpenRequestMessage } from "./protocol.ts";
+import { injectExpiredAt, injectWebsocketToken, isJsonContentType, isTcpStreamPath, jsonError, MAX_BODY_BYTES, MAX_PATH_LEN, parseDeviceMessage, pairingErrorStatus, selectForwardHeaders, TCP_STREAM_CLIENT_BUFFER_MAX, unsupportedContentType, type AuthRequestMessage, type AuthResultMessage, type JsonBody, type PairingSessionRequestMessage, type PairingSessionResponseMessage, type PairingSessionTokenResponseMessage, type RequestMessage, type TcpStreamAckMessage, type TcpStreamCloseRequestMessage, type TcpStreamOpenRequestMessage } from "./protocol.ts";
 
 const MAX_PENDING_REQUESTS = 8;
 const MAX_PAIRING_WAITERS = 8;
@@ -949,7 +949,7 @@ export class Device implements DurableObject {
 
   async #injectWebsocketToken(
     requestId: string,
-    parsed: { body: JsonBody; cloud?: { addWebsocketToken: { jsonPathes: string[]; websocketPath: string } } },
+    parsed: { body: JsonBody; cloud?: { addWebsocketToken: { jsonPathes: string[]; websocketPath: string; expiredAtJsonPathes?: string[] } } },
   ): Promise<void> {
     const spec = parsed.cloud?.addWebsocketToken;
     if (!spec || !isTcpStreamPath(spec.websocketPath) || parsed.body === null) return;
@@ -961,13 +961,15 @@ export class Device implements DurableObject {
     const ttlSec = parseTimeoutMs(this.#env.WEBSOCKET_TOKEN_TTL_S, 0);
     if (!grantSecret || !digest || !this.#env.WEBSOCKET_TOKEN_SECRET || ttlSec === 0) return;
     try {
+      const expireAt = Math.floor(Date.now() / 1000) + ttlSec;
       const token = await sealWebsocketToken(this.#env.WEBSOCKET_TOKEN_SECRET, {
-        expireAt: Math.floor(Date.now() / 1000) + ttlSec,
+        expireAt,
         devicePublicKeyDigest: digest,
         path: spec.websocketPath,
         grantSecret,
       });
       injectWebsocketToken(parsed.body, spec.jsonPathes, token);
+      if (spec.expiredAtJsonPathes?.length) injectExpiredAt(parsed.body, spec.expiredAtJsonPathes, expireAt);
     } catch {
       // Leave the placeholder in place when the token cannot be sealed.
     }

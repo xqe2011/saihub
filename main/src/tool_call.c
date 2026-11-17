@@ -896,8 +896,10 @@ static ToolCall_Result ToolCall_GetUartRfc2217Status(cJSON* args, const char* vi
   cJSON* root = cJSON_CreateObject();
   if (root == NULL) return ToolCall_Fail(500, "internal");
   cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
-  if (status.cloud) cJSON_AddStringToObject(root, "url", status.url);
-  else {
+  if (status.cloud) {
+    cJSON_AddStringToObject(root, "url", status.url);
+    cJSON_AddNumberToObject(root, "expiredAt", 0);
+  } else {
     cJSON_AddNumberToObject(root, "port", status.port);
     cJSON_AddStringToObject(root, "ip", status.ip);
   }
@@ -1833,8 +1835,10 @@ static ToolCall_Result ToolCall_GetDapStatus(const char* via)
   cJSON* root = cJSON_CreateObject();
   if (!root) return ToolCall_Fail(500, "internal");
   cJSON_AddStringToObject(root, "prompt", status.prompt ? status.prompt : "");
-  if (status.cloud) cJSON_AddStringToObject(root, "url", status.url);
-  else {
+  if (status.cloud) {
+    cJSON_AddStringToObject(root, "url", status.url);
+    cJSON_AddNumberToObject(root, "expiredAt", 0);
+  } else {
     cJSON_AddNumberToObject(root, "port", status.port);
     cJSON_AddStringToObject(root, "ip", status.ip);
   }

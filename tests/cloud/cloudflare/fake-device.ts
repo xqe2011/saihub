@@ -372,10 +372,17 @@ async function main(): Promise<void> {
             requestId: msg.requestId,
             status: 200,
             headers: { "content-type": "application/json" },
-            cloud: { addWebsocketToken: { jsonPathes: ["/url"], websocketPath: `/tcp-stream/${service}` } },
+            cloud: {
+              addWebsocketToken: {
+                jsonPathes: ["/url"],
+                websocketPath: `/tcp-stream/${service}`,
+                expiredAtJsonPathes: ["/expiredAt"],
+              },
+            },
             body: {
               prompt: "cloud stream",
               url: `${scheme}://${cloud.host}/device/${digest}/tcp-stream/${service}?token=$WEBSOCKET_TOKEN$`,
+              expiredAt: 0,
             },
           }));
           return;

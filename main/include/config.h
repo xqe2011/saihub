@@ -72,6 +72,8 @@
   "RFC2217 serial-over-TCP is running. Connect a compatible client using the ip and port from this status."
 #define CONFIG_RFC2217_CLOUD_STATUS_PROMPT \
   "RFC2217 serial-over-TCP is running. Run this Node.js bridge (npm i ws), then point an RFC2217 client at 127.0.0.1:4442. Replace status.url with the url from this status.\n" \
+  "The WebSocket url is long-lived: reuse it until expiredAt instead of requesting a new status on every TCP connect.\n" \
+  "When flashing with esptool over this bridge, raise serial/sync timeouts — cloud RTT is much higher than a local USB adapter. Example ESPTOOL_CFGFILE values: sync_timeout=3, mem_end_rom_timeout=3, timeout=10, connect_attempts=2.\n" \
   "import { createServer } from 'node:net';\n" \
   "import WebSocket from 'ws';\n" \
   "createServer((tcp) => {\n" \

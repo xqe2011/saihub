@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, type Subprocess } from "bun";
 import { join } from "node:path";
 import { authSignedMessage, openWebsocketToken, publicKeyDigest, sealWebsocketToken } from "../../../cloud/cloudflare/src/crypto.ts";
-import { PUBLIC_KEY_BYTES, SIGNATURE_BYTES } from "../../../cloud/cloudflare/src/protocol.ts";
+import { injectExpiredAt, PUBLIC_KEY_BYTES, SIGNATURE_BYTES } from "../../../cloud/cloudflare/src/protocol.ts";
 
 const PACKAGE_DIR = join(import.meta.dir, "../../../cloud/cloudflare");
 const BASE_PORT = 8787 + Math.floor(Math.random() * 1000);
@@ -1615,12 +1615,18 @@ describe("cloudflare device proxy e2e", () => {
       requestId: request.requestId,
       status: 200,
       headers: { "content-type": "application/json" },
-      cloud: { addWebsocketToken: { jsonPathes: ["/url", "/prompt"], websocketPath: "/tcp-stream/dap" } },
-      body: { prompt: "prompt $WEBSOCKET_TOKEN$ stays", url: statusUrl },
+      cloud: {
+        addWebsocketToken: {
+          jsonPathes: ["/url", "/prompt"],
+          websocketPath: "/tcp-stream/dap",
+          expiredAtJsonPathes: ["/expiredAt"],
+        },
+      },
+      body: { prompt: "prompt $WEBSOCKET_TOKEN$ stays", url: statusUrl, expiredAt: 0 },
     }));
     const statusRes = await statusPromise;
     expect(statusRes.status).toBe(200);
-    const statusBody = (await statusRes.json()) as { prompt: string; url: string; port?: number };
+    const statusBody = (await statusRes.json()) as { prompt: string; url: string; port?: number; expiredAt: number };
     expect(statusBody.port).toBeUndefined();
     expect(statusBody.prompt.startsWith("prompt ")).toBe(true);
     expect(statusBody.prompt.endsWith(" stays")).toBe(true);
@@ -1636,6 +1642,7 @@ describe("cloudflare device proxy e2e", () => {
     const ttlSec = 7200;
     expect(opened!.expireAt).toBeGreaterThan(nowSec + ttlSec - 30);
     expect(opened!.expireAt).toBeLessThanOrEqual(nowSec + ttlSec);
+    expect(statusBody.expiredAt).toBe(opened!.expireAt);
 
     const stream = new WebSocket(statusBody.url);
     stream.binaryType = "arraybuffer";
@@ -1711,4 +1718,22 @@ describe("cloudflare device proxy e2e", () => {
     expect(JSON.parse(await overflowClose as string).type).toBe("tcpStreamCloseRequest");
     ws.close();
   }, 30_000);
+});
+
+describe("injectExpiredAt", () => {
+  test("overwrites a number field and rewrites a magic placeholder inside MCP tool text", () => {
+    const rest = { prompt: "x", url: "ws://example", expiredAt: 0 };
+    injectExpiredAt(rest, ["/expiredAt"], 1_700_000_000);
+    expect(rest.expiredAt).toBe(1_700_000_000);
+
+    const mcp = {
+      result: {
+        content: [{ type: "text", text: '{"prompt":"p","url":"ws://x?token=$WEBSOCKET_TOKEN$","expiredAt":0}' }],
+      },
+    };
+    injectExpiredAt(mcp, ["/result/content/0/text"], 1_700_000_001);
+    expect(mcp.result.content[0]!.text).toBe(
+      '{"prompt":"p","url":"ws://x?token=$WEBSOCKET_TOKEN$","expiredAt":1700000001}',
+    );
+  });
 });
