@@ -63,6 +63,7 @@ const EXPECTED_MCP_TOOLS = [
   "run_script",
   "get_cloud_status",
   "get_system_info",
+  "get_system_time",
   "check_system_ota",
   "get_system_ota",
   "upgrade_system_ota",
@@ -508,6 +509,17 @@ async function testSystemInfo(): Promise<void> {
   assert(rest.digest === mcp.digest, "REST/MCP system digest disagreed");
   assert(rest.version === mcp.version, "REST/MCP system version disagreed");
   assert(rest.compiledDate === mcp.compiledDate, "REST/MCP system compiledDate disagreed");
+  const before = Date.now() / 1000;
+  const restTime = await requestJson<{ unixSeconds: number }>("GET", "/system/time");
+  const mcpTime = await mcpTool<{ unixSeconds: number }>("get_system_time", {});
+  const after = Date.now() / 1000;
+  assert(typeof restTime.unixSeconds === "number" && Number.isFinite(restTime.unixSeconds),
+    "REST GET /system/time returned invalid unixSeconds");
+  assert(typeof mcpTime.unixSeconds === "number" && Number.isFinite(mcpTime.unixSeconds),
+    "MCP get_system_time returned invalid unixSeconds");
+  assert(restTime.unixSeconds >= before - 5 && restTime.unixSeconds <= after + 5,
+    "REST GET /system/time was outside the client clock window");
+  assert(Math.abs(restTime.unixSeconds - mcpTime.unixSeconds) <= 2, "REST/MCP system time disagreed");
 }
 
 async function testInventorySurfaces(state: Snapshot): Promise<void> {

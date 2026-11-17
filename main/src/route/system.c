@@ -11,6 +11,7 @@
 
 #include <cJSON.h>
 #include <string.h>
+#include <sys/time.h>
 
 static const char* tag = "SAIHub-System";
 
@@ -55,6 +56,17 @@ static esp_err_t Route_SystemGetHandler(HttpServer_Context* ctx)
   HttpServer_LogCall(ctx);
   cJSON* root = Route_SystemInfoJson();
   if (!root) return HttpServer_SendError(ctx, 500, "internal");
+  return HttpServer_SendJson(ctx, 200, root);
+}
+
+static esp_err_t Route_SystemGetTimeHandler(HttpServer_Context* ctx)
+{
+  HttpServer_LogCall(ctx);
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return HttpServer_SendError(ctx, 500, "internal");
+  cJSON_AddNumberToObject(root, "unixSeconds", (double)tv.tv_sec + (double)tv.tv_usec / 1e6);
   return HttpServer_SendJson(ctx, 200, root);
 }
 
@@ -126,6 +138,7 @@ static esp_err_t Route_SystemOtaUpgradeHandler(HttpServer_Context* ctx)
 
 static const HttpServer_Route uris[] = {
     {.uri = "/system", .method = HTTP_SERVER_GET, .handler = Route_SystemGetHandler},
+    {.uri = "/system/time", .method = HTTP_SERVER_GET, .handler = Route_SystemGetTimeHandler},
     {.uri = "/system/reboot", .method = HTTP_SERVER_POST, .handler = Route_SystemRebootHandler},
     {.uri = "/system/ota", .method = HTTP_SERVER_GET, .handler = Route_SystemOtaGetHandler},
     {.uri = "/system/ota/check", .method = HTTP_SERVER_POST, .handler = Route_SystemOtaCheckHandler},

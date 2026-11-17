@@ -1822,6 +1822,19 @@
       }
     },
     {
+      "name": "get_system_time",
+      "description": "Return the device wall clock as unix seconds with millisecond fraction immediately. The clock is NTP-synced; compare with the client clock to estimate round-trip latency.",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "reboot_system",
       "description": "Restart SAIHub System itself(the host of this MCP and REST API, NOT the board under test). SAIHub goes offline for a while; all sessions and runtime state are lost.",
       "annotations": {

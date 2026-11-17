@@ -124,6 +124,40 @@
         }
       }
     },
+    "/system/time": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "System time",
+        "description": "Return the device wall clock as unix seconds with millisecond fraction immediately. The clock is NTP-synced; compare with the client clock to estimate round-trip latency.",
+        "responses": {
+          "200": {
+            "description": "Device wall clock",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "unixSeconds"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "unixSeconds": {
+                      "type": "number",
+                      "description": "Unix epoch seconds from the device wall clock, with millisecond fraction (e.g. 1763376000.123)"
+                    }
+                  }
+                },
+                "example": {
+                  "unixSeconds": 1763376000.123
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/system/reboot": {
       "post": {
         "tags": [
