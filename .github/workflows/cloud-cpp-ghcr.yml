@@ -1,0 +1,119 @@
+name: Cloud C++ GHCR
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '**'
+  pull_request:
+    paths:
+      - 'cloud/cpp/**'
+      - 'tests/cloud/cpp/**'
+      - '.github/workflows/cloud-cpp-ghcr.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: cloud-cpp-ghcr-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/saihub-cloud
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build dev image and run unit tests
+        uses: docker/build-push-action@v6
+        with:
+          context: cloud/cpp
+          file: cloud/cpp/Dockerfile
+          target: dev
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: saihub-cloud:dev-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.arch }},mode=max
+
+      - name: Run unit tests
+        run: docker run --rm --platform ${{ matrix.platform }} saihub-cloud:dev-${{ matrix.arch }} ./build/saihub-tests
+
+      - name: Build and push per-arch runtime image
+        if: github.event_name != 'pull_request'
+        id: push_arch
+        uses: docker/build-push-action@v6
+        with:
+          context: cloud/cpp
+          file: cloud/cpp/Dockerfile
+          target: run
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+
+  merge:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+            type=sha,prefix=sha-
+
+      - name: Create and push multi-arch manifest
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          TAG_ARGS=""
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && TAG_ARGS="$TAG_ARGS -t $tag"
+          done <<< "$TAGS"
+          docker buildx imagetools create $TAG_ARGS \
+            "${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}-amd64" \
+            "${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}-arm64"

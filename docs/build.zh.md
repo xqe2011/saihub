@@ -1,6 +1,6 @@
 # 构建指南
 
-面向开发者的固件与 Cloudflare Worker 中继构建参考。普通用户的配置流程见[使用手册](cookbook.zh.md)；中继协议细节见[设计笔记](design-notes.md)（英文）。
+面向开发者的固件与云中继服务端（`cloud/cloudflare` 与 `cloud/cpp`）构建参考。普通用户的配置流程见[使用手册](cookbook.zh.md)；中继协议细节见[设计笔记](design-notes.md)（英文）。
 
 [English](build.md) · [README](../README.zh.md)
 
@@ -39,7 +39,7 @@ idf.py merge-bin   # 生成网页烧录器使用的合并镜像（烧到 0x0）
 
 ## Cloudflare Worker
 
-需要 [Bun](https://bun.sh)（或 Node）和 [Wrangler](https://developers.cloudflare.com/workers/wrangler/)。生产环境部署步骤见[使用手册第 5 节](cookbook.zh.md#5-自行部署-cloudflare-中继)。
+需要 [Bun](https://bun.sh)（或 Node）和 [Wrangler](https://developers.cloudflare.com/workers/wrangler/)。生产环境部署步骤见[使用手册第 5 节](cookbook.zh.md#5-自行部署云中继)。
 
 ```bash
 cd cloud/cloudflare
@@ -88,3 +88,9 @@ bun run fake-device     # 默认连 http://127.0.0.1:8787，也可传入其他�
 | `GET /admin/file-cache?page=` | 已缓存的 `mcp.json` / `openapi.json`（`version`、`filename`、`bytes`） |
 | `POST /admin/file-cache` | 上传 `{ "version", "filename", "content" }`（`mcp.json` 或 `openapi.json`；覆盖写入） |
 | `DELETE /admin/file-cache/{version}/{filename}` | 删除一条缓存 |
+
+## C++ 中继（`cloud/cpp`）
+
+支持多架构（`linux/amd64`、`linux/arm64`）的 C++20 中继服务，兼容同一套协议；使用 SQLite（`DB_PATH`）持久化白名单与 `file_cache`（热路径查询走内存缓存），采用单线程事件循环（`uWebSockets` + `usockets`）、流式 `tcp-stream` 二进制转发、强制 `gzip` HTML 响应（静态页面启动时预压缩）以及 `GET /health` 健康检查接口。
+
+[`cloud/cpp/Dockerfile`](../cloud/cpp/Dockerfile) 拆分为 `dev`（编译工具链、`vcpkg`、单元测试与压测工具）与 `run`（极简 `scratch` 运行镜像）两个阶段。推送到 `main` 或 git tag 会触发 [`.github/workflows/cloud-cpp-ghcr.yml`](../.github/workflows/cloud-cpp-ghcr.yml)，自动测试并发布 `ghcr.io/xqe2011/saihub-cloud`。环境变量与构建命令见 [`cloud/cpp/README.md`](../cloud/cpp/README.md)。

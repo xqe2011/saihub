@@ -1,6 +1,6 @@
 # Build guide
 
-Developer reference for the firmware and the Cloudflare Worker relay. End-user setup lives in the [cookbook](cookbook.md); the relay wire protocol is documented in the [design notes](design-notes.md).
+Developer reference for the firmware and the cloud relay servers (`cloud/cloudflare` and `cloud/cpp`). End-user setup lives in the [cookbook](cookbook.md); the relay wire protocol is documented in the [design notes](design-notes.md).
 
 [中文](build.zh.md) · [README](../README.md)
 
@@ -39,7 +39,7 @@ Pushes to `main` that touch `page/` run [`.github/workflows/pages.yml`](../.gith
 
 ## Cloudflare Worker
 
-Requires [Bun](https://bun.sh) (or Node) and [Wrangler](https://developers.cloudflare.com/workers/wrangler/). Production deploy steps: [cookbook §5](cookbook.md#5-self-host-the-cloudflare-relay).
+Requires [Bun](https://bun.sh) (or Node) and [Wrangler](https://developers.cloudflare.com/workers/wrangler/). Production deploy steps: [cookbook §5](cookbook.md#5-self-host-the-cloud-relay).
 
 ```bash
 cd cloud/cloudflare
@@ -88,3 +88,9 @@ bun run fake-device     # defaults to http://127.0.0.1:8787; pass another origin
 | `GET /admin/file-cache?page=` | Cached `mcp.json` / `openapi.json` rows (`version`, `filename`, `bytes`) |
 | `POST /admin/file-cache` | Upload `{ "version", "filename", "content" }` (`mcp.json` or `openapi.json`; upsert) |
 | `DELETE /admin/file-cache/{version}/{filename}` | Remove a cached file |
+
+## C++ Relay (`cloud/cpp`)
+
+Multi-arch (`linux/amd64` and `linux/arm64`) C++20 relay implementing the same protocol with SQLite persistence (`DB_PATH`) for whitelist and `file_cache` (cached in memory for hot-path lookups), single-thread event loop (`uWebSockets` + `usockets`), streaming `tcp-stream` binary forwarding, forced `gzip` HTML responses (with pre-compressed static pages), and `GET /health`.
+
+[`cloud/cpp/Dockerfile`](../cloud/cpp/Dockerfile) provides `dev` (toolchain, `vcpkg`, tests, benchmarks) and `run` (minimal `scratch` image) stages. Pushes to `main` and git tags trigger [`.github/workflows/cloud-cpp-ghcr.yml`](../.github/workflows/cloud-cpp-ghcr.yml) to test and publish `ghcr.io/xqe2011/saihub-cloud`. See [`cloud/cpp/README.md`](../cloud/cpp/README.md) for environment variables and commands.

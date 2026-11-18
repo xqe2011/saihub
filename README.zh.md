@@ -73,23 +73,23 @@ SAIHub 是给编程智能体用的口袋 IO 与硬件调试伴侣。烧好固件
 | | 局域网直连 | 自部署中继 | 托管云 |
 | --- | --- | --- | --- |
 | 适用场景 | 工位调试，零配置 | 远程访问，账号自己掌控 | 远程访问，零运维 |
-| MCP 地址 | `http://<设备IP>/mcp` | `https://<你的Worker域名>/device/<digest>/mcp` | `https://saihub.xqe2011.com/device/<digest>/mcp` |
+| MCP 地址 | `http://<设备IP>/mcp` | `https://<你的中继域名>/device/<digest>/mcp` | `https://saihub.xqe2011.com/device/<digest>/mcp` |
 | 访问范围 | 仅同一局域网 | 任意地点 | 任意地点 |
-| 准备工作 | 连上 Wi-Fi 即可 | 部署 Worker 然后用你的域名重编固件（[步骤](docs/cookbook.zh.md#5-自行部署-cloudflare-中继)） | 无需配置——从我们这里购买的板子自动接入托管云 |
+| 准备工作 | 连上 Wi-Fi 即可 | 部署 Cloudflare Worker 或 C++ Docker 容器，并用你的域名重编固件（[步骤](docs/cookbook.zh.md#5-自行部署云中继)） | 无需配置——从我们这里购买的板子自动接入托管云 |
 | 鉴权 | 无（默认信任局域网） | OAuth（经你的中继） | OAuth（浏览器授权） |
-| 数据通路 | 直达设备 | 经你的 Cloudflare 账号 | 经我们的基础设施 |
-| 费用 | 免费 | Cloudflare 免费额度 | 购板即含 |
+| 数据通路 | 直达设备 | 经你的 Cloudflare 账号或自建服务器 | 经我们的基础设施 |
+| 费用 | 免费 | Cloudflare 免费额度或自备主机 | 购板即含 |
 
 板子与中继鉴权成功后，串口日志会打印落地页 `https://<源站>/cloud/landing/<digest>/page`，显示设备是否在线，可复制 MCP 或 REST/OpenAPI 地址，并可获取用于鉴权的Token。
 
-中继协议本身不绑定 Cloudflare——仓库里的 Worker 只是参考实现，详见[协议设计笔记](docs/design-notes.md)（英文）。
+中继协议本身不绑定特定服务端——本仓库同时提供 Cloudflare Worker 参考实现（`cloud/cloudflare/`）与高性能 C++ 服务端（`cloud/cpp/`），协议细节见[协议设计笔记](docs/design-notes.md)（英文）。
 
 ## 无厂商锁定
 
 这个项目不把你绑定在我们身上：
 
 - **任意 ESP32-C5 开发板都能用。** SAIHub-Mini 只是一种载板；现成的 DevKit 或你自己画的板子跑的是同一套固件，见[自备开发板](docs/bring-your-own-board.zh.md)。
-- **不依赖我们的托管云。** 中继就是一个 Cloudflare Worker，你可以部署到自己的账号下；协议有完整文档且不绑定服务端，也可以完全自己实现。
+- **不依赖我们的托管云。** 你可以把 Cloudflare Worker 部署到自己的账号下，或在任意 Linux 主机运行 C++ 中继容器；协议有完整文档且不绑定服务端，也可以完全自己实现。
 - **软硬件全部 MIT 开源。** 固件、KiCad 硬件工程、云端中继代码都在本仓库里。
 - **局域网模式不需要任何服务。** 连上 Wi-Fi、填入本地 MCP 地址即可完整使用；云端只是可选的便利，不是前提。
 
@@ -116,6 +116,7 @@ SAIHub 是给编程智能体用的口袋 IO 与硬件调试伴侣。烧好固件
 | `mcp.json` | 设备提供的 MCP 工具定义 |
 | `openapi.json` | 同一套能力的 REST API 描述 |
 | `cloud/cloudflare/` | Cloudflare Worker 中继与 OAuth（参考服务端） |
+| `cloud/cpp/` | 高性能 C++ 中继与多架构 Docker 镜像（`linux/amd64`、`linux/arm64`） |
 | `hardware/` | SAIHub-Mini KiCad 工程 |
 | `docs/` | 使用手册、硬件文档、构建指南、协议设计笔记、自备开发板指南 |
 

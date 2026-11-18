@@ -145,23 +145,45 @@ If you **buy a board from us**, we host the cloud relay. After the board is on W
 
 <img src="assets/cloud-landing.webp" alt="SAIHub cloud landing page" style="display:block;max-height:720px;width:auto;margin:0 auto">
 
-Self-hosted workers use the same URL shape; the serial log prints the landing page for your origin. See the next section.
+Self-hosted relays use the same URL shape; the serial log prints the landing page for your origin. See the next section.
 
-## 5. Self-host the Cloudflare relay
+## 5. Self-host the cloud relay
 
-The worker in `cloud/cloudflare/` proxies MCP and REST to the board over a Durable Object, with OAuth for MCP clients. The relay protocol itself is server-agnostic — message formats, auth handshake, and limits are documented in the [design notes](design-notes.md).
+Two server implementations live in this repo — pick whichever fits your deployment:
 
-### Deploy
+- **Cloudflare Worker (`cloud/cloudflare/`)** — serverless Worker + Durable Objects + D1, zero server maintenance.
+- **C++ relay (`cloud/cpp/`)** — single-threaded in-memory-cached C++20 binary (`ghcr.io/xqe2011/saihub-cloud`, ~13 MB `linux/amd64` / `linux/arm64` container) with SQLite persistence for self-hosting on any Linux VPS/homelab behind a TLS reverse proxy.
+
+The relay protocol itself is server-agnostic — message formats, auth handshake, and limits are documented in the [design notes](design-notes.md).
+
+### Option A: Deploy to Cloudflare
 
 You need a Cloudflare account. D1, the Durable Object, env vars, and secrets are auto-provisioned.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/xqe2011/saihub/tree/main/cloud/cloudflare)
 
-On the setup page, set `ROUTING_TOKEN_SECRET` and `ADMIN_TOKEN` (each `openssl rand -hex 32`).
+On the setup page, set `ROUTING_TOKEN_SECRET`, `WEBSOCKET_TOKEN_SECRET`, and `ADMIN_TOKEN` (each `openssl rand -hex 32`).
 
 The dashboard prints a `*.workers.dev` origin, for example `https://saihub-cloud.<account>.workers.dev`. Optional: attach a custom domain. Open `/admin` on that origin, enter `ADMIN_TOKEN`, and whitelist each device digest before it can connect. Unlisted digests get 403.
 
-### Point firmware at your worker
+### Option B: Run the C++ container (`cloud/cpp`)
+
+Run the prebuilt multi-arch (`linux/amd64` / `linux/arm64`) image behind a TLS reverse proxy (Caddy / Nginx / Cloudflare Tunnel) so clients and devices connect over HTTPS / WSS:
+
+```bash
+docker run -d --restart unless-stopped -p 127.0.0.1:8787:8787 \
+  -v saihub-data:/data \
+  -e DB_PATH=/data/saihub.db \
+  -e ROUTING_TOKEN_SECRET="$(openssl rand -hex 32)" \
+  -e WEBSOCKET_TOKEN_SECRET="$(openssl rand -hex 32)" \
+  -e WEBSOCKET_TOKEN_TTL_S=7200 \
+  -e ADMIN_TOKEN="$(openssl rand -hex 32)" \
+  ghcr.io/xqe2011/saihub-cloud:latest
+```
+
+Then open `/admin` on your origin, enter `ADMIN_TOKEN`, and whitelist each device digest. `DB_PATH` is required and persists `device_whitelist` and `file_cache` in SQLite across restarts while hot-path lookups stay in memory. Health check is at `GET /health`. Full options: [`cloud/cpp/README.md`](../cloud/cpp/README.md).
+
+### Point firmware at your relay
 
 In `main/include/config.h` set the WebSocket origin (**`wss://`**, no path):
 
@@ -189,9 +211,9 @@ MCP clients use:
 
 `<digest>` is the board’s Base58Check device id (from the hardware ECDSA public key). After the board authenticates, the serial log prints the landing page at `https://<origin>/cloud/landing/<digest>/page` — open that to copy the MCP, REST, and OpenAPI URLs.
 
-Keep `ROUTING_TOKEN_SECRET` and `ADMIN_TOKEN` as Worker secrets. Do not commit them.
+Keep `ROUTING_TOKEN_SECRET`, `WEBSOCKET_TOKEN_SECRET`, and `ADMIN_TOKEN` secret. Do not commit them.
 
-Worker routes, local dev with a fake device, and tests: [build.md](build.md).
+Relay routes, local dev with a fake device, and tests: [build.md](build.md).
 
 ## 6. Pins, power, and example jobs
 
