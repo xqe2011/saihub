@@ -145,23 +145,45 @@ I2C：`list_i2cs`、`configure_i2c`、`i2c_master_transceive`、`i2c_slave_recei
 
 <img src="assets/cloud-landing.webp" alt="SAIHub 云落地页" style="display:block;max-height:720px;width:auto;margin:0 auto">
 
-自行部署的 Worker 使用相同的 URL 格式；串口日志会打印指向你自己源站的落地页。见下一节。
+自行部署的中继使用相同的 URL 格式；串口日志会打印指向你自己源站的落地页。见下一节。
 
-## 5. 自行部署 Cloudflare 中继
+## 5. 自行部署云中继
 
-`cloud/cloudflare/` 中的 Worker 借助 Durable Object 把 MCP 和 REST 请求转发到板子，并为 MCP 客户端提供 OAuth 鉴权。中继协议本身不绑定 Cloudflare——消息格式、鉴权握手和各类限制详见[协议设计笔记](design-notes.md)（英文）。
+仓库提供两种云中继服务端实现，按需选择：
 
-### 部署
+- **Cloudflare Worker（`cloud/cloudflare/`）**——基于 Worker + Durable Objects + D1，免运维服务器。
+- **C++ 中继（`cloud/cpp/`）**——单线程、热路径内存缓存 + SQLite 持久化的 C++20 服务（`ghcr.io/xqe2011/saihub-cloud`，约 13 MB `linux/amd64` / `linux/arm64` 容器），适合自建在 Linux VPS/内网主机并前置 TLS 反向代理。
+
+中继协议本身不绑定特定服务端——消息格式、鉴权握手和各类限制详见[协议设计笔记](design-notes.md)（英文）。
+
+### 方案 A：部署到 Cloudflare
 
 准备工作：一个 Cloudflare 账号。D1、Durable Object、环境变量和密钥会自动创建。
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/xqe2011/saihub/tree/main/cloud/cloudflare)
 
-在配置页填入 `ROUTING_TOKEN_SECRET` 和 `ADMIN_TOKEN`（各用 `openssl rand -hex 32` 生成）。
+在配置页填入 `ROUTING_TOKEN_SECRET`、`WEBSOCKET_TOKEN_SECRET` 和 `ADMIN_TOKEN`（各用 `openssl rand -hex 32` 生成）。
 
 完成后控制台会给出 `*.workers.dev` 源站地址，例如 `https://saihub-cloud.<account>.workers.dev`。也可以绑定自定义域名。打开该源站的 `/admin`，输入 `ADMIN_TOKEN`，把设备 digest 加入白名单后才能连接；未列入的 digest 会返回 403。
 
-### 配置固件指向你的 Worker
+### 方案 B：运行 C++ 容器（`cloud/cpp`）
+
+在 TLS 反向代理（Caddy / Nginx / Cloudflare Tunnel）后面运行预构建的多架构（`linux/amd64` / `linux/arm64`）镜像，使客户端和设备通过 HTTPS / WSS 访问：
+
+```bash
+docker run -d --restart unless-stopped -p 127.0.0.1:8787:8787 \
+  -v saihub-data:/data \
+  -e DB_PATH=/data/saihub.db \
+  -e ROUTING_TOKEN_SECRET="$(openssl rand -hex 32)" \
+  -e WEBSOCKET_TOKEN_SECRET="$(openssl rand -hex 32)" \
+  -e WEBSOCKET_TOKEN_TTL_S=7200 \
+  -e ADMIN_TOKEN="$(openssl rand -hex 32)" \
+  ghcr.io/xqe2011/saihub-cloud:latest
+```
+
+接着打开源站的 `/admin`，输入 `ADMIN_TOKEN` 并添加设备 digest 白名单。`DB_PATH` 为必填项，会将白名单与 `file_cache` 持久化到 SQLite（运行期查询仍全走内存）。健康检查地址为 `GET /health`。完整参数见 [`cloud/cpp/README.md`](../cloud/cpp/README.md)。
+
+### 配置固件指向你的中继
 
 编辑 `main/include/config.h`，填入 WebSocket 源站地址（以 **`wss://`** 开头，不带路径）：
 
@@ -189,9 +211,9 @@ MCP 客户端则使用：
 
 `<digest>` 是板子的 Base58Check 设备 ID（由硬件 ECDSA 公钥派生）。板子鉴权成功后，串口日志会打印落地页 `https://<源站>/cloud/landing/<digest>/page`，打开即可复制 MCP、REST 和 OpenAPI 地址。
 
-`ROUTING_TOKEN_SECRET` 和 `ADMIN_TOKEN` 作为 Worker secrets 保存，切勿提交进仓库。
+请妥善保管 `ROUTING_TOKEN_SECRET`、`WEBSOCKET_TOKEN_SECRET` 和 `ADMIN_TOKEN`，切勿提交进仓库。
 
-Worker 的路由表、本地模拟设备联调和测试方法见[构建指南](build.zh.md)。
+中继路由表、本地模拟设备联调和测试方法见[构建指南](build.zh.md)。
 
 ## 6. 引脚、电源和示例
 

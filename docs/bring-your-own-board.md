@@ -10,7 +10,7 @@ The firmware is not tied to SAIHub-Mini. Any ESP32-C5 board runs it — an Espre
 - GPIO: digital in / out / open-drain, pulse, PWM (4 channels, up to 50 kHz), edge trace (up to 60 s / 1024 events)
 - The product UART — UART1 routes through the GPIO matrix, so TX / RX can sit on any pins you map
 - Sandboxed Lua 5.4 scripts and resource locks
-- Cloud relay: the ECDSA identity key is provisioned into each chip's eFuse at first boot, so the relay works from any board — point `CONFIG_CLOUD_URL` at a worker you self-host (the managed cloud comes with boards bought from us)
+- Cloud relay: the ECDSA identity key is provisioned into each chip's eFuse at first boot, so the relay works from any board — point `CONFIG_CLOUD_URL` at a relay you self-host (Cloudflare Worker or C++ Docker container; the managed cloud comes with boards bought from us)
 
 ## What you lose without the SAIHub-Mini hardware
 
@@ -20,7 +20,7 @@ The firmware is not tied to SAIHub-Mini. Any ESP32-C5 board runs it — an Espre
 | ~1 A output current limit, fused 3 A input | Carrier-board protection parts | Design your own supply path; don't hang heavy loads off devkit rails |
 | BOOT button UX (click → Wi-Fi pairing) | Button wired to `CONFIG_BUTTON_PIN` | Many C5 devkits wire BOOT to GPIO28 as well — check your schematic. Otherwise remap the pin, or bake credentials into `CONFIG_WIFI_SSID` / `CONFIG_WIFI_PASSWORD`: they are used whenever NVS has none saved, and portal-paired credentials persist in NVS |
 | Buzzer feedback | 5020 buzzer on GPIO12 | Remap or ignore |
-| Managed cloud | A service included with boards bought from us | Self-host the worker ([cookbook §5](cookbook.md#5-self-host-the-cloudflare-relay)) |
+| Managed cloud | A service included with boards bought from us | Self-host the relay ([cookbook §5](cookbook.md#5-self-host-the-cloud-relay)) |
 
 ## Where to update the GPIO map
 

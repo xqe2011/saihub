@@ -10,7 +10,7 @@
 - GPIO：数字输入 / 输出 / 开漏、脉冲、PWM（4 通道，最高 50 kHz）、边沿采集（最长 60 s / 1024 个事件）
 - 产品 UART——UART1 经 GPIO 交换矩阵路由，TX / RX 可以落在你映射的任意引脚上
 - 沙箱 Lua 5.4 脚本和资源锁
-- 云中继：ECDSA 身份密钥在首次启动时烧写进每颗芯片的 eFuse，所以任何板子都能用中继——把 `CONFIG_CLOUD_URL` 指向你自行部署的 Worker 即可（托管云仅随我们售出的板子提供）
+- 云中继：ECDSA 身份密钥在首次启动时烧写进每颗芯片的 eFuse，所以任何板子都能用中继——把 `CONFIG_CLOUD_URL` 指向你自行部署的中继（Cloudflare Worker 或 C++ Docker 容器）即可（托管云仅随我们售出的板子提供）
 
 ## 离开 SAIHub-Mini 硬件后缺失的功能
 
@@ -20,7 +20,7 @@
 | 约 1 A 输出限流、3 A 保险丝输入保护 | 属于载板保护电路 | 自行设计供电路径；别把大负载挂在 DevKit 的电源脚上 |
 | BOOT 按键交互（按一下 = Wi-Fi 配对） | 按键接在 `CONFIG_BUTTON_PIN` 上 | 多数 C5 DevKit 的 BOOT 键同样接 GPIO28——请对照你的原理图确认。否则重映射该引脚，或把 Wi-Fi 凭据直接写进 `CONFIG_WIFI_SSID` / `CONFIG_WIFI_PASSWORD`：NVS 里没有保存凭据时就会用它们，配网成功后凭据会持久化到 NVS |
 | 蜂鸣器提示 | GPIO12 上的 5020 蜂鸣器 | 重映射或忽略 |
-| 托管云中继 | 随我们售出的板子提供的服务 | 自行部署 Worker（[使用手册第 5 节](cookbook.zh.md#5-自行部署-cloudflare-中继)） |
+| 托管云中继 | 随我们售出的板子提供的服务 | 自行部署中继（[使用手册第 5 节](cookbook.zh.md#5-自行部署云中继)） |
 
 ## 在哪里改 GPIO 映射
 

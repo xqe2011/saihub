@@ -77,23 +77,23 @@ The LAN URL is all you need at the bench. To reach the board from anywhere, put 
 | | Local LAN | Self-hosted relay | Managed cloud |
 | --- | --- | --- | --- |
 | Best for | Bench work, zero setup | Remote access under your own account | Remote access, zero ops |
-| MCP URL | `http://<device-ip>/mcp` | `https://<your-worker>/device/<digest>/mcp` | `https://saihub.xqe2011.com/device/<digest>/mcp` |
+| MCP URL | `http://<device-ip>/mcp` | `https://<your-relay>/device/<digest>/mcp` | `https://saihub.xqe2011.com/device/<digest>/mcp` |
 | Reach | Same LAN only | Anywhere | Anywhere |
-| Setup | None after Wi-Fi | Deploy to Cloudflare then rebuild firmware with your origin ([details](docs/cookbook.md#5-self-host-the-cloudflare-relay)) | None — boards bought from us connect to the managed cloud |
+| Setup | None after Wi-Fi | Deploy Cloudflare Worker or C++ Docker container, then rebuild firmware with your origin ([details](docs/cookbook.md#5-self-host-the-cloud-relay)) | None — boards bought from us connect to the managed cloud |
 | Auth | None (LAN trust) | OAuth through your relay | OAuth in the browser |
-| Traffic path | Direct to the board | Through your Cloudflare account | Through our infrastructure |
-| Cost | Free | Cloudflare free tier | Included with the board |
+| Traffic path | Direct to the board | Through your Cloudflare account or self-hosted server | Through our infrastructure |
+| Cost | Free | Cloudflare free tier or your own host | Included with the board |
 
 After the board authenticates with the relay, the serial log prints its landing page — `https://<origin>/cloud/landing/<digest>/page` — with live online status, copyable MCP or REST/OpenAPI URLs, and a button to mint a authentication token.
 
-The relay protocol is server-agnostic — the Cloudflare Worker in this repo is the reference implementation ([design notes](docs/design-notes.md)).
+The relay protocol is server-agnostic — this repo includes both a Cloudflare Worker reference server (`cloud/cloudflare/`) and a high-performance C++ server (`cloud/cpp/`) ([design notes](docs/design-notes.md)).
 
 ## No vendor lock-in
 
 Nothing here ties you to us:
 
 - **Any ESP32-C5 board works.** SAIHub-Mini is just one carrier; an off-the-shelf DevKit or your own PCB runs the same firmware. See [bring your own board](docs/bring-your-own-board.md).
-- **You don't need our managed cloud.** The relay is a Cloudflare Worker you can deploy under your own account — or replace entirely, since the protocol is documented and server-agnostic.
+- **You don't need our managed cloud.** Deploy the Cloudflare Worker under your own account or run the C++ relay container on any Linux host — or replace it entirely, since the protocol is documented and server-agnostic.
 - **Everything is open source under MIT.** Firmware, KiCad hardware design, and the cloud relay all live in this repo.
 - **LAN mode needs no service at all.** Wi-Fi plus the local MCP URL is a complete setup; the cloud is optional convenience, not a requirement.
 
@@ -120,6 +120,7 @@ Logic pins are **3.3 V only** — full electrical limits in [docs/hardware.md](d
 | `mcp.json` | MCP tool schema served by the device |
 | `openapi.json` | REST API for the same tools |
 | `cloud/cloudflare/` | Cloudflare Worker relay + OAuth (reference server) |
+| `cloud/cpp/` | High-performance C++ relay + multi-arch Docker image (`linux/amd64`, `linux/arm64`) |
 | `hardware/` | SAIHub-Mini KiCad project |
 | `docs/` | Cookbook, hardware, build, protocol, and BYO-board docs |
 

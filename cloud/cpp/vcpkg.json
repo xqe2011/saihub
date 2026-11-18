@@ -1,0 +1,15 @@
+{
+  "name": "saihub-cloud-cpp",
+  "version": "1.0.0",
+  "dependencies": [
+    {
+      "name": "uwebsockets",
+      "features": ["simdutf"]
+    },
+    "yyjson",
+    "openssl",
+    "unordered-dense",
+    "doctest",
+    "zlib"
+  ]
+}
