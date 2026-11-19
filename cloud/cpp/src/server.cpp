@@ -292,7 +292,7 @@ bool CloudServer::init() {
 
 bool CloudServer::listen(int& bound_port_out) {
     bool ok = false;
-    app_.listen(cfg_.host, cfg_.port, [&](us_listen_socket_t* sock) {
+    app_.listen(cfg_.host, cfg_.port, LIBUS_LISTEN_EXCLUSIVE_PORT, [&](us_listen_socket_t* sock) {
         listen_socket_ = sock;
         if (sock) {
             ok = true;

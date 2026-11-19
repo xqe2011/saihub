@@ -50,7 +50,7 @@ Config load_config() {
     if (const char* v = getenv_str("ROUTING_TOKEN_SECRET")) cfg.routing_token_secret = v;
     if (const char* v = getenv_str("WEBSOCKET_TOKEN_SECRET")) cfg.websocket_token_secret = v;
     if (const char* v = getenv_str("WEBSOCKET_TOKEN_TTL_S")) {
-        cfg.websocket_token_ttl_s = parse_positive_i64(v, 0);
+        cfg.websocket_token_ttl_s = parse_positive_i64(v, kDefaultWebsocketTokenTtlS);
     }
     if (const char* v = getenv_str("ADMIN_TOKEN")) cfg.admin_token = v;
     if (const char* v = getenv_str("DB_PATH")) cfg.db_path = v;
