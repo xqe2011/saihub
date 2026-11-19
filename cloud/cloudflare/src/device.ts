@@ -1,5 +1,5 @@
 import { tryServeCached } from "./cache.ts";
-import { DEFAULT_AUTH_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS, parseTimeoutMs, type Env } from "./env.ts";
+import { DEFAULT_AUTH_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_WEBSOCKET_TOKEN_TTL_S, parseTimeoutMs, type Env } from "./env.ts";
 import { base64UrlToBytes, bytesToBase64Url, randomChallenge, sealWebsocketToken, verifyDeviceAuth } from "./crypto.ts";
 import { injectExpiredAt, injectWebsocketToken, isJsonContentType, isTcpStreamPath, jsonError, MAX_BODY_BYTES, MAX_PATH_LEN, parseDeviceMessage, pairingErrorStatus, selectForwardHeaders, TCP_STREAM_CLIENT_BUFFER_MAX, unsupportedContentType, type AuthRequestMessage, type AuthResultMessage, type JsonBody, type PairingSessionRequestMessage, type PairingSessionResponseMessage, type PairingSessionTokenResponseMessage, type RequestMessage, type TcpStreamAckMessage, type TcpStreamCloseRequestMessage, type TcpStreamOpenRequestMessage } from "./protocol.ts";
 
@@ -958,8 +958,8 @@ export class Device implements DurableObject {
     const raw = this.#deviceWebsocket?.deserializeAttachment();
     const deviceAttachment = raw === undefined ? null : readWebsocketAttachment(raw);
     const digest = deviceAttachment?.kind === "deviceWebsocket" ? deviceAttachment.digest : "";
-    const ttlSec = parseTimeoutMs(this.#env.WEBSOCKET_TOKEN_TTL_S, 0);
-    if (!grantSecret || !digest || !this.#env.WEBSOCKET_TOKEN_SECRET || ttlSec === 0) return;
+    const ttlSec = parseTimeoutMs(this.#env.WEBSOCKET_TOKEN_TTL_S, DEFAULT_WEBSOCKET_TOKEN_TTL_S);
+    if (!grantSecret || !digest || !this.#env.WEBSOCKET_TOKEN_SECRET) return;
     try {
       const expireAt = Math.floor(Date.now() / 1000) + ttlSec;
       const token = await sealWebsocketToken(this.#env.WEBSOCKET_TOKEN_SECRET, {
