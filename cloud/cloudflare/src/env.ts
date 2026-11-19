@@ -11,6 +11,7 @@ export interface Env {
 
 export const DEFAULT_AUTH_TIMEOUT_MS = 10_000;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 55_000;
+export const DEFAULT_WEBSOCKET_TOKEN_TTL_S = 86_400;
 
 export function parseTimeoutMs(value: string | undefined, fallback: number): number {
   if (!value) {

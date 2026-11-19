@@ -752,8 +752,7 @@ void DeviceManager::handle_device_response(DeviceRuntime* dev, const ResponseMsg
         if (msg.add_websocket_token &&
             is_tcp_stream_path(msg.add_websocket_token->websocket_path) &&
             !found->grant_secret.empty() &&
-            ws_key_.valid() &&
-            cfg_.websocket_token_ttl_s > 0) {
+            ws_key_.valid()) {
             int64_t expire_at = (now_ms() / 1000) + cfg_.websocket_token_ttl_s;
             auto token = seal_websocket_token(ws_key_, WebsocketTokenPayload{
                 expire_at,

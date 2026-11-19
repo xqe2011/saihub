@@ -7,6 +7,7 @@ namespace saihub {
 
 constexpr int64_t kDefaultAuthTimeoutMs = 10000;
 constexpr int64_t kDefaultRequestTimeoutMs = 55000;
+constexpr int64_t kDefaultWebsocketTokenTtlS = 86400;
 
 enum class LogLevel {
     Debug = 0,
@@ -23,7 +24,7 @@ struct Config {
     int64_t request_timeout_ms = kDefaultRequestTimeoutMs;
     std::string routing_token_secret;
     std::string websocket_token_secret;
-    int64_t websocket_token_ttl_s = 0;
+    int64_t websocket_token_ttl_s = kDefaultWebsocketTokenTtlS;
     std::string admin_token;
     std::string db_path;
     LogLevel log_level = LogLevel::Info;

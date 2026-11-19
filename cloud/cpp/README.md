@@ -27,7 +27,7 @@ docker run -d -p 8787:8787 \
 | `REQUEST_TIMEOUT_MS` | `55000` | Proxy / pairing / stream-open timeout (ms) |
 | `ROUTING_TOKEN_SECRET` | — | Secret used to seal/open bearer routing tokens |
 | `WEBSOCKET_TOKEN_SECRET` | — | Secret used to seal/open `tcp-stream` WebSocket tokens |
-| `WEBSOCKET_TOKEN_TTL_S` | `0` | TTL (seconds) for injected `tcp-stream` WebSocket tokens |
+| `WEBSOCKET_TOKEN_TTL_S` | `86400` | TTL (seconds) for injected `tcp-stream` WebSocket tokens |
 | `ADMIN_TOKEN` | — | Bearer token required for `/admin/*` APIs |
 | `DB_PATH` | *(required)* | SQLite database path for persisting `device_whitelist` and `file_cache` |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`, or `silent` |
