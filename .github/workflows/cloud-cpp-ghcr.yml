@@ -6,11 +6,6 @@ on:
       - main
     tags:
       - '**'
-  pull_request:
-    paths:
-      - 'cloud/cpp/**'
-      - 'tests/cloud/cpp/**'
-      - '.github/workflows/cloud-cpp-ghcr.yml'
   workflow_dispatch:
 
 permissions:
