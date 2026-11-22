@@ -18,7 +18,7 @@
 #define CONFIG_NTP_TIMEOUT_MS (15 * 1000)
 
 /* Set to the deployed worker origin, e.g. wss://saihub-cloud.example.workers.dev. */
-#define CONFIG_CLOUD_URL "wss://saihub.xqe2011.com"
+#define CONFIG_CLOUD_URL "wss://saihub.xqe2011.cn"
 #define CONFIG_CLOUD_MAX_MESSAGE_BYTES (72 * 1024)
 /* Cloud TCP stream pool. Ring is allocated per connection; initial byteCredits match the ring size. */
 #define CONFIG_CLOUD_TCP_MAX_CONNECTIONS 4
@@ -73,7 +73,7 @@
 #define CONFIG_RFC2217_CLOUD_STATUS_PROMPT \
   "RFC2217 serial-over-TCP is running. Run this Node.js bridge (npm i ws), then point an RFC2217 client at 127.0.0.1:4442. Replace status.url with the url from this status.\n" \
   "The WebSocket url is long-lived: reuse it until expiredAt instead of requesting a new status on every TCP connect.\n" \
-  "When flashing with esptool over this bridge, raise serial/sync timeouts — cloud RTT is much higher than a local USB adapter. Example ESPTOOL_CFGFILE values: sync_timeout=3, mem_end_rom_timeout=3, timeout=10, connect_attempts=2.\n" \
+  "When flashing with esptool over this bridge, use --port rfc2217://127.0.0.1:4442?timeout=15 and raise serial/sync timeouts — cloud RTT is much higher than a local USB adapter. Example ESPTOOL_CFGFILE values: sync_timeout=3, mem_end_rom_timeout=3, timeout=10, connect_attempts=2. Be patient: a full flash can take 5–10 minutes; that is normal, not a hang.\n" \
   "import { createServer } from 'node:net';\n" \
   "import WebSocket from 'ws';\n" \
   "createServer((tcp) => {\n" \
