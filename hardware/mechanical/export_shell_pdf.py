@@ -116,7 +116,7 @@ def main():
     c.line(414, 150, 414, 500)
     overall = data["assembled_size_mm"]
     text(c, 44, 110, f"{overall[0]:g} x {overall[1]:g} x {overall[2]:g} mm overall", 15, True)
-    text(c, 44, 89, f"{overall[2]:g} mm body; QR outline and lettering recessed 0.3 mm", 9)
+    text(c, 44, 89, f"{overall[2]:g} mm body; QR recess {data['qr_frame_depth_mm']:g} mm; text recess {data['text_engraving_depth_mm']:g} mm", 9)
     text(c, 44, 70, "GPIO labels 0-7; four top indicators; USB and button side access.", 9, color=MUTED)
     lines(c, 432, 112, [
         "Board: 48.0 x 28.0 x 1.6 mm, shown in assembly orientation.",
@@ -156,17 +156,17 @@ def main():
         f"QR outline outside: {data['qr_frame_outer_mm'][0]:g} x {data['qr_frame_outer_mm'][1]:g}",
         "Sticker bed: 22.0 x 22.0, flat",
         f"Outline width: {data['qr_frame_width_mm']:g}; recess: {data['qr_frame_depth_mm']:g}",
-        "Text recess: 0.3 (roof remaining: 0.7)",
+        f"Text recess: {data['text_engraving_depth_mm']:g} (roof remaining: {data['wall_mm'] - data['text_engraving_depth_mm']:g})",
         "Nominal wall / floor / roof: 1.0",
         "Outer corner radius: R1.5",
         "Top edge round: R0.3",
-        "Nesting overlap: 1.0; USB top strip: 1.0",
+        f"Nesting overlap: 1.0; USB base border: {data['usb_base_border_mm']:g}",
         "Nesting clearance: 0.2 per side; 6 PCB ledges",
-        "PCB clearance: 0.2 per side; roof: 4.1",
-        "2 solid ramp catches; 0.6 engagement",
+        f"PCB clearance: 0.2 per side; roof: {data['pcb_top_to_roof_mm']:g}",
+        f"2 solid ramp catches; {data['snap_engagement_mm']:g} engagement",
         "4 indicator holes: diameter 1.5; pitch 3.2",
     ], 9, 17)
-    lines(c, 550, 245, ["Side opening heights:", "USB 3.7  /  button 1.8  /  header 3.9"], 9, 15)
+    lines(c, 550, 245, ["Side opening heights:", f"USB {data['usb_opening_mm'][1]:g}  /  button 1.8  /  header {data['header_opening_mm'][1]:g}"], 9, 15)
     text(c, 65, 51, "Dimensions govern. Views show external geometry; internal edges are omitted.", 8, color=MUTED)
     c.showPage()
 
@@ -205,11 +205,11 @@ def main():
     text(c, 444, 219, "FIT CHECKS", 10, True)
     lines(c, 444, 199, [
         "Valid connected solids; closed STL meshes.",
-        "No PCB overlap; USB model is taller than tested hardware.",
-        "USB model: 0.205 mm local overlap; physical fit user-verified.",
+        "No PCB overlap; available component models checked.",
+        "Raised seam clears the USB model without an overlap exception.",
         "Prototype-test side snaps, solder tails and repeated lid removal.",
         "Release: gently lift each side in turn; walls flex outward.",
-        "Catches: 4.0 wide; 0.8 projection; windows: 4.6 x 1.8.",
+        f"Catches: 4.0 wide; {data['snap_projection_mm']:g} projection; windows: 4.6 x 1.8.",
     ], 9, 16)
     text(c, 44, 103, "Density source: PolyLite ABS Technical Data Sheet, V5.5, 1.04 g/cm3 at 23 C.", 9)
     text(c, 44, 85, "Open manufacturer data sheet", 9, color=ACCENT)

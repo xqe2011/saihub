@@ -20,16 +20,18 @@ FIT = 0.2  # Per-side sliding clearance, not a guaranteed friction fit.
 BOARD_GAP = 0.2
 FLOOR = 1.0
 PCB_Z = 2.8  # 1.8 mm above the floor, clearing the available connector-tail model.
-SEAM_Z = 7.5
+SEAM_Z = 7.9
 LAP = 1.0
-SNAP_DROP = 0.4  # Lower catches and windows together, leaving a 1 mm top strip.
+SNAP_DROP = 6.9 - (SEAM_Z - 1.0)  # Track the seam while keeping a 1 mm window top strip.
+SNAP_PROJECTION = 1.0  # Less the 0.2 mm fit gap gives 0.8 mm engagement.
 LED_BORE_RADIUS = 0.75
-LED_SLEEVE_WALL = 1.0
-LED_WELL_BOTTOM = 6.2  # Clears adjacent component models at z=5.945 by 0.255 mm.
-ROOF_Z = 8.5  # 4.1 mm above PCB top; 0.795 mm above the available USB model.
-USB_OPENING_TOP = SEAM_Z  # Align the visible top edge with the header opening.
+LED_SLEEVE_WALL = 0.49
+LED_WELL_BOTTOM = 6.3  # Original 3.1 mm sleeve length below the raised roof.
+ROOF_Z = 9.4  # 5 mm above PCB top; 1.695 mm above the available USB model.
+USB_BASE_BORDER = 1.0
+USB_OPENING_TOP = SEAM_Z - USB_BASE_BORDER  # Bridge the left wall to the button surround.
 BUTTON_OPENING_W, BUTTON_OPENING_H, BUTTON_OPENING_Z = 3.0, 1.8, 4.4
-TEXT_DEPTH = 0.3  # Recessed lettering leaves 0.7 mm of the 1 mm roof.
+TEXT_DEPTH = 0.7  # Recessed lettering leaves 0.3 mm of the 1 mm roof.
 QR_INNER = 22.0
 QR_FRAME_WIDTH = 0.18  # Matches the ~0.177 mm stem of the 1.8 mm regular lettering.
 QR_OUTER = QR_INNER + 2 * QR_FRAME_WIDTH
@@ -40,7 +42,7 @@ OUTER = tuple(d + 2 * WALL for d in SOCKET)
 LIP_OUTER = tuple(d - 2 * FIT for d in SOCKET)
 LIP_INNER = tuple(d - 2 * RIM for d in LIP_OUTER)
 CORNER_RADIUS = 1.5  # Larger inner radii would clip the board's square corners.
-QR_FRAME_DEPTH = TEXT_DEPTH  # Same engraving depth as the lettering.
+QR_FRAME_DEPTH = TEXT_DEPTH  # Match the 0.7 mm lettering recess.
 # One aligned bank, read from the same component placement used by the PCB.
 INDICATOR_LABELS = {'D4':'3V3 OUT', 'D5':'5V OUT', 'D6':'5V IN', 'D7':'STATUS'}
 
@@ -75,12 +77,12 @@ def text_cut(value, x, y, size=2.5, rotation=0, anchor="center", bold=False):
     return Pos(x + dx, y + dy, ROOF_Z + WALL - TEXT_DEPTH) * lettering
 
 
-def connector_clearances():
+def connector_clearances(usb_top=USB_OPENING_TOP):
     # Centres derive from the committed board placement, rotated to match the sketch.
     # Openings extend through both the large socket and the smaller cover lip.
     return [
         # Side access only: stop every cut at or below the roof underside.
-        block(10.4, 10.2, USB_OPENING_TOP - (PCB_Z + 1.0),
+        block(10.4, 10.2, usb_top - (PCB_Z + 1.0),
               x=48 - 42.8, y=3.0, z=PCB_Z + 1.0),
         # Small external actuator opening; wider body relief stays behind the face.
         block(BUTTON_OPENING_W, 5.4, BUTTON_OPENING_H,
@@ -123,15 +125,17 @@ def make_enclosure():
 
     for opening in connector_clearances():
         base -= opening
+    # Keep the cover lip relief open to the seam behind the new base bridge.
+    for opening in connector_clearances(SEAM_Z):
         cover -= opening
 
     # Solid ramp detents replace the thin cantilever arms. The base walls flex
     # outward over the entry/release ramps; no inward-moving arms or release slots.
     for right in (False, True):
         x = 47.6 if right else 0.4
-        cover += block(0.8, 4.0, 2.4 + SNAP_DROP, x=x, y=14.0, z=5.2 - SNAP_DROP)
-        # 0.8 mm projection from the lip, less 0.2 mm fit gap = 0.6 engagement.
-        outline = [(0, 5.2), (-0.8, 5.8), (-0.8, 6.1), (0, 6.7),
+        cover += block(0.8, 4.0, SEAM_Z + 0.1 - (5.2 - SNAP_DROP), x=x, y=14.0, z=5.2 - SNAP_DROP)
+        # Projection from the lip minus the fit gap is the wall engagement.
+        outline = [(0, 5.2), (-SNAP_PROJECTION, 5.8), (-SNAP_PROJECTION, 6.1), (0, 6.7),
                    (0.8, 6.7), (0.8, 5.2)]
         outline = [(u, v - SNAP_DROP) for u, v in outline]
         if right:
@@ -230,6 +234,11 @@ def validate(base, cover, board):
         volume = intersection_volume(first, second)
         assert volume < 1e-6, f"Interference: {name}: {volume} mm³"
         report[name + "_interference_mm3"] = round(volume, 6)
+    bridge = block(10.4, WALL, USB_BASE_BORDER, x=5.2, y=-BOARD_GAP-WALL/2, z=USB_OPENING_TOP)
+    bridge = bridge.intersect(rounded_block(OUTER, USB_BASE_BORDER, USB_OPENING_TOP))
+    if isinstance(bridge, list):
+        bridge = Compound(children=bridge)
+    assert abs(intersection_volume(base, bridge) - bridge.volume) < 1e-6, "USB base border must span the opening"
     # Check the engraving floor and the flush sticker bed in the finished solid.
     top_z = ROOF_Z + WALL
     assert abs(cover.bounding_box().max.Z - top_z) < 1e-6
@@ -249,14 +258,16 @@ def validate(base, cover, board):
                    "pcb_top_to_roof_mm": round(ROOF_Z - PCB_Z - BOARD_T, 3),
                    "usb_opening_mm": [10.4, round(USB_OPENING_TOP - PCB_Z - 1.0, 3)],
                    "usb_top_strip_mm": round(ROOF_Z - USB_OPENING_TOP, 3),
+                   "usb_base_border_mm": USB_BASE_BORDER,
                    "button_opening_mm": [BUTTON_OPENING_W, BUTTON_OPENING_H],
+                   "header_opening_mm": [31.5, round(SEAM_Z - PCB_Z - 0.8, 3)],
                    "wall_mm": WALL, "each_mating_rim_mm": RIM, "nesting_clearance_per_side_mm": FIT,
                    "qr_clear_area_mm": [QR_INNER, QR_INNER], "qr_frame_outer_mm": [QR_OUTER, QR_OUTER],
                    "qr_frame_width_mm": QR_FRAME_WIDTH, "qr_frame_depth_mm": QR_FRAME_DEPTH, "qr_center_mm": list(QR_CENTER), "outer_corner_radius_mm": CORNER_RADIUS,
                    "text_engraving_depth_mm": TEXT_DEPTH, "snap_count": 2,
                    "pcb_support_count": 6, "rear_support_centres_mm": [[0.8, 28.4], [24.5, 28.4]],
                    "snap_type": "Solid ramp detents; outward-flexing base walls",
-                   "snap_engagement_mm": 0.6, "snap_projection_mm": 0.8,
+                   "snap_engagement_mm": round(SNAP_PROJECTION - FIT, 3), "snap_projection_mm": SNAP_PROJECTION,
                    "snap_window_top_strip_mm": round(SEAM_Z - (5.1 - SNAP_DROP + 1.8), 3),
                    "snap_vertical_drop_mm": SNAP_DROP,
                    "snap_width_mm": 4.0, "snap_window_mm": [4.6, 1.8],
@@ -273,19 +284,7 @@ def validate_components(base, cover, board):
         for child in board.children:
             volume = intersection_volume(shape, child)
             if volume > 1e-6:
-                # Physical fit testing confirms spare space above USB-C. Keep the
-                # supplied taller model unchanged and explicitly report its mismatch.
-                allowed = block(10.4, 10.2, 0.2051, x=5.2, y=3.0, z=USB_OPENING_TOP)
-                overlap = shape.intersect(child)
-                pieces = overlap if isinstance(overlap, list) else [overlap]
-                allowed_volume = sum(intersection_volume(piece, allowed) for piece in pieces)
-                if (name == "cover" and child.label.startswith("USB_C_Receptacle_")
-                        and abs(allowed_volume - volume) < 1e-6):
-                    reference_exceptions.append({"reference": child.label,
-                        "volume_mm3": round(volume, 6),
-                        "reason": "Supplied USB model extends 0.205 mm above opening; user physical fit test confirms clearance."})
-                else:
-                    collisions.append({"reference": child.label, "volume_mm3": round(volume, 6)})
+                collisions.append({"reference": child.label, "volume_mm3": round(volume, 6)})
         result[name] = collisions
     assert not any(result.values()), f"Component interference: {result}"
     return {"collisions": result, "reference_model_exceptions": reference_exceptions,
