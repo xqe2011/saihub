@@ -177,6 +177,8 @@ static esp_err_t System_HttpGet(const char* url, char* buf, size_t cap, size_t* 
   System_HttpBody body = {.buf = buf, .len = 0, .cap = cap, .err = ESP_OK};
   esp_http_client_config_t cfg = {
       .url = url,
+      .buffer_size = CONFIG_OTA_HTTP_CHUNK_BUFFER_SIZE,
+      .buffer_size_tx = CONFIG_OTA_HTTP_CHUNK_BUFFER_SIZE,
       .timeout_ms = CONFIG_OTA_HTTP_METADATA_TIMEOUT_MS,
       .crt_bundle_attach = esp_crt_bundle_attach,
       .event_handler = System_HttpEvent,
