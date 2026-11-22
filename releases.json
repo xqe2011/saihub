@@ -1,6 +1,17 @@
 [
   {
     "assets": {
+      "SHA256SUMS": "https://github.com/xqe2011/saihub/releases/download/0.3.4/SHA256SUMS",
+      "manifest.json": "https://github.com/xqe2011/saihub/releases/download/0.3.4/manifest.json",
+      "saihub-esp32c5-merged.bin": "https://github.com/xqe2011/saihub/releases/download/0.3.4/saihub-esp32c5-merged.bin",
+      "saihub-esp32c5-ota.bin": "https://github.com/xqe2011/saihub/releases/download/0.3.4/saihub-esp32c5-ota.bin"
+    },
+    "prerelease": false,
+    "publishedAt": "2026-11-22T17:47:54Z",
+    "tag": "0.3.4"
+  },
+  {
+    "assets": {
       "SHA256SUMS": "https://github.com/xqe2011/saihub/releases/download/0.3.3/SHA256SUMS",
       "manifest.json": "https://github.com/xqe2011/saihub/releases/download/0.3.3/manifest.json",
       "saihub-esp32c5-merged.bin": "https://github.com/xqe2011/saihub/releases/download/0.3.3/saihub-esp32c5-merged.bin",
