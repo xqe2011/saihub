@@ -504,7 +504,7 @@
         "pcb_color": "rgba(0, 0, 0, 0.000)",
         "priority": -1,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
-        "track_width": 0.15,
+        "track_width": 0.2,
         "tuning_profile": "",
         "via_diameter": 0.6,
         "via_drill": 0.3
@@ -562,7 +562,7 @@
     "last_paths": {
       "idf": "",
       "netlist": "",
-      "plot": "/Users/xqe2011/Downloads/saihub-mini/",
+      "plot": "../../../../Downloads/saihub-mini/2/",
       "specctra_dsn": "",
       "step": "",
       "vrml": ""

@@ -2,7 +2,7 @@
 <export version="E">
   <design>
     <source>/Users/xqe2011/Documents/Code/saihub/hardware/saihub.kicad_sch</source>
-    <date>2026-10-04T13:46:55</date>
+    <date>2026-10-28T21:19:53</date>
     <tool>Eeschema 10.0.6</tool>
     <sheet number="1" name="/" tstamps="/">
       <title_block>
@@ -25,17 +25,17 @@
   </design>
   <components>
     <comp ref="BZ1">
-      <value>KLJ-5020 3.3V</value>
-      <footprint>Saihub:KLJ-5020</footprint>
-      <datasheet>https://datasheet.lcsc.com/datasheet/pdf/5a334e56ebfeea427b46ed3bd7f9e2de.pdf?productCode=C556937</datasheet>
+      <value>5020 3V 4kHz</value>
+      <footprint>Saihub:Buzzer_5020_Supplied</footprint>
+      <datasheet>${KIPRJMOD}/agent/docs/buzzer-5020-supplied.png</datasheet>
       <fields>
-        <field name="MPN">KLJ-5020</field>
-        <field name="Footprint">Saihub:KLJ-5020</field>
-        <field name="Datasheet">https://datasheet.lcsc.com/datasheet/pdf/5a334e56ebfeea427b46ed3bd7f9e2de.pdf?productCode=C556937</field>
+        <field name="MPN">5020 supplied specification (MPN unspecified)</field>
+        <field name="Footprint">Saihub:Buzzer_5020_Supplied</field>
+        <field name="Datasheet">${KIPRJMOD}/agent/docs/buzzer-5020-supplied.png</field>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="BUZZER" description=""/>
-      <property name="MPN" value="KLJ-5020"/>
+      <property name="MPN" value="5020 supplied specification (MPN unspecified)"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -433,30 +433,6 @@
         </unit>
       </units>
     </comp>
-    <comp ref="C21">
-      <value>100n</value>
-      <footprint>Saihub:C_0603_1608Metric</footprint>
-      <fields>
-        <field name="MPN">100n</field>
-        <field name="Footprint">Saihub:C_0603_1608Metric</field>
-        <field name="Datasheet"/>
-        <field name="Description"/>
-      </fields>
-      <libsource lib="Saihub" part="C" description=""/>
-      <property name="MPN" value="100n"/>
-      <property name="Sheetname" value="saihub"/>
-      <property name="Sheetfile" value="saihub.kicad_sch"/>
-      <sheetpath names="/" tstamps="/"/>
-      <tstamps>606619ff-8c26-5311-876c-bafea5be9022</tstamps>
-      <units>
-        <unit name="A">
-          <pins>
-            <pin num="1"/>
-            <pin num="2"/>
-          </pins>
-        </unit>
-      </units>
-    </comp>
     <comp ref="D1">
       <value>SS34</value>
       <footprint>Saihub:D_SMA</footprint>
@@ -534,16 +510,16 @@
     </comp>
     <comp ref="D4">
       <value>GREEN</value>
-      <footprint>Saihub:LED_AA1608</footprint>
-      <datasheet>https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LCGSK.pdf</datasheet>
+      <footprint>Saihub:LED_0603_1608Metric</footprint>
+      <datasheet>${KIPRJMOD}/agent/docs/led-kt-0603g.pdf</datasheet>
       <fields>
-        <field name="MPN">AA1608LCGSK</field>
-        <field name="Footprint">Saihub:LED_AA1608</field>
-        <field name="Datasheet">https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LCGSK.pdf</field>
+        <field name="MPN">KT-0603G</field>
+        <field name="Footprint">Saihub:LED_0603_1608Metric</field>
+        <field name="Datasheet">${KIPRJMOD}/agent/docs/led-kt-0603g.pdf</field>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="LED" description=""/>
-      <property name="MPN" value="AA1608LCGSK"/>
+      <property name="MPN" value="KT-0603G"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -551,24 +527,24 @@
       <units>
         <unit name="A">
           <pins>
-            <pin num="1"/>
             <pin num="2"/>
+            <pin num="1"/>
           </pins>
         </unit>
       </units>
     </comp>
     <comp ref="D5">
       <value>GREEN</value>
-      <footprint>Saihub:LED_AA1608</footprint>
-      <datasheet>https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LCGSK.pdf</datasheet>
+      <footprint>Saihub:LED_0603_1608Metric</footprint>
+      <datasheet>${KIPRJMOD}/agent/docs/led-kt-0603g.pdf</datasheet>
       <fields>
-        <field name="MPN">AA1608LCGSK</field>
-        <field name="Footprint">Saihub:LED_AA1608</field>
-        <field name="Datasheet">https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LCGSK.pdf</field>
+        <field name="MPN">KT-0603G</field>
+        <field name="Footprint">Saihub:LED_0603_1608Metric</field>
+        <field name="Datasheet">${KIPRJMOD}/agent/docs/led-kt-0603g.pdf</field>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="LED" description=""/>
-      <property name="MPN" value="AA1608LCGSK"/>
+      <property name="MPN" value="KT-0603G"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -576,24 +552,24 @@
       <units>
         <unit name="A">
           <pins>
-            <pin num="1"/>
             <pin num="2"/>
+            <pin num="1"/>
           </pins>
         </unit>
       </units>
     </comp>
     <comp ref="D6">
       <value>RED</value>
-      <footprint>Saihub:LED_AA1608</footprint>
-      <datasheet>https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LSURSK.pdf</datasheet>
+      <footprint>Saihub:LED_0603_1608Metric</footprint>
+      <datasheet>${KIPRJMOD}/agent/docs/led-kt-0603r.pdf</datasheet>
       <fields>
-        <field name="MPN">AA1608LSURSK</field>
-        <field name="Footprint">Saihub:LED_AA1608</field>
-        <field name="Datasheet">https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LSURSK.pdf</field>
+        <field name="MPN">KT-0603R</field>
+        <field name="Footprint">Saihub:LED_0603_1608Metric</field>
+        <field name="Datasheet">${KIPRJMOD}/agent/docs/led-kt-0603r.pdf</field>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="LED" description=""/>
-      <property name="MPN" value="AA1608LSURSK"/>
+      <property name="MPN" value="KT-0603R"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -601,24 +577,24 @@
       <units>
         <unit name="A">
           <pins>
-            <pin num="1"/>
             <pin num="2"/>
+            <pin num="1"/>
           </pins>
         </unit>
       </units>
     </comp>
     <comp ref="D7">
       <value>BLUE</value>
-      <footprint>Saihub:LED_AA1608</footprint>
-      <datasheet>https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LQBS-D-295V.pdf</datasheet>
+      <footprint>Saihub:LED_0603_1608Metric</footprint>
+      <datasheet>${KIPRJMOD}/agent/docs/led-kt-0603b.pdf</datasheet>
       <fields>
-        <field name="MPN">AA1608LQBS/D-295V</field>
-        <field name="Footprint">Saihub:LED_AA1608</field>
-        <field name="Datasheet">https://www.kingbrightusa.com/images/catalog/SPEC/AA1608LQBS-D-295V.pdf</field>
+        <field name="MPN">KT-0603B</field>
+        <field name="Footprint">Saihub:LED_0603_1608Metric</field>
+        <field name="Datasheet">${KIPRJMOD}/agent/docs/led-kt-0603b.pdf</field>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="LED" description=""/>
-      <property name="MPN" value="AA1608LQBS/D-295V"/>
+      <property name="MPN" value="KT-0603B"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -626,8 +602,8 @@
       <units>
         <unit name="A">
           <pins>
-            <pin num="1"/>
             <pin num="2"/>
+            <pin num="1"/>
           </pins>
         </unit>
       </units>
@@ -1168,16 +1144,16 @@
       </units>
     </comp>
     <comp ref="R19">
-      <value>680</value>
+      <value>660</value>
       <footprint>Saihub:R_0603_1608Metric</footprint>
       <fields>
-        <field name="MPN">680</field>
+        <field name="MPN">660</field>
         <field name="Footprint">Saihub:R_0603_1608Metric</field>
         <field name="Datasheet"/>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="R" description=""/>
-      <property name="MPN" value="680"/>
+      <property name="MPN" value="660"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -1192,16 +1168,16 @@
       </units>
     </comp>
     <comp ref="R20">
-      <value>1.5k</value>
+      <value>660</value>
       <footprint>Saihub:R_0603_1608Metric</footprint>
       <fields>
-        <field name="MPN">1.5k</field>
+        <field name="MPN">660</field>
         <field name="Footprint">Saihub:R_0603_1608Metric</field>
         <field name="Datasheet"/>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="R" description=""/>
-      <property name="MPN" value="1.5k"/>
+      <property name="MPN" value="660"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -1216,16 +1192,16 @@
       </units>
     </comp>
     <comp ref="R21">
-      <value>1.5k</value>
+      <value>660</value>
       <footprint>Saihub:R_0603_1608Metric</footprint>
       <fields>
-        <field name="MPN">1.5k</field>
+        <field name="MPN">660</field>
         <field name="Footprint">Saihub:R_0603_1608Metric</field>
         <field name="Datasheet"/>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="R" description=""/>
-      <property name="MPN" value="1.5k"/>
+      <property name="MPN" value="660"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -1240,16 +1216,16 @@
       </units>
     </comp>
     <comp ref="R22">
-      <value>330</value>
+      <value>660</value>
       <footprint>Saihub:R_0603_1608Metric</footprint>
       <fields>
-        <field name="MPN">330</field>
+        <field name="MPN">660</field>
         <field name="Footprint">Saihub:R_0603_1608Metric</field>
         <field name="Datasheet"/>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="R" description=""/>
-      <property name="MPN" value="330"/>
+      <property name="MPN" value="660"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -1265,16 +1241,16 @@
     </comp>
     <comp ref="SW1">
       <value>BOOT</value>
-      <footprint>Saihub:SW_SPST_TS2435VS</footprint>
-      <datasheet>https://atta.szlcsc.com/upload/public/pdf/source/20250414/8774CEBD0F324351C3CF1F5D7421BC0B.pdf</datasheet>
+      <footprint>Saihub:SW_SPST_2X4_LocatingPins</footprint>
+      <datasheet>${KIPRJMOD}/agent/docs/button-2x4.pdf</datasheet>
       <fields>
-        <field name="MPN">TS-2435VS</field>
-        <field name="Footprint">Saihub:SW_SPST_TS2435VS</field>
-        <field name="Datasheet">https://atta.szlcsc.com/upload/public/pdf/source/20250414/8774CEBD0F324351C3CF1F5D7421BC0B.pdf</field>
+        <field name="MPN">2X4</field>
+        <field name="Footprint">Saihub:SW_SPST_2X4_LocatingPins</field>
+        <field name="Datasheet">${KIPRJMOD}/agent/docs/button-2x4.pdf</field>
         <field name="Description"/>
       </fields>
       <libsource lib="Saihub" part="BOOT" description=""/>
-      <property name="MPN" value="TS-2435VS"/>
+      <property name="MPN" value="2X4"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -1664,17 +1640,17 @@
       </units>
     </comp>
     <comp ref="U10">
-      <value>USBLC6-2SC6</value>
-      <footprint>Saihub:SOT-23-6</footprint>
-      <datasheet>https://www.st.com/resource/en/datasheet/usblc6-2.pdf</datasheet>
+      <value>TPD4E05U06DQAR</value>
+      <footprint>Saihub:TPD4E05U06_DQA</footprint>
+      <datasheet>https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf</datasheet>
       <fields>
-        <field name="MPN">USBLC6-2SC6</field>
-        <field name="Footprint">Saihub:SOT-23-6</field>
-        <field name="Datasheet">https://www.st.com/resource/en/datasheet/usblc6-2.pdf</field>
+        <field name="MPN">TPD4E05U06DQAR</field>
+        <field name="Footprint">Saihub:TPD4E05U06_DQA</field>
+        <field name="Datasheet">https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf</field>
         <field name="Description"/>
       </fields>
-      <libsource lib="Saihub" part="USBLC6_2SC6" description=""/>
-      <property name="MPN" value="USBLC6-2SC6"/>
+      <libsource lib="Saihub" part="TPD4E05U06" description=""/>
+      <property name="MPN" value="TPD4E05U06DQAR"/>
       <property name="Sheetname" value="saihub"/>
       <property name="Sheetfile" value="saihub.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -1684,10 +1660,14 @@
           <pins>
             <pin num="1"/>
             <pin num="2"/>
-            <pin num="3"/>
-            <pin num="6"/>
-            <pin num="5"/>
             <pin num="4"/>
+            <pin num="5"/>
+            <pin num="3"/>
+            <pin num="8"/>
+            <pin num="6"/>
+            <pin num="7"/>
+            <pin num="9"/>
+            <pin num="10"/>
           </pins>
         </unit>
       </units>
@@ -1852,8 +1832,8 @@
         <field name="Description"/>
       </fields>
       <pins>
-        <pin num="1" name="K" type="passive"/>
-        <pin num="2" name="A" type="passive"/>
+        <pin num="1" name="A" type="passive"/>
+        <pin num="2" name="K" type="passive"/>
       </pins>
     </libpart>
     <libpart lib="Saihub" part="R">
@@ -2035,19 +2015,19 @@
       <node ref="R17" pin="1" pinfunction="1_1" pintype="passive"/>
     </net>
     <net code="11" name="D4_A" class="Default">
-      <node ref="D4" pin="2" pinfunction="A_2" pintype="passive"/>
+      <node ref="D4" pin="1" pinfunction="A_1" pintype="passive"/>
       <node ref="R19" pin="2" pinfunction="2_2" pintype="passive"/>
     </net>
     <net code="12" name="D5_A" class="Default">
-      <node ref="D5" pin="2" pinfunction="A_2" pintype="passive"/>
+      <node ref="D5" pin="1" pinfunction="A_1" pintype="passive"/>
       <node ref="R20" pin="2" pinfunction="2_2" pintype="passive"/>
     </net>
     <net code="13" name="D6_A" class="Default">
-      <node ref="D6" pin="2" pinfunction="A_2" pintype="passive"/>
+      <node ref="D6" pin="1" pinfunction="A_1" pintype="passive"/>
       <node ref="R21" pin="2" pinfunction="2_2" pintype="passive"/>
     </net>
     <net code="14" name="D7_A" class="Default">
-      <node ref="D7" pin="2" pinfunction="A_2" pintype="passive"/>
+      <node ref="D7" pin="1" pinfunction="A_1" pintype="passive"/>
       <node ref="R22" pin="2" pinfunction="2_2" pintype="passive"/>
     </net>
     <net code="15" name="EN" class="Default">
@@ -2079,7 +2059,6 @@
       <node ref="C13" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="C15" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="C2" pin="2" pinfunction="2_2" pintype="passive"/>
-      <node ref="C21" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="C3" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="C4" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="C5" pin="2" pinfunction="2_2" pintype="passive"/>
@@ -2089,10 +2068,10 @@
       <node ref="C9" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="D1" pin="2" pinfunction="A_2" pintype="passive"/>
       <node ref="D2" pin="2" pinfunction="A_2" pintype="passive"/>
-      <node ref="D4" pin="1" pinfunction="K_1" pintype="passive"/>
-      <node ref="D5" pin="1" pinfunction="K_1" pintype="passive"/>
-      <node ref="D6" pin="1" pinfunction="K_1" pintype="passive"/>
-      <node ref="D7" pin="1" pinfunction="K_1" pintype="passive"/>
+      <node ref="D4" pin="2" pinfunction="K_2" pintype="passive"/>
+      <node ref="D5" pin="2" pinfunction="K_2" pintype="passive"/>
+      <node ref="D6" pin="2" pinfunction="K_2" pintype="passive"/>
+      <node ref="D7" pin="2" pinfunction="K_2" pintype="passive"/>
       <node ref="J1" pin="A1" pinfunction="GND_A1" pintype="passive"/>
       <node ref="J1" pin="A12" pinfunction="GND_A12" pintype="passive"/>
       <node ref="J1" pin="B1" pinfunction="GND_B1" pintype="passive"/>
@@ -2113,7 +2092,8 @@
       <node ref="SW1" pin="2" pinfunction="GND_2" pintype="passive"/>
       <node ref="TP2" pin="1" pinfunction="TEST_1" pintype="passive"/>
       <node ref="U1" pin="2" pinfunction="GND_2" pintype="power_in"/>
-      <node ref="U10" pin="2" pinfunction="GND_2" pintype="power_in"/>
+      <node ref="U10" pin="3" pinfunction="GND_3" pintype="power_in"/>
+      <node ref="U10" pin="8" pinfunction="GND_8" pintype="power_in"/>
       <node ref="U2" pin="4" pinfunction="GND_4" pintype="power_in"/>
       <node ref="U2" pin="9" pinfunction="EP_GND_9" pintype="passive"/>
       <node ref="U3" pin="15" pinfunction="GND_15" pintype="power_in"/>
@@ -2245,18 +2225,15 @@
       <node ref="J2" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="R19" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="U10" pin="1" pinfunction="IO1_1" pintype="passive"/>
-      <node ref="U10" pin="6" pinfunction="IO1_6" pintype="passive"/>
       <node ref="U4" pin="6" pinfunction="OUT_6" pintype="power_out"/>
     </net>
     <net code="42" name="V5" class="Power,Default">
       <node ref="C10" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="C2" pin="1" pinfunction="1_1" pintype="passive"/>
-      <node ref="C21" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="C3" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="D2" pin="1" pinfunction="K_1" pintype="passive"/>
       <node ref="F1" pin="2" pinfunction="2_2" pintype="passive"/>
       <node ref="R21" pin="1" pinfunction="1_1" pintype="passive"/>
-      <node ref="U10" pin="5" pinfunction="VBUS_5" pintype="power_in"/>
       <node ref="U2" pin="2" pinfunction="IN_2" pintype="power_in"/>
       <node ref="U5" pin="1" pinfunction="IN_1" pintype="power_in"/>
     </net>
@@ -2264,8 +2241,7 @@
       <node ref="C12" pin="1" pinfunction="1_1" pintype="passive"/>
       <node ref="J2" pin="3" pinfunction="3_3" pintype="passive"/>
       <node ref="R20" pin="1" pinfunction="1_1" pintype="passive"/>
-      <node ref="U10" pin="3" pinfunction="IO2_3" pintype="passive"/>
-      <node ref="U10" pin="4" pinfunction="IO2_4" pintype="passive"/>
+      <node ref="U10" pin="5" pinfunction="IO4_5" pintype="passive"/>
       <node ref="U5" pin="6" pinfunction="OUT_6" pintype="power_out"/>
     </net>
     <net code="44" name="VBUS" class="Power,Default">
@@ -2312,6 +2288,24 @@
     </net>
     <net code="56" name="unconnected-(U7-NC-Pad10)" class="Default">
       <node ref="U7" pin="10" pinfunction="NC_10" pintype="no_connect"/>
+    </net>
+    <net code="57" name="unconnected-(U10-IO2-Pad2)" class="Default">
+      <node ref="U10" pin="2" pinfunction="IO2_2" pintype="passive+no_connect"/>
+    </net>
+    <net code="58" name="unconnected-(U10-IO3-Pad4)" class="Default">
+      <node ref="U10" pin="4" pinfunction="IO3_4" pintype="passive+no_connect"/>
+    </net>
+    <net code="59" name="unconnected-(U10-NC-Pad6)" class="Default">
+      <node ref="U10" pin="6" pinfunction="NC_6" pintype="no_connect"/>
+    </net>
+    <net code="60" name="unconnected-(U10-NC-Pad7)" class="Default">
+      <node ref="U10" pin="7" pinfunction="NC_7" pintype="no_connect"/>
+    </net>
+    <net code="61" name="unconnected-(U10-NC-Pad9)" class="Default">
+      <node ref="U10" pin="9" pinfunction="NC_9" pintype="no_connect"/>
+    </net>
+    <net code="62" name="unconnected-(U10-NC-Pad10)" class="Default">
+      <node ref="U10" pin="10" pinfunction="NC_10" pintype="no_connect"/>
     </net>
   </nets>
 </export>

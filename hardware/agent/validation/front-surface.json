@@ -1,0 +1,21 @@
+{
+  "boards": {
+    "saihub.kicad_pcb": {
+      "front": 64,
+      "back": 0,
+      "pad_nets_match_design": true,
+      "metadata_matches": true,
+      "sha256": "3dc1394879f61277a4e52349fca5bc77ab97ce85757a362c23e9ea1e69204853"
+    },
+    "agent/routing/saihub-unrouted.kicad_pcb": {
+      "front": 64,
+      "back": 0,
+      "pad_nets_match_design": true,
+      "metadata_matches": true,
+      "sha256": "2d75ab8a58a92bc5cf33729007946a52d5c7fde3543b44a20d05c6f096fc09de"
+    }
+  },
+  "generator_matches": true,
+  "rule": "All components and test pads on the front surface",
+  "routing": "Complete; see routing-summary.json"
+}

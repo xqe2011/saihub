@@ -1,9 +1,8 @@
 {
   "collisions": {
     "base": [],
-    "cover": [],
-    "left_snap_insertion": [],
-    "right_snap_insertion": []
+    "cover": []
   },
-  "scope": "Available board models and illustrative envelopes; missing models, solder and snap forces unverified."
+  "reference_model_exceptions": [],
+  "scope": "Available board models and illustrative envelopes; base walls flex outward during snapping; missing models, solder, snap forces and fatigue unverified."
 }

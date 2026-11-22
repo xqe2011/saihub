@@ -26,39 +26,48 @@ coordinates. Generate with `--output PATH` to select another export directory.
 
 ## Geometry
 
-- Overall assembled envelope: **50.4 × 30.4 × 9 mm**.
+- Overall assembled envelope: **50.4 × 30.4 × 10.4 mm**.
 - Ordinary side walls, floor, and cover face: **1 mm**.
 - Exterior plan corners: **1.5 mm radius**, with matching nested profiles and a
   **0.3 mm** softened top perimeter. Wall dimensions describe straight sections;
   the top edge blend locally rounds the nominal roof thickness.
 - The compact nesting joint uses a **1 mm cover lip** inside the **1 mm base
-  wall**, with **0.2 mm** sliding clearance per side. It starts at **z = 6.5 mm**,
+  wall**, with **0.2 mm** sliding clearance per side. It starts at **z = 6.9 mm**,
   above the board, with local edge-component clearance checked, instead of
   adding width beside the board.
-- Lip overlap: **1 mm**; cover seats at **z = 7.5 mm**. Two opposed side snaps
-  provide vertical retention with **0.25 mm** engagement and **0.2 mm** vertical
-  play. Each free arm is **7.5 × 0.6 × 1.2 mm** with a ramped hook and **0.4 mm**
-  clearance above it. Press the hooks through both side windows to release.
-  Snap force, fatigue and print tolerances require prototype testing.
+- Lip overlap: **1 mm**; cover seats at **z = 7.9 mm**. Two broad, solid
+  ramp detents replace the thin spring arms. Each catch is **4 mm wide**, projects
+  **1.0 mm** from the lip and engages the base wall by **0.8 mm** after the
+  **0.2 mm** mating gap. The matching side windows are **4.6 × 1.8 mm**,
+  centred at y = 14 mm and spanning z = 5.1–6.9 mm, leaving a **1 mm** strip below the base top edge.
+  Both catches and windows track the raised seam; catch supports extend up to the lip.
+  Entry and release ramps let the base side walls flex outward: press the cover
+  down to close; lift each side gently in turn to open. No small release arms.
+  Catch tips remain **0.2 mm** inside the exterior wall plane. Solid extensions
+  join the catches directly to the cover lip; no thin cantilevers or arm slots.
+  Snap force, fatigue and print tolerances require prototype testing in the
+  intended plastic; geometry checks do not predict flexibility or retention force.
 - Board side clearance: **0.2 mm**. The board rests **1.8 mm** above the floor for
-  solder tails. Four short edge ledges support it, surrounding walls locate it,
-  and ceiling fingers limit lift to **0.3 mm**. The board notch has no support below it.
+  solder tails. Six short edge ledges support it, surrounding walls locate it,
+  and ceiling fingers limit lift to **0.3 mm**. The two added rear ledges are **2 × 1.6 mm**, centred at model
+  **(0.8, 28.4)** and **(24.5, 28.4)**, with tops at **z = 2.8 mm**.
+  Both stay on the solid-board side of x = 26.15 mm; the antenna notch has no support below it.
 - The footprint follows `48 + 2 × (1 + 0.2)` by `28 + 2 × (1 + 0.2)`.
   The smaller **1.5 mm** outer corner radius preserves clearance around the square
   board corners. The face layout is inset to suit the smaller shell.
-- Component space above the PCB: **3.6 mm** to the continuous roof, apart from
+- Component space above the PCB: **5.0 mm** to the continuous roof, apart from
   the nesting lip and edge fingers. The available USB model is taller than the
-  stated 2.54 mm component height; its top has **0.295 mm** roof clearance.
-  Body height is **9 mm**; the QR outline is recessed **0.3 mm**. The top is closed except for the four indicator openings,
-  with **1 mm** nominal roof thickness and **0.7 mm** below recessed lettering.
+  stated 2.54 mm component height; its top has **1.695 mm** roof clearance.
+  Body height is **10.4 mm**; the QR outline is recessed **0.7 mm**. The top is closed except for the four indicator openings,
+  with **1 mm** nominal roof thickness and **0.3 mm** below recessed lettering.
 - Bottom allowance is based on the available connector model: its tails extend
   about **1.405 mm** below the board, leaving approximately **0.395 mm** to the
   floor. Verify actual solder joints and trim tails if necessary.
 - QR intaglio outline: **22.36 × 22.36 mm outside**, **22 × 22 mm square inside**, **0.18 mm wide
-  along the straight edges and recessed 0.3 mm**, with rounded outer corners and
-  **0.7 mm** of roof remaining below the groove. The border width matches the
+  along the straight edges and recessed 0.7 mm**, with rounded outer corners and
+  **0.3 mm** of roof remaining below the groove. The border width matches the
   approximately 0.177 mm stems of the 1.8 mm regular lettering.
-  The sticker bed is flat, flush with the cover face, and has no text. All labels are **recessed 0.3 mm**, leaving **0.7 mm** of roof below the lettering.
+  The sticker bed is flat, flush with the cover face, and has no text. All labels are **recessed 0.7 mm**, leaving **0.3 mm** of roof below the lettering.
 
 ## Board alignment and prototype checks
 
@@ -67,13 +76,24 @@ Dimensions and connector locations come from `../saihub.kicad_pcb` and
 so that USB is on the left: board `(x, y)` becomes model `(48 - x, y)`.
 The front connector edge is model `y = 0`; the base bottom is `z = 0`.
 USB and button side-opening centres are **6.4 mm** and **14.7 mm** from the
-left exterior edge. Their openings are **10.4 × 4.2 mm** and **5 × 3 mm**
-respectively, with internal relief for the connector bodies. Neither opening
-pierces the roof. The 12-contact header side opening is **31.5 × 3.9 mm**,
+left exterior edge. Their openings are **10.4 × 3.1 mm** and **3 × 1.8 mm**
+respectively. The USB opening ends at **z = 6.9 mm**. A **1 mm high, 1 mm thick
+base border** spans it at z = 6.9–7.9 mm, connecting the left wall to the button
+surround. The header opening still ends at the z = 7.9 mm seam.
+The cover contributes another 1.5 mm above the seam; its inner lip relief remains
+open to z = 7.9 mm behind the base border. Total material above USB to the roof
+underside is 2.5 mm. The new base border has no overlap with available component
+models. The supplied USB model reaches z = 7.705 mm farther inside the shell;
+the raised seam now clears it without an exception. Component overlaps fail validation
+and results are recorded in `output/component-clearance.json`.
+The button opening spans z = 4.4–6.2 mm; its **5 × 2.2 mm** internal body
+relief starts at y = 0.2 mm, behind the exterior face. The roof is raised
+**1.4 mm** from the initial design; PCB seating height is unchanged and the seam is now z = 7.9 mm. Neither opening
+pierces the roof. The 12-contact header side opening is **31.5 × 4.3 mm**,
 extending to the seam so no fragile strip remains above it on the base.
 The pin labels remain recessed into the continuous roof above it.
 The labels follow actual connector positions. Reading left to right in the cover
-face view: **8, 7, 6, 5, 4, 3, 2, 1, GND, 5V, GND, 3.3V**. Channels **1–8**
+face view: **7, 6, 5, 4, 3, 2, 1, 0, GND, 5V, GND, 3.3V**. Channels **0–7**
 correspond to the board's **IO0–IO7**; they are channel labels, not physical pin
 numbers. Power and ground use the same 90° rotation as the numeric labels.
 
@@ -140,7 +160,7 @@ After reconciling those inputs, from this directory run:
 ```
 
 This exports a fresh board reference, regenerates the enclosure exports/preview,
-checks board/component and snap insertion geometry, regenerates all drawing views,
+checks board/component geometry, regenerates all drawing views,
 and recomputes the mass in `../docs/shell.pdf`. A failure stops the refresh instead
 of publishing a new PDF. `--pdf-python /path/to/python` may select a separate
 Python environment with ReportLab. `KICAD_CLI` selects the board export executable.
@@ -157,9 +177,12 @@ metadata just to refresh these documents.
 
 The four top-side LEDs remain together at board x=30.3 mm, y=5.2/8.4/11.6/14.8 mm.
 The shell takes these positions directly from `agent/design.json`. Each has a
-1.5 mm circular viewing opening and a separate 2.2 mm outside-diameter light well,
-with 0.4 mm clearance above the nominal 0.55 mm LED body. Recessed labels read
+1.5 mm circular viewing opening and a 2.48 mm outside-diameter light well with a **0.49 mm wall**.
+The wells remain separate at the 3.2 mm pitch. Their original 3.1 mm length below the roof
+puts the bottoms at z = 6.3 mm, 1.3 mm above the nominal 0.6 mm LED bodies.
+Available component models are checked for interference; the sleeve bottoms now sit
+0.355 mm above the U4/U5 model tops. Printed fit still needs verification. Recessed labels read
 `3V3 OUT`, `5V OUT`, `5V IN`, and `STATUS`; the first two are green, then red and blue.
-The QR sticker area remains blank. The eight bottom resistors fit inside the
-existing solder-tail allowance. Verify visibility, light bleed and resistor/solder
-clearance on a physical prototype.
+The QR sticker area remains blank. All resistors and test pads are on the front, with the other components. The
+bottom allowance is for connector tails and solder. Verify visibility, light
+bleed and component/solder clearance on a physical prototype.

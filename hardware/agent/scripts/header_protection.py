@@ -18,7 +18,7 @@ def apply(parts):
         by_ref[ref].update(value='SS34', mpn='SS34', url=SS34_URL,
                           desc='MDD SS34, 40V / 3A, SMA (DO-214AC); do not substitute SMC variants')
     # Replace only the superseded GPIO arrays and their local supply bypasses.
-    retired = {'U8', 'U9', 'C17', 'C18', 'C19', 'C20'}
+    retired = {'U8', 'U9', 'C17', 'C18', 'C19', 'C20', 'C21'}
     parts[:] = [part for part in parts if part['ref'] not in retired]
     for index in range(2):
         ref = f'U{index + 6}'
@@ -34,12 +34,11 @@ def apply(parts):
         part['nets'].update({'3': 'GND', '8': 'GND', '6': None, '7': None, '9': None, '10': None})
     # Keep the separate header-power shunts. Load current bypasses the array.
     definitions = [
-        dict(ref='U10', value='USBLC6-2SC6', sym='USBLC6_2SC6', foot='Saihub:SOT-23-6',
-             nets={'1': 'V3_SW', '2': 'GND', '3': 'V5_SW', '4': 'V5_SW', '5': 'V5', '6': 'V3_SW'},
-             mpn='USBLC6-2SC6', desc='Header power ESD shunt; place beside J2 with short ground return',
-             url='https://www.st.com/resource/en/datasheet/usblc6-2.pdf'),
-        dict(ref='C21', value='100n', sym='C', foot='Saihub:C_0603_1608Metric',
-             nets={'1': 'V5', '2': 'GND'}, mpn='100n', desc='X7R, 10V minimum; local ESD supply bypass', url=''),
+        dict(ref='U10', value='TPD4E05U06DQAR', sym='TPD4E05U06', foot='Saihub:TPD4E05U06_DQA',
+             nets={'1': 'V3_SW', '2': None, '3': 'GND', '4': None, '5': 'V5_SW',
+                   '6': None, '7': None, '8': 'GND', '9': None, '10': None},
+             mpn='TPD4E05U06DQAR', desc='Two independent header-power ESD shunts; no supply reference; load current bypasses array',
+             url='https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf'),
     ]
     for part in definitions:
         if part['ref'] in by_ref:
